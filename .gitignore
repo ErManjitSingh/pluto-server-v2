@@ -1,0 +1,10 @@
+# .gitignore
+node_modules/
+.env
+uploads/
+.vscode/
+.idea/
+logs/
+*.log
+*.DS_Store
+*.code-workspace

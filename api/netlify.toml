@@ -1,0 +1,3 @@
+[build]
+command = "npm run dev"  # Adjust to your build command
+publish = "public"         # Adjust to your build directory
