@@ -1442,6 +1442,7 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         .select({
           id: 1,
           customerLeadId: 1,
+          operationAssignReportId: 1,
           userId: 1,
           converted: 1,
           conversionType: 1,
