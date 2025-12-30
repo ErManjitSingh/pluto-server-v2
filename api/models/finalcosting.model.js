@@ -5,6 +5,9 @@ const operationSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  operationAssignReportId:{
+    type: String,
+  },
   customerLeadId: {
    type: String,
   },
@@ -250,6 +253,7 @@ operationSchema.index({ id: 1, userId: 1, customerLeadId: 1 }); // Compound inde
 operationSchema.index({ id: 1 }); // Single field index for id
 operationSchema.index({ userId: 1 }); // Single field index for userId
 operationSchema.index({ customerLeadId: 1 }); // Single field index for customerLeadId
+operationSchema.index({ operationAssignReportId: 1, createdAt: -1 }); // Compound index for getOperationByAssignReportId
 
 const Operation = mongoose.model('operation', operationSchema);
 
