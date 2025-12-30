@@ -1,5 +1,5 @@
 import express from 'express';
-import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, deleteOldNonConvertedOperations } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
@@ -31,5 +31,7 @@ router.get('/group-email-response/:operationId/:response/:messageId', handleGrou
 router.get('/group-email-response/:operationId/:response/:messageId/:reason', handleGroupEmailResponse);
 router.post('/email-webhook', handleEmailWebhook);
 router.delete('/delete-old-non-converted', deleteOldNonConvertedOperations);
+router.patch('/update-assign-report-id/:id', updateOperationAssignReportId);
+router.get('/get-by-assign-report-id/:operationAssignReportId', getOperationByAssignReportId);
 
 export default router;
