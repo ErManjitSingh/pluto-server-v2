@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import bcryptjs from 'bcryptjs';
 const Schema = mongoose.Schema;
 
 const selectedAmenitiesSchema = new mongoose.Schema({
@@ -150,6 +151,7 @@ const PropertySchema = new Schema({
     channelManager: { type: String, required: false },
     email: { type: String, required: true },
     mobile: { type: String, required: true },
+    password: { type: String, required: false, select: false },
     useWhatsApp: { type: Boolean, required: false },
     landline: { type: String, required: false },
     prefered: { type: Boolean, required: false },
@@ -374,6 +376,21 @@ const PropertySchema = new Schema({
 // Middleware to update the `updatedAt` field automatically
 PropertySchema.pre("save", function (next) {
   this.updatedAt = Date.now();
+  next();
+});
+
+// Middleware to hash password before saving
+PropertySchema.pre("save", async function (next) {
+  // Only hash the password if it has been modified (or is new)
+  // Check if basicInfo.password is modified or if this is a new document
+  if (this.isNew || this.isModified("basicInfo.password") || this.isModified("basicInfo")) {
+    if (this.basicInfo && this.basicInfo.password && typeof this.basicInfo.password === 'string' && this.basicInfo.password.length > 0) {
+      // Only hash if password is not already hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
+      if (!this.basicInfo.password.startsWith('$2a$') && !this.basicInfo.password.startsWith('$2b$') && !this.basicInfo.password.startsWith('$2y$')) {
+        this.basicInfo.password = await bcryptjs.hash(this.basicInfo.password, 10);
+      }
+    }
+  }
   next();
 });
 
