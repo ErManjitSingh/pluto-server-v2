@@ -1,5 +1,5 @@
 import express from 'express';
-import { handleStep, getProperties, getRoomsById, getPropertyById, getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo, deletePackageMaker } from '../controllers/packagemaker.controller.js';
+import { handleStep, getProperties, getRoomsById, getPropertyById, getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo, deletePackageMaker, loginPackageMaker } from '../controllers/packagemaker.controller.js';
 
 const router = express.Router();
 router.use(express.json()); 
@@ -23,6 +23,9 @@ router.get('/get-all-packagemaker-basic-info', getAllBasicPropertyInfo);
 
 // Add new delete route
 router.delete('/delete-packagemaker/:id', deletePackageMaker);
+
+// Add login route
+router.post('/login-packagemaker', loginPackageMaker);
 
 export default router;
 
