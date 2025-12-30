@@ -1033,6 +1033,7 @@ export const getConvertedOperationsWithDetails = async (req, res, next) => {
         { $project: {
           id: 1,
           customerLeadId: 1,
+          operationAssignReportId: 1,
           userId: 1,
           converted: 1,
           conversionType: 1,
