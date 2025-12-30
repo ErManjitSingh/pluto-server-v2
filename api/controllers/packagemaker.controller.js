@@ -1,4 +1,6 @@
 import Property from "../models/packagemaker.model.js";
+import bcryptjs from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 
 function sanitizeInventoryData(data) {
@@ -315,6 +317,80 @@ export const deletePackageMaker = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Package deleted successfully"
+    });
+  } catch (error) {
+    // Handle errors and send error response
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const loginPackageMaker = async (req, res) => {
+  try {
+    const { mobile, password } = req.body;
+
+    // Validate input
+    if (!mobile || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Mobile number and password are required"
+      });
+    }
+
+    // Find property by mobile number
+    // Note: For nested fields, we need to fetch all fields and manually exclude password in response
+    const property = await Property.findOne({ "basicInfo.mobile": mobile });
+
+    // If property not found
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this mobile number"
+      });
+    }
+
+    // Check if password exists
+    if (!property.basicInfo.password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password not set for this account. Please set a password first."
+      });
+    }
+
+    // Verify password
+    const validPassword = bcryptjs.compareSync(password, property.basicInfo.password);
+    if (!validPassword) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password"
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        id: property._id,
+        mobile: property.basicInfo.mobile,
+        isPackageMaker: true 
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+
+    // Remove password from response
+    const propertyData = property.toObject();
+    delete propertyData.basicInfo.password;
+
+    // Return success response
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      data: {
+        property: propertyData,
+        token: token
+      }
     });
   } catch (error) {
     // Handle errors and send error response
