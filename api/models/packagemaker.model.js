@@ -75,8 +75,8 @@ const roomSchema = new mongoose.Schema({
 });
 
 const roomDataSchema = new mongoose.Schema({
-  step: { type: Number, required: true },
-  data: { type: [roomSchema], required: true }
+  step: { type: Number, required: false },
+  data: { type: [roomSchema], required: false, default: [] }
 });
 
 const photosAndVideosSchema = new mongoose.Schema({
