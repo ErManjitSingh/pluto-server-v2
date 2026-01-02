@@ -6,7 +6,8 @@ import {
   updateBooking,
   deleteBooking,
   deleteAllBookings,
-  updateResponseDetail
+  updateResponseDetail,
+  getBookingsWithSelectedFields
 } from '../controllers/cabbookingdata.controller.js';
 
 const router = express.Router();
@@ -14,6 +15,7 @@ const router = express.Router();
 router.post('/create', createBooking);
 router.get('/get', getBookings);
 router.get('/get/:id', getBookingById);
+router.get('/get-selected-fields', getBookingsWithSelectedFields);
 router.put('/update/:id', updateBooking);
 router.delete('/delete/:id', deleteBooking);
 router.delete('/delete-all', deleteAllBookings);
