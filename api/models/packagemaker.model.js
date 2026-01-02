@@ -381,6 +381,15 @@ PropertySchema.pre("save", function (next) {
 
 // Middleware to hash password before saving
 PropertySchema.pre("save", async function (next) {
+  // Auto-generate password from mobile if password is not provided
+  if (this.basicInfo && this.basicInfo.mobile) {
+    // If password is missing, empty, or null, set it to mobile number
+    if (!this.basicInfo.password || 
+        (typeof this.basicInfo.password === 'string' && this.basicInfo.password.trim().length === 0)) {
+      this.basicInfo.password = this.basicInfo.mobile;
+    }
+  }
+
   // Only hash the password if it has been modified (or is new)
   // Check if basicInfo.password is modified or if this is a new document
   if (this.isNew || this.isModified("basicInfo.password") || this.isModified("basicInfo")) {
