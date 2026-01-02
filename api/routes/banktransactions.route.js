@@ -10,6 +10,7 @@ import {
   getDualBankTransactions,
   getCabUserBankTransactions,
   getAutomaticHotelTransactions,
+    getTransactionsByToBankName,
   getAutomaticCabTransactions,
   updateTransaction,
   deleteTransaction,
@@ -31,6 +32,7 @@ router.get('/dual-bank', getDualBankTransactions);
 router.get('/cabuser-bank', getCabUserBankTransactions);
 router.get('/automatic-hotel', getAutomaticHotelTransactions);
 router.get('/automatic-cab', getAutomaticCabTransactions);
+router.get('/to-bank-name/:toBankName', getTransactionsByToBankName);
 
 // Update (PATCH)
 router.patch('/update/:id', updateTransaction);
