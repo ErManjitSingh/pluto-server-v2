@@ -180,3 +180,15 @@ export const updateResponseDetail = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+// Get bookings with selected fields only (bookingId, responseDetails, vehicleDetails)
+export const getBookingsWithSelectedFields = async (req, res) => {
+  try {
+    const bookings = await CabBooking.find(
+      {},
+      { bookingId: 1, responseDetails: 1, vehicleDetails: 1 }
+    );
+    res.status(200).json(bookings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
