@@ -61,7 +61,9 @@ export const handleStep = async (req, res) => {
         break;
 
       case 3:  // Rooms
-        updatedProperty = await updateOrCreateProperty(propertyId, { rooms: data });
+        // Ensure step is set to 3 for rooms data
+        const roomsData = { ...data, step: 3 };
+        updatedProperty = await updateOrCreateProperty(propertyId, { rooms: roomsData });
         break;
 
       case 4:  // Photos and Videos
