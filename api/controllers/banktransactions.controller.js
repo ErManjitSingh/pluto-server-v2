@@ -964,6 +964,34 @@ export const getAutomaticCabTransactions = async (req, res, next) => {
     next(error);
   }
 };
+// Get transactions by toBankName (accepted dual bank transactions only)
+export const getTransactionsByToBankName = async (req, res, next) => {
+  try {
+    const { toBankName } = req.params;
+    
+    if (!toBankName) {
+      return res.status(400).json({ success: false, message: 'toBankName parameter is required' });
+    }
+
+    const transactions = await BankTransaction.find({
+      toBankName: toBankName,
+      accept: true,
+      isDualBankTransaction: true
+    })
+      .sort({ createdAt: -1 })
+      .populate('bank')
+      .populate('toBank');
+    
+    return res.status(200).json({ 
+      success: true, 
+      data: transactions, 
+      count: transactions.length 
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteTransaction = async (req, res, next) => {
   try {
     const { id } = req.params;
