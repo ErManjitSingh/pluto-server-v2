@@ -91,10 +91,28 @@ export const handleStep = async (req, res) => {
 };
 
 export const updateOrCreateProperty = async (propertyId, updateData) => {
-
   if (propertyId) {
+    // For updates, we need to handle password generation manually since findByIdAndUpdate doesn't trigger pre-save hooks
+    if (updateData.basicInfo && updateData.basicInfo.mobile) {
+      // If password is not provided or empty, automatically set it to mobile number
+      if (!updateData.basicInfo.password || 
+          (typeof updateData.basicInfo.password === 'string' && updateData.basicInfo.password.trim().length === 0)) {
+        updateData.basicInfo.password = updateData.basicInfo.mobile;
+        // Hash the password
+        updateData.basicInfo.password = await bcryptjs.hash(updateData.basicInfo.password, 10);
+      } else {
+        // If password is explicitly provided, hash it if not already hashed
+        if (typeof updateData.basicInfo.password === 'string' && 
+            !updateData.basicInfo.password.startsWith('$2a$') && 
+            !updateData.basicInfo.password.startsWith('$2b$') && 
+            !updateData.basicInfo.password.startsWith('$2y$')) {
+          updateData.basicInfo.password = await bcryptjs.hash(updateData.basicInfo.password, 10);
+        }
+      }
+    }
     return await Property.findByIdAndUpdate(propertyId, { $set: updateData }, { new: true });
   } else {
+    // For new properties, pre-save middleware will handle password generation and hashing
     return await Property.create(updateData);
   }
 };
@@ -340,8 +358,9 @@ export const loginPackageMaker = async (req, res) => {
     }
 
     // Find property by mobile number
-    // Note: For nested fields, we need to fetch all fields and manually exclude password in response
-    const property = await Property.findOne({ "basicInfo.mobile": mobile });
+    // Note: We need to explicitly select password field since it's marked as select: false in schema
+    const property = await Property.findOne({ "basicInfo.mobile": mobile })
+      .select("+basicInfo.password");
 
     // If property not found
     if (!property) {
@@ -351,20 +370,34 @@ export const loginPackageMaker = async (req, res) => {
       });
     }
 
-    // Check if password exists
+    // Handle password verification and auto-generation for existing properties
+    let validPassword = false;
+    
+    // If password doesn't exist, create it from mobile number
     if (!property.basicInfo.password) {
-      return res.status(400).json({
-        success: false,
-        message: "Password not set for this account. Please set a password first."
-      });
+      // Auto-generate password from mobile if it doesn't exist (backward compatibility)
+      property.basicInfo.password = await bcryptjs.hash(property.basicInfo.mobile, 10);
+      await property.save();
+      // Since we just created it, check if provided password matches mobile
+      validPassword = (password === property.basicInfo.mobile);
+    } else {
+      // Verify password
+      validPassword = bcryptjs.compareSync(password, property.basicInfo.password);
+      
+      // If password doesn't match, check if the entered password is the mobile number
+      // This handles existing properties that might have different passwords
+      if (!validPassword && password === property.basicInfo.mobile) {
+        // Update password to mobile number for existing properties
+        property.basicInfo.password = await bcryptjs.hash(property.basicInfo.mobile, 10);
+        await property.save();
+        validPassword = true;
+      }
     }
 
-    // Verify password
-    const validPassword = bcryptjs.compareSync(password, property.basicInfo.password);
     if (!validPassword) {
       return res.status(401).json({
         success: false,
-        message: "Invalid password"
+        message: "Invalid password. Please use your mobile number as the password."
       });
     }
 
