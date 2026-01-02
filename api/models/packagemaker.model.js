@@ -146,7 +146,7 @@ const PropertySchema = new Schema({
     propertyDescription: { type: String, required: true},
     hotelStarRating: { type: String, required: true },
     propertyBuiltYear: { type: String, required: true },
-    propertyType: { type: String, required: true },
+    propertyType: { type: String, required: false },
     bookingSinceYear: { type: String, required: true },
     channelManager: { type: String, required: false },
     email: { type: String, required: true },
