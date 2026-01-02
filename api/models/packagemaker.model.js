@@ -61,17 +61,17 @@ const roomSchema = new mongoose.Schema({
   imageUrl: { type: String, default: ''},
   smokingAllowed: { type: String, default: '' },
   extraBed: { type: Boolean, default: false },
-  baseAdults: { type: Number, required: true },
-  maxAdults: { type: Number, required: true },
-  maxChildren: { type: Number, required: true },
-  maxOccupancy: { type: Number, required: true },
+  baseAdults: { type: Number, required: false },
+  maxAdults: { type: Number, required: false },
+  maxChildren: { type: Number, required: false },
+  maxOccupancy: { type: Number, required: false },
   startDate: { type: String, default: null },
   endDate: { type: String, default: null },
   baseRate: { type: String, default: '' },
   extraAdultCharge: { type: String, default: '' },
   childCharge: { type: String, default: '' },
-  roomsizeinnumber: { type: String, required: true },
-  selectedAmenities: { type: selectedAmenitiesSchema, required: true }
+  roomsizeinnumber: { type: String, required: false },
+  selectedAmenities: { type: selectedAmenitiesSchema, required: false }
 });
 
 const roomDataSchema = new mongoose.Schema({
@@ -81,7 +81,7 @@ const roomDataSchema = new mongoose.Schema({
 
 const photosAndVideosSchema = new mongoose.Schema({
   step: { type: Number, required: false },
-  images: [{ type: String, required: true }] // array of photo URLs
+  images: [{ type: String, required: false }] // array of photo URLs
 });
 
 // Updated Schema for rates
