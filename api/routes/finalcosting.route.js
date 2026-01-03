@@ -1,5 +1,5 @@
 import express from 'express';
-import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
@@ -21,6 +21,7 @@ router.put('/update-transfer/:id', updateTransfer);
 router.put('/update-transfer-detail/:id', updateTransferDetailAtIndex);
 router.get('/get-converted-details/:id', getConvertedOperationById);
 router.put('/update-hotel/:id', updateHotelAtIndex);
+router.put('/update-lead/:id', updateLeadData);
 router.put('/update-entire/:id', updateEntireOperation);
 router.delete('/delete/:id', deleteOperation);
 router.post('/send-email', sendOperationEmail);
