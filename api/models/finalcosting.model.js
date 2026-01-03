@@ -244,6 +244,10 @@ const operationSchema = new mongoose.Schema({
       type: String,
       default: null
     }
+  },
+  leadVerification: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   }
 }, { timestamps: true });
 
