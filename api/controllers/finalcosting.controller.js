@@ -253,6 +253,44 @@ export const updateHotelAtIndex = async (req, res, next) => {
   }
 };
 
+export const updateLeadData = async (req, res, next) => {
+  try {
+    const operationId = req.params.id;
+    const { leadVerification } = req.body;
+
+    // Validate input
+    if (!leadVerification || typeof leadVerification !== 'object') {
+      return res.status(400).json({ message: 'leadVerification is required and must be an object.' });
+    }
+
+    // First, get the current operation to check if it exists
+    const currentOperation = await Operation.findById(operationId);
+    if (!currentOperation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    // Merge existing leadVerification with new data to preserve other fields
+    const mergedVerification = {
+      ...(currentOperation.leadVerification || {}), // Keep existing verification status
+      ...leadVerification // Override with new verification data
+    };
+
+    // Use findByIdAndUpdate with $set to update only the leadVerification
+    const updatedOperation = await Operation.findByIdAndUpdate(
+      operationId,
+      { $set: { leadVerification: mergedVerification } },
+      { 
+        new: true,
+        runValidators: false // Disable validation to avoid acceptanceData issues
+      }
+    );
+    
+    res.status(200).json(updatedOperation);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateEntireOperation = async (req, res, next) => {
   try {
     // Disable validation and use $set for atomic updates - much faster
@@ -1032,8 +1070,8 @@ export const getConvertedOperationsWithDetails = async (req, res, next) => {
         { $limit: limit },
         { $project: {
           id: 1,
-          customerLeadId: 1,
           operationAssignReportId: 1,
+          customerLeadId: 1,
           userId: 1,
           converted: 1,
           conversionType: 1,
@@ -1418,7 +1456,6 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         { $project: {
           id: 1,
           customerLeadId: 1,
-          operationAssignReportId: 1,
           userId: 1,
           converted: 1,
           conversionType: 1,
@@ -1428,7 +1465,7 @@ export const getOperationByAssignReportId = async (req, res, next) => {
           marginPercentage: 1,
           discountPercentage: 1,
           'transfer.details': 1,
-          'transfer.selectedLead._id': 1,
+          leadVerification: 1,
           editdetail: 1,
           activities: 1,
           createdAt: 1,
@@ -1444,7 +1481,6 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         .select({
           id: 1,
           customerLeadId: 1,
-          operationAssignReportId: 1,
           userId: 1,
           converted: 1,
           conversionType: 1,
@@ -1454,7 +1490,7 @@ export const getOperationByAssignReportId = async (req, res, next) => {
           marginPercentage: 1,
           discountPercentage: 1,
           'transfer.details': 1,
-          'transfer.selectedLead._id': 1,
+          leadVerification: 1,
           editdetail: 1,
           activities: 1,
           createdAt: 1,
