@@ -253,44 +253,6 @@ export const updateHotelAtIndex = async (req, res, next) => {
   }
 };
 
-export const updateLeadData = async (req, res, next) => {
-  try {
-    const operationId = req.params.id;
-    const { leadVerification } = req.body;
-
-    // Validate input
-    if (!leadVerification || typeof leadVerification !== 'object') {
-      return res.status(400).json({ message: 'leadVerification is required and must be an object.' });
-    }
-
-    // First, get the current operation to check if it exists
-    const currentOperation = await Operation.findById(operationId);
-    if (!currentOperation) {
-      return res.status(404).json({ message: 'Operation not found' });
-    }
-
-    // Merge existing leadVerification with new data to preserve other fields
-    const mergedVerification = {
-      ...(currentOperation.leadVerification || {}), // Keep existing verification status
-      ...leadVerification // Override with new verification data
-    };
-
-    // Use findByIdAndUpdate with $set to update only the leadVerification
-    const updatedOperation = await Operation.findByIdAndUpdate(
-      operationId,
-      { $set: { leadVerification: mergedVerification } },
-      { 
-        new: true,
-        runValidators: false // Disable validation to avoid acceptanceData issues
-      }
-    );
-    
-    res.status(200).json(updatedOperation);
-  } catch (error) {
-    next(error);
-  }
-};
-
 export const updateEntireOperation = async (req, res, next) => {
   try {
     // Disable validation and use $set for atomic updates - much faster
@@ -1465,7 +1427,7 @@ export const getOperationByAssignReportId = async (req, res, next) => {
           marginPercentage: 1,
           discountPercentage: 1,
           'transfer.details': 1,
-          leadVerification: 1,
+          'transfer.selectedLead._id': 1,
           editdetail: 1,
           activities: 1,
           createdAt: 1,
@@ -1490,7 +1452,7 @@ export const getOperationByAssignReportId = async (req, res, next) => {
           marginPercentage: 1,
           discountPercentage: 1,
           'transfer.details': 1,
-          leadVerification: 1,
+          'transfer.selectedLead._id': 1,
           editdetail: 1,
           activities: 1,
           createdAt: 1,
@@ -1525,27 +1487,11 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         }));
       }
 
-      // Fetch lead data using customerLeadId
-      if (transformedOperation.customerLeadId) {
+      // Fetch lead data if transfer.selectedLead exists
+      if (transformedOperation.transfer && transformedOperation.transfer.selectedLead && transformedOperation.transfer.selectedLead._id) {
         try {
-          const leadData = await Lead.findById(transformedOperation.customerLeadId);
-          if (leadData) {
-            const leadDataObj = leadData.toObject ? leadData.toObject() : leadData;
-            const leadVerification = transformedOperation.leadVerification || {};
-            
-            // Add verified field to each property in leadData
-            const leadDataWithVerification = {};
-            for (const key in leadDataObj) {
-              leadDataWithVerification[key] = {
-                value: leadDataObj[key],
-                verified: leadVerification[key] !== undefined ? leadVerification[key] : false
-              };
-            }
-            
-            transformedOperation.leadata = leadDataWithVerification;
-          } else {
-            transformedOperation.leadata = null;
-          }
+          const leadData = await Lead.findById(transformedOperation.transfer.selectedLead._id);
+          transformedOperation.leadata = leadData;
         } catch (error) {
           console.error('Error fetching lead data:', error);
           transformedOperation.leadata = null;
@@ -1570,6 +1516,9 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         console.error('Error fetching cab booking data:', error);
         transformedOperation.cabBookingData = null;
       }
+
+      // Keep transfer.selectedLead and activities as they are
+      // (they're already included in the select statement)
 
       return transformedOperation;
     }));
