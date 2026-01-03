@@ -1525,11 +1525,27 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         }));
       }
 
-      // Fetch lead data if transfer.selectedLead exists
-      if (transformedOperation.transfer && transformedOperation.transfer.selectedLead && transformedOperation.transfer.selectedLead._id) {
+      // Fetch lead data using customerLeadId
+      if (transformedOperation.customerLeadId) {
         try {
-          const leadData = await Lead.findById(transformedOperation.transfer.selectedLead._id);
-          transformedOperation.leadata = leadData;
+          const leadData = await Lead.findById(transformedOperation.customerLeadId);
+          if (leadData) {
+            const leadDataObj = leadData.toObject ? leadData.toObject() : leadData;
+            const leadVerification = transformedOperation.leadVerification || {};
+            
+            // Add verified field to each property in leadData
+            const leadDataWithVerification = {};
+            for (const key in leadDataObj) {
+              leadDataWithVerification[key] = {
+                value: leadDataObj[key],
+                verified: leadVerification[key] !== undefined ? leadVerification[key] : false
+              };
+            }
+            
+            transformedOperation.leadata = leadDataWithVerification;
+          } else {
+            transformedOperation.leadata = null;
+          }
         } catch (error) {
           console.error('Error fetching lead data:', error);
           transformedOperation.leadata = null;
@@ -1554,9 +1570,6 @@ export const getOperationByAssignReportId = async (req, res, next) => {
         console.error('Error fetching cab booking data:', error);
         transformedOperation.cabBookingData = null;
       }
-
-      // Keep transfer.selectedLead and activities as they are
-      // (they're already included in the select statement)
 
       return transformedOperation;
     }));
