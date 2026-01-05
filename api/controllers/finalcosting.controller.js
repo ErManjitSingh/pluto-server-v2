@@ -1578,3 +1578,147 @@ export const getOperationByAssignReportId = async (req, res, next) => {
     next(error);
   }
 };
+export const getConvertedOperationsByCustomerLeadId = async (req, res, next) => {
+  try {
+    const { customerLeadId } = req.params;
+
+    // Validate customerLeadId is provided
+    if (!customerLeadId) {
+      return res.status(400).json({ message: 'customerLeadId is required' });
+    }
+
+    // Find operations where converted is true and customerLeadId matches
+    const query = { 
+      converted: true, 
+      customerLeadId: customerLeadId 
+    };
+
+    // Get operations with only required fields
+    const operations = await Operation.find(query)
+      .select({
+        total: 1,
+        finalTotal: 1,
+        discountPercentage: 1,
+        marginPercentage: 1,
+        customerLeadId: 1
+      })
+      .lean()
+      .maxTimeMS(70000);
+
+    // Transform operations to include calculated discount and margin
+    const transformedOperations = operations.map(operation => {
+      const total = operation.total || 0;
+      const discountPercentage = operation.discountPercentage || 0;
+      const marginPercentage = operation.marginPercentage || 0;
+
+      // Calculate discount and margin from percentages
+      const discount = (total * discountPercentage) / 100;
+      const margin = (total * marginPercentage) / 100;
+
+      return {
+        total: operation.total,
+        finalTotal: operation.finalTotal,
+        discountPercentage: operation.discountPercentage,
+        discount: discount,
+        customerLeadId: operation.customerLeadId,
+        marginPercentage: operation.marginPercentage,
+        margin: margin
+      };
+    });
+
+    res.status(200).json({
+      operations: transformedOperations,
+      count: transformedOperations.length
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateConvertedOperationByCustomerLeadId = async (req, res, next) => {
+  try {
+    const { customerLeadId } = req.params;
+    const { total, finalTotal, discountPercentage, marginPercentage } = req.body;
+
+    // Validate customerLeadId is provided
+    if (!customerLeadId) {
+      return res.status(400).json({ message: 'customerLeadId is required' });
+    }
+
+    // Build update object with only allowed fields
+    const updateObject = {};
+    if (total !== undefined) updateObject.total = total;
+    if (finalTotal !== undefined) updateObject.finalTotal = finalTotal;
+    if (discountPercentage !== undefined) updateObject.discountPercentage = discountPercentage;
+    if (marginPercentage !== undefined) updateObject.marginPercentage = marginPercentage;
+
+    // Validate that at least one field is being updated
+    if (Object.keys(updateObject).length === 0) {
+      return res.status(400).json({ message: 'At least one field (total, finalTotal, discountPercentage, marginPercentage) must be provided for update' });
+    }
+
+    // Update all operations matching the criteria (converted: true and customerLeadId)
+    const result = await Operation.updateMany(
+      { 
+        converted: true, 
+        customerLeadId: customerLeadId 
+      },
+      { 
+        $set: updateObject 
+      },
+      { 
+        maxTimeMS: 70000 
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ message: 'No converted operations found for the provided customerLeadId' });
+    }
+
+    // Fetch updated operations to return
+    const updatedOperations = await Operation.find({
+      converted: true,
+      customerLeadId: customerLeadId
+    })
+      .select({
+        total: 1,
+        finalTotal: 1,
+        discountPercentage: 1,
+        marginPercentage: 1,
+        customerLeadId: 1
+      })
+      .lean()
+      .maxTimeMS(70000);
+
+    // Transform operations to include calculated discount and margin
+    const transformedOperations = updatedOperations.map(operation => {
+      const total = operation.total || 0;
+      const discountPercentage = operation.discountPercentage || 0;
+      const marginPercentage = operation.marginPercentage || 0;
+
+      // Calculate discount and margin from percentages
+      const discount = (total * discountPercentage) / 100;
+      const margin = (total * marginPercentage) / 100;
+
+      return {
+        total: operation.total,
+        finalTotal: operation.finalTotal,
+        discountPercentage: operation.discountPercentage,
+        discount: discount,
+        customerLeadId: operation.customerLeadId,
+        marginPercentage: operation.marginPercentage,
+        margin: margin
+      };
+    });
+
+    res.status(200).json({
+      message: 'Operations updated successfully',
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+      operations: transformedOperations
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
