@@ -4,14 +4,15 @@ import {
   getTransactions,
   getTransactionById,
   getTransactionsByLeadId,
+  getAllTransactionsByLeadId,
   getTransactionByOperationId,
   getPendingOperationByOperationId,
   getPendingTransactions,
   getDualBankTransactions,
   getCabUserBankTransactions,
   getAutomaticHotelTransactions,
-    getTransactionsByToBankName,
   getAutomaticCabTransactions,
+  getTransactionsByToBankName,
   updateTransaction,
   deleteTransaction,
 } from '../controllers/banktransactions.controller.js';
@@ -24,6 +25,7 @@ router.post('/create', createTransaction);
 // Read
 router.get('/get', getTransactions);
 router.get('/get/:id', getTransactionById);
+router.get('/alllead/:leadId', getAllTransactionsByLeadId);
 router.get('/lead/:leadId', getTransactionsByLeadId);
 router.get('/operation/:operationId', getTransactionByOperationId);
 router.get('/pendingoperation/:operationId', getPendingOperationByOperationId);
