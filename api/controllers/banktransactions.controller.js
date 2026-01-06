@@ -577,6 +577,27 @@ export const getTransactionsByLeadId = async (req, res, next) => {
   }
 };
 
+// Get ALL transactions by leadId (pending, rejected, accepted, dual, hotel, cab, etc.)
+export const getAllTransactionsByLeadId = async (req, res, next) => {
+  try {
+    const { leadId } = req.params;
+    
+    // Get all transactions for this lead without any filters
+    const transactions = await BankTransaction.find({ leadId })
+      .sort({ createdAt: -1 })
+      .populate('bank')
+      .populate('toBank');
+    
+    return res.status(200).json({ 
+      success: true, 
+      data: transactions,
+      count: transactions.length 
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get pending transactions (for account team review)
 // These are transactions without bank details or not accepted yet
 // Excludes automatic hotel and cab transactions
