@@ -1722,3 +1722,111 @@ export const updateConvertedOperationByCustomerLeadId = async (req, res, next) =
   }
 };
 
+export const getOperationSpecificFields = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid operation ID format' });
+    }
+    
+    // Find operation by MongoDB _id and select only the required fields
+    const operation = await Operation.findById(id)
+      .select({
+        editdetail: 1,
+        discountPercentage: 1,
+        marginPercentage: 1,
+        finalTotal: 1,
+        totals: 1,
+        'transfer.editprice': 1
+      })
+      .lean()
+      .maxTimeMS(70000);
+    
+    if (!operation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+    
+    res.status(200).json(operation);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateOperationSpecificFields = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { editdetail, discountPercentage, marginPercentage, finalTotal, totals, editprice } = req.body;
+
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid operation ID format' });
+    }
+
+    // Check if operation exists
+    const operation = await Operation.findById(id);
+    if (!operation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    // Build update object with only allowed fields
+    const updateObject = {};
+    if (editdetail !== undefined) updateObject.editdetail = editdetail;
+    if (discountPercentage !== undefined) updateObject.discountPercentage = discountPercentage;
+    if (marginPercentage !== undefined) updateObject.marginPercentage = marginPercentage;
+    if (finalTotal !== undefined) updateObject.finalTotal = finalTotal;
+    if (totals !== undefined) updateObject.totals = totals;
+    if (editprice !== undefined) updateObject['transfer.editprice'] = editprice;
+
+    // Validate that at least one field is being updated
+    if (Object.keys(updateObject).length === 0) {
+      return res.status(400).json({ message: 'At least one field (editdetail, discountPercentage, marginPercentage, finalTotal, totals, editprice) must be provided for update' });
+    }
+
+    // Convert dot notation for transfer.editprice to proper update structure
+    const updateQuery = {};
+    Object.keys(updateObject).forEach(key => {
+      if (key === 'transfer.editprice') {
+        updateQuery['transfer.editprice'] = updateObject[key];
+      } else {
+        updateQuery[key] = updateObject[key];
+      }
+    });
+
+    // Update the operation
+    const updatedOperation = await Operation.findByIdAndUpdate(
+      id,
+      { $set: updateQuery },
+      { 
+        new: true,
+        runValidators: false,
+        maxTimeMS: 70000
+      }
+    );
+    
+    if (!updatedOperation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    // Return only the updated fields
+    const response = {
+      editdetail: updatedOperation.editdetail,
+      discountPercentage: updatedOperation.discountPercentage,
+      marginPercentage: updatedOperation.marginPercentage,
+      finalTotal: updatedOperation.finalTotal,
+      totals: updatedOperation.totals,
+      transfer: {
+        editprice: updatedOperation.transfer?.editprice
+      }
+    };
+    
+    res.status(200).json({
+      message: 'Operation updated successfully',
+      operation: response
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
