@@ -1074,24 +1074,26 @@ export const getConvertedOperationById = async (req, res, next) => {
     // Transform the data to include only required fields and fetch lead data
     const transformedOperation = operation.toObject();
     
-    // Transform hotels to include only day, cityName, and propertyName
+    // Transform hotels to include only day, cityName, propertyName, verified, and remark
     if (transformedOperation.hotels && Array.isArray(transformedOperation.hotels)) {
       transformedOperation.hotels = transformedOperation.hotels.map(hotel => ({
         day: hotel.day,
         cityName: hotel.cityName,
         propertyName: hotel.propertyName,
-        verified: hotel?.verified || false
+        verified: hotel?.verified,
+        remark: hotel?.remark || null
       }));
     }
 
-    // Transform transfer.details to include only cabName, cabType, and day
+    // Transform transfer.details to include only cabName, cabType, day, verified, and remark
     if (transformedOperation.transfer && transformedOperation.transfer.details && Array.isArray(transformedOperation.transfer.details)) {
       transformedOperation.transfer.details = transformedOperation.transfer.details.map(detail => ({
         cabName: detail.cabName,
         cabType: detail.cabType,
         day: detail.day,
         id: detail._id,
-        verified: detail?.verified || false
+        verified: detail?.verified,
+        remark: detail?.remark || null
       }));
     }
 
@@ -1186,24 +1188,26 @@ export const getConvertedOperationsWithDetails = async (req, res, next) => {
     // Transform the data to include only required fields and fetch lead data
     const transformedOperations = await Promise.all(operations.map(async (operation) => {
       const transformedOperation = operation; // Already a plain object from aggregation
-      // Transform hotels to include only day, cityName, and propertyName
+      // Transform hotels to include only day, cityName, propertyName, verified, and remark
       if (transformedOperation.hotels && Array.isArray(transformedOperation.hotels)) {
         transformedOperation.hotels = transformedOperation.hotels.map(hotel => ({
           day: hotel.day,
           cityName: hotel.cityName,
           propertyName: hotel.propertyName,
-          verified: hotel?.verified || false
+          verified: hotel?.verified,
+          remark: hotel?.remark || null
         }));
       }
 
-      // Transform transfer.details to include only cabName, cabType, and day
+      // Transform transfer.details to include only cabName, cabType, day, verified, and remark
       if (transformedOperation.transfer && transformedOperation.transfer.details && Array.isArray(transformedOperation.transfer.details)) {
         transformedOperation.transfer.details = transformedOperation.transfer.details.map(detail => ({
           cabName: detail.cabName,
           cabType: detail.cabType,
           day: detail.day,
           id: detail._id,
-          verified: detail?.verified || false
+          verified: detail?.verified,
+          remark: detail?.remark || null
         }));
       }
 
@@ -1574,24 +1578,26 @@ export const getOperationByAssignReportId = async (req, res, next) => {
     // Transform the data to include only required fields and fetch lead data
     const transformedOperations = await Promise.all(operations.map(async (operation) => {
       const transformedOperation = operation; // Already a plain object from aggregation
-      // Transform hotels to include only day, cityName, and propertyName
+      // Transform hotels to include only day, cityName, propertyName, verified, and remark
       if (transformedOperation.hotels && Array.isArray(transformedOperation.hotels)) {
         transformedOperation.hotels = transformedOperation.hotels.map(hotel => ({
           day: hotel.day,
           cityName: hotel.cityName,
           propertyName: hotel.propertyName,
-          verified: hotel?.verified || false
+          verified: hotel?.verified,
+          remark: hotel?.remark || null
         }));
       }
 
-      // Transform transfer.details to include only cabName, cabType, and day
+      // Transform transfer.details to include only cabName, cabType, day, verified, and remark
       if (transformedOperation.transfer && transformedOperation.transfer.details && Array.isArray(transformedOperation.transfer.details)) {
         transformedOperation.transfer.details = transformedOperation.transfer.details.map(detail => ({
           cabName: detail.cabName,
           cabType: detail.cabType,
           day: detail.day,
           id: detail._id,
-          verified: detail?.verified || false
+          verified: detail?.verified,
+          remark: detail?.remark || null
         }));
       }
 
