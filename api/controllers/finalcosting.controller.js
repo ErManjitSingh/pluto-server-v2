@@ -3,6 +3,55 @@ import Lead from '../models/lead.model.js';
 import CabBooking from '../models/cabbookingdata.model.js';
 import nodemailer from 'nodemailer';
 import mongoose from 'mongoose';
+import { recalculateLeadRemainingAmount } from './banktransactions.controller.js';
+
+// Helper function to find lead by identifier (supports both ObjectId and leadId)
+async function findLeadByIdentifier(leadIdentifier) {
+  if (!leadIdentifier) return null;
+  if (mongoose.Types.ObjectId.isValid(leadIdentifier)) {
+    const byObjectId = await Lead.findById(leadIdentifier);
+    if (byObjectId) return byObjectId;
+  }
+  return Lead.findOne({ leadId: String(leadIdentifier) });
+}
+
+// Helper function to update lead's totalAmount by summing all finalTotals from converted operations
+async function updateLeadTotalAmountFromOperations(customerLeadId) {
+  try {
+    if (!customerLeadId) return null;
+
+    // Find all converted operations for this customerLeadId
+    const convertedOperations = await Operation.find({
+      customerLeadId: customerLeadId,
+      converted: true
+    }).select({ finalTotal: 1 }).lean();
+
+    // Sum all finalTotals
+    const totalAmount = convertedOperations.reduce((sum, op) => {
+      return sum + (Number(op.finalTotal) || 0);
+    }, 0);
+
+    // Find and update the lead
+    const lead = await findLeadByIdentifier(customerLeadId);
+    if (lead) {
+      lead.totalAmount = totalAmount;
+      await lead.save();
+      
+      // Recalculate remainingAmount after updating totalAmount
+      try {
+        await recalculateLeadRemainingAmount(lead._id.toString());
+      } catch (error) {
+        console.error('Error recalculating remaining amount:', error);
+      }
+      
+      return lead;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error updating lead totalAmount from operations:', error);
+    return null;
+  }
+}
 
 export const createOperation = async (req, res, next) => {
   try {
@@ -293,6 +342,9 @@ export const updateLeadData = async (req, res, next) => {
 
 export const updateEntireOperation = async (req, res, next) => {
   try {
+    // Get the operation before update to check if finalTotal or converted changed
+    const oldOperation = await Operation.findById(req.params.id);
+    
     // Disable validation and use $set for atomic updates - much faster
     const updatedOperation = await Operation.findByIdAndUpdate(
       req.params.id,
@@ -307,6 +359,20 @@ export const updateEntireOperation = async (req, res, next) => {
     
     if (!updatedOperation) {
       return res.status(404).json({ message: 'Operation not found' });
+    }
+    
+    // If finalTotal or converted status changed, and operation is now converted, update lead's totalAmount
+    const finalTotalChanged = oldOperation && (req.body.finalTotal !== undefined && req.body.finalTotal !== oldOperation.finalTotal);
+    const convertedChanged = oldOperation && (req.body.converted !== undefined && req.body.converted !== oldOperation.converted);
+    const isNowConverted = updatedOperation.converted === true;
+    
+    if ((finalTotalChanged || convertedChanged) && isNowConverted && updatedOperation.customerLeadId) {
+      try {
+        await updateLeadTotalAmountFromOperations(updatedOperation.customerLeadId);
+      } catch (error) {
+        console.error('Error updating lead totalAmount:', error);
+        // Continue even if lead update fails
+      }
     }
     
     res.status(200).json(updatedOperation);
@@ -1675,6 +1741,16 @@ export const updateConvertedOperationByCustomerLeadId = async (req, res, next) =
       return res.status(404).json({ message: 'No converted operations found for the provided customerLeadId' });
     }
 
+    // If finalTotal was updated, update lead's totalAmount
+    if (finalTotal !== undefined) {
+      try {
+        await updateLeadTotalAmountFromOperations(customerLeadId);
+      } catch (error) {
+        console.error('Error updating lead totalAmount:', error);
+        // Continue even if lead update fails
+      }
+    }
+
     // Fetch updated operations to return
     const updatedOperations = await Operation.find({
       converted: true,
@@ -1807,6 +1883,16 @@ export const updateOperationSpecificFields = async (req, res, next) => {
     
     if (!updatedOperation) {
       return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    // If finalTotal was updated and operation is converted, update lead's totalAmount
+    if (finalTotal !== undefined && updatedOperation.converted === true && updatedOperation.customerLeadId) {
+      try {
+        await updateLeadTotalAmountFromOperations(updatedOperation.customerLeadId);
+      } catch (error) {
+        console.error('Error updating lead totalAmount:', error);
+        // Continue even if lead update fails
+      }
     }
 
     // Return only the updated fields
