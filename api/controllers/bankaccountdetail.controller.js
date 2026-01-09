@@ -734,12 +734,15 @@ export const autoCreateBanksFromProperties = async (req, res, next) => {
 };
 
 // Auto create bank accounts for all cab users
+// Auto create bank accounts for all cab users
 export const autoCreateBanksFromCabUsers = async (req, res, next) => {
   try {
-    // Get all cab users
+    // Get all cab users with name, mobile, and email
     const cabUsers = await CabUser.find({}, { 
       _id: 1, 
-      name: 1 
+      name: 1,
+      mobile: 1,
+      email: 1
     });
     
     if (cabUsers.length === 0) {
@@ -755,11 +758,15 @@ export const autoCreateBanksFromCabUsers = async (req, res, next) => {
     
     for (const cabUser of cabUsers) {
       const userName = cabUser.name;
+      const userMobile = cabUser.mobile;
+      const userEmail = cabUser.email;
       
       if (!userName) {
         results.push({
           cabUserId: cabUser._id,
           userName: 'No user name found',
+          mobile: userMobile || null,
+          email: userEmail || null,
           status: 'skipped',
           message: 'User name not found'
         });
@@ -773,6 +780,8 @@ export const autoCreateBanksFromCabUsers = async (req, res, next) => {
         results.push({
           cabUserId: cabUser._id,
           userName: userName,
+          mobile: userMobile || null,
+          email: userEmail || null,
           status: 'already_exists',
           message: 'Bank account already exists',
           bankId: existingBank._id
@@ -796,6 +805,8 @@ export const autoCreateBanksFromCabUsers = async (req, res, next) => {
         results.push({
           cabUserId: cabUser._id,
           userName: userName,
+          mobile: userMobile || null,
+          email: userEmail || null,
           status: 'created',
           message: 'Bank account created successfully',
           bankId: savedBank._id,
@@ -807,6 +818,8 @@ export const autoCreateBanksFromCabUsers = async (req, res, next) => {
         results.push({
           cabUserId: cabUser._id,
           userName: userName,
+          mobile: userMobile || null,
+          email: userEmail || null,
           status: 'error',
           message: error.message
         });
