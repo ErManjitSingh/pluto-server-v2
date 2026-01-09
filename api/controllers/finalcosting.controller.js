@@ -1,6 +1,7 @@
 import Operation from '../models/finalcosting.model.js';
 import Lead from '../models/lead.model.js';
 import CabBooking from '../models/cabbookingdata.model.js';
+import Property from '../models/packagemaker.model.js';
 import nodemailer from 'nodemailer';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount } from './banktransactions.controller.js';
@@ -50,6 +51,170 @@ async function updateLeadTotalAmountFromOperations(customerLeadId) {
   } catch (error) {
     console.error('Error updating lead totalAmount from operations:', error);
     return null;
+  }
+}
+
+// Helper function to normalize property name for matching (case-insensitive, trimmed)
+function normalizePropertyName(name) {
+  if (!name || typeof name !== 'string') return '';
+  return name.trim().toLowerCase();
+}
+
+// Helper function to update numberOfNightsBooked in packagemaker from converted operations
+async function updatePropertyNightsBooked() {
+  try {
+    // Find all converted operations
+    const convertedOperations = await Operation.find({
+      converted: true
+    }).select({ hotels: 1 }).lean();
+
+    // Count nights booked per property (normalized names)
+    const propertyCounts = {}; // key: normalized name, value: count
+    const propertyNameMap = {}; // key: normalized name, value: original name (for reference)
+    
+    // Iterate through all converted operations
+    convertedOperations.forEach(operation => {
+      if (operation.hotels && Array.isArray(operation.hotels)) {
+        // Count each hotel occurrence (each hotel in the array = 1 night)
+        operation.hotels.forEach(hotel => {
+          if (hotel && hotel.propertyName) {
+            const originalName = hotel.propertyName.trim();
+            const normalizedName = normalizePropertyName(originalName);
+            
+            if (normalizedName) {
+              // Store original name for reference
+              if (!propertyNameMap[normalizedName]) {
+                propertyNameMap[normalizedName] = originalName;
+              }
+              // Increment count for this property
+              propertyCounts[normalizedName] = (propertyCounts[normalizedName] || 0) + 1;
+            }
+          }
+        });
+      }
+    });
+
+    // Get all properties from packagemaker
+    const allProperties = await Property.find({}).select({ 
+      'basicInfo.propertyName': 1, 
+      numberOfNightsBooked: 1 
+    }).lean();
+
+    // Create a map of normalized property names to Property documents
+    const propertyMap = {};
+    allProperties.forEach(prop => {
+      if (prop.basicInfo && prop.basicInfo.propertyName) {
+        const normalizedName = normalizePropertyName(prop.basicInfo.propertyName);
+        if (normalizedName) {
+          if (!propertyMap[normalizedName]) {
+            propertyMap[normalizedName] = [];
+          }
+          propertyMap[normalizedName].push(prop);
+        }
+      }
+    });
+
+    // Update each property in packagemaker with its count
+    const updatePromises = Object.keys(propertyCounts).map(async (normalizedName) => {
+      try {
+        const properties = propertyMap[normalizedName];
+        const count = propertyCounts[normalizedName];
+        const originalName = propertyNameMap[normalizedName];
+
+        if (properties && properties.length > 0) {
+          // Update all matching properties (in case of duplicates)
+          const updateResults = await Promise.all(properties.map(async (property) => {
+            try {
+              const propDoc = await Property.findById(property._id);
+              if (propDoc) {
+                propDoc.numberOfNightsBooked = count;
+                await propDoc.save();
+                return { _id: property._id.toString(), updated: true };
+              }
+              return { _id: property._id.toString(), updated: false };
+            } catch (error) {
+              console.error(`Error updating property ${property._id}:`, error);
+              return { _id: property._id.toString(), updated: false, error: error.message };
+            }
+          }));
+
+          return { 
+            propertyName: originalName, 
+            normalizedName: normalizedName,
+            count: count, 
+            updated: true,
+            updatedProperties: updateResults
+          };
+        } else {
+          console.warn(`Property not found: ${originalName || normalizedName}`);
+          return { 
+            propertyName: originalName || normalizedName, 
+            normalizedName: normalizedName,
+            count: count, 
+            updated: false 
+          };
+        }
+      } catch (error) {
+        console.error(`Error updating property ${normalizedName}:`, error);
+        return { 
+          propertyName: propertyNameMap[normalizedName] || normalizedName, 
+          normalizedName: normalizedName,
+          count: propertyCounts[normalizedName], 
+          updated: false, 
+          error: error.message 
+        };
+      }
+    });
+
+    const results = await Promise.all(updatePromises);
+    
+    // Reset count to 0 for properties not found in any converted operations
+    const propertiesWithBookings = new Set(Object.keys(propertyCounts));
+    
+    const resetPromises = allProperties
+      .filter(prop => prop.basicInfo && prop.basicInfo.propertyName)
+      .filter(prop => {
+        const normalizedName = normalizePropertyName(prop.basicInfo.propertyName);
+        return normalizedName && !propertiesWithBookings.has(normalizedName);
+      })
+      .map(async (property) => {
+        try {
+          const propDoc = await Property.findById(property._id);
+          if (propDoc && propDoc.numberOfNightsBooked !== 0) {
+            propDoc.numberOfNightsBooked = 0;
+            await propDoc.save();
+            return { 
+              propertyName: property.basicInfo.propertyName, 
+              reset: true 
+            };
+          }
+          return { 
+            propertyName: property.basicInfo.propertyName, 
+            reset: false 
+          };
+        } catch (error) {
+          console.error(`Error resetting property ${property.basicInfo.propertyName}:`, error);
+          return { 
+            propertyName: property.basicInfo.propertyName, 
+            reset: false, 
+            error: error.message 
+          };
+        }
+      });
+
+    const resetResults = await Promise.all(resetPromises);
+
+    return {
+      updated: results.filter(r => r.updated).length,
+      reset: resetResults.filter(r => r.reset).length,
+      totalPropertiesWithBookings: Object.keys(propertyCounts).length,
+      totalNightsBooked: Object.values(propertyCounts).reduce((sum, count) => sum + count, 0),
+      results: results,
+      resetResults: resetResults
+    };
+  } catch (error) {
+    console.error('Error updating property nights booked:', error);
+    throw error;
   }
 }
 
@@ -372,6 +537,16 @@ export const updateEntireOperation = async (req, res, next) => {
       } catch (error) {
         console.error('Error updating lead totalAmount:', error);
         // Continue even if lead update fails
+      }
+    }
+    
+    // Update property nights booked when operation is converted
+    if (convertedChanged && isNowConverted) {
+      try {
+        await updatePropertyNightsBooked();
+      } catch (error) {
+        console.error('Error updating property nights booked:', error);
+        // Continue even if property update fails
       }
     }
     
@@ -1919,6 +2094,20 @@ export const updateOperationSpecificFields = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// Initialize property nights booked from all existing converted operations
+// This function runs automatically on server start to process existing converted operations
+export const initializePropertyNightsBooked = async () => {
+  try {
+    console.log('🔄 Initializing property nights booked from existing converted operations...');
+    const result = await updatePropertyNightsBooked();
+    console.log(`✅ Property nights booked initialized: ${result.updated} properties updated, ${result.totalNightsBooked} total nights booked`);
+    return result;
+  } catch (error) {
+    console.error('❌ Error initializing property nights booked:', error);
+    throw error;
   }
 };
 
