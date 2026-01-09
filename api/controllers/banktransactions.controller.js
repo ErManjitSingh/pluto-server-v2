@@ -1012,7 +1012,41 @@ export const getTransactionsByToBankName = async (req, res, next) => {
     next(error);
   }
 };
+// Get automatic payment transactions by toBankName (hotel or cab automatic transactions)
+export const getAutomaticPaymentByToBankName = async (req, res, next) => {
+  try {
+    const { toBankName } = req.params;
+    const { accept, paymentMode } = req.query;
+    
+    if (!toBankName) {
+      return res.status(400).json({ success: false, message: 'toBankName parameter is required' });
+    }
 
+    const filter = {
+      toBankName: toBankName,
+      $or: [
+        { automatichoteltransaction: true },
+        { automaticcabtransaction: true }
+      ]
+    };
+    
+    if (accept !== undefined) filter.accept = accept === 'true' || accept === true;
+    if (paymentMode) filter.paymentMode = paymentMode;
+
+    const transactions = await BankTransaction.find(filter)
+      .sort({ createdAt: -1 })
+      .populate('bank')
+      .populate('toBank');
+    
+    return res.status(200).json({ 
+      success: true, 
+      data: transactions, 
+      count: transactions.length 
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 export const deleteTransaction = async (req, res, next) => {
   try {
     const { id } = req.params;
