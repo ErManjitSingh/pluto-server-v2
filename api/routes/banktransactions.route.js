@@ -13,6 +13,7 @@ import {
   getAutomaticHotelTransactions,
   getAutomaticCabTransactions,
   getTransactionsByToBankName,
+  getAutomaticPaymentByToBankName,
   updateTransaction,
   deleteTransaction,
 } from '../controllers/banktransactions.controller.js';
@@ -34,6 +35,7 @@ router.get('/dual-bank', getDualBankTransactions);
 router.get('/cabuser-bank', getCabUserBankTransactions);
 router.get('/automatic-hotel', getAutomaticHotelTransactions);
 router.get('/automatic-cab', getAutomaticCabTransactions);
+router.get('/automatic-payment/:toBankName', getAutomaticPaymentByToBankName);
 router.get('/to-bank-name/:toBankName', getTransactionsByToBankName);
 
 // Update (PATCH)
