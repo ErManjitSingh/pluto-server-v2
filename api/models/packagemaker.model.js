@@ -368,6 +368,12 @@ const PropertySchema = new Schema({
   // Inventory & Rates
   inventory: InventorySchema,
 
+  // Number of nights booked (automatically calculated from converted operations)
+  numberOfNightsBooked: {
+    type: Number,
+    default: 0
+  },
+
   // Meta Information
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
