@@ -220,7 +220,7 @@ export const getHotelsByCityName = async (req, res) => {
     // Updated query to include inventory in the projection
     const hotels = await Property.find(
       { "location.city": cityName },
-      { basicInfo: 1, photosAndVideos: 1, rooms: 1, inventory: 1 } // Added inventory to the projection
+      { basicInfo: 1, photosAndVideos: 1, rooms: 1, inventory: 1, numberOfNightsBooked: 1 } // Added inventory to the projection
     );
 
     // Check if any hotels were found
@@ -254,7 +254,8 @@ export const getBasicPropertyInfo = async (req, res) => {
     const property = await Property.findById(propertyId, {
       basicInfo: 1,
       location: 1,
-      photosAndVideos: 1
+      photosAndVideos: 1,
+      numberOfNightsBooked: 1
     });
 
     // If property not found, return an error response
