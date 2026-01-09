@@ -1015,28 +1015,50 @@ export const getTransactionsByToBankName = async (req, res, next) => {
 // Get automatic payment transactions by toBankName (hotel or cab automatic transactions)
 export const getAutomaticPaymentByToBankName = async (req, res, next) => {
   try {
-    const { toBankName } = req.params;
+    let { toBankName } = req.params;
     const { accept, paymentMode } = req.query;
     
     if (!toBankName) {
       return res.status(400).json({ success: false, message: 'toBankName parameter is required' });
     }
 
-    const filter = {
-      toBankName: toBankName,
+    // Decode URL-encoded parameter (handles spaces like "Mayflower%20Hotel" -> "Mayflower Hotel")
+    toBankName = decodeURIComponent(toBankName);
+
+    // First, try to find by toBankName field directly (case-insensitive)
+    let transactions = await BankTransaction.find({
+      toBankName: { $regex: new RegExp(`^${toBankName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
       $or: [
         { automatichoteltransaction: true },
         { automaticcabtransaction: true }
-      ]
-    };
-    
-    if (accept !== undefined) filter.accept = accept === 'true' || accept === true;
-    if (paymentMode) filter.paymentMode = paymentMode;
-
-    const transactions = await BankTransaction.find(filter)
+      ],
+      ...(accept !== undefined ? { accept: accept === 'true' || accept === true } : {}),
+      ...(paymentMode ? { paymentMode: paymentMode } : {})
+    })
       .sort({ createdAt: -1 })
       .populate('bank')
       .populate('toBank');
+
+    // If no results found by toBankName field, try matching against populated toBank.bankName
+    if (transactions.length === 0) {
+      const allAutomaticTransactions = await BankTransaction.find({
+        $or: [
+          { automatichoteltransaction: true },
+          { automaticcabtransaction: true }
+        ],
+        ...(accept !== undefined ? { accept: accept === 'true' || accept === true } : {}),
+        ...(paymentMode ? { paymentMode: paymentMode } : {})
+      })
+        .sort({ createdAt: -1 })
+        .populate('bank')
+        .populate('toBank');
+      
+      // Filter by matching toBank.bankName (case-insensitive)
+      transactions = allAutomaticTransactions.filter(tx => {
+        const bankName = tx.toBank?.bankName || '';
+        return bankName.toLowerCase() === toBankName.toLowerCase();
+      });
+    }
     
     return res.status(200).json({ 
       success: true, 
