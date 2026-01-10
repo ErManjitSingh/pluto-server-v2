@@ -1,4 +1,5 @@
 import Margin from '../models/margin.model.js';
+import GlobalToggle from '../models/globaltoggle.model.js';
 
 export const createMargin = async (req, res) => {
     try {
@@ -223,6 +224,151 @@ export const deleteEditDiscount = async (req, res) => {
             status: 'success',
             message: 'EditDiscount deleted successfully',
             data: updatedMargin
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+export const updateGlobalMargin = async (req, res) => {
+    try {
+        const { firstQuoteMargins, minimumQuoteMargins } = req.body;
+
+        // Validate that at least one field is provided
+        if (!firstQuoteMargins && !minimumQuoteMargins) {
+            return res.status(400).json({ 
+                message: 'At least one of firstQuoteMargins or minimumQuoteMargins is required' 
+            });
+        }
+
+        // Build update object dynamically
+        const updateObj = {};
+        if (firstQuoteMargins) {
+            updateObj.firstQuoteMargins = firstQuoteMargins;
+        }
+        if (minimumQuoteMargins) {
+            // If editDiscount is explicitly provided, replace entire minimumQuoteMargins object
+            // Otherwise, update only the margin fields to preserve existing editDiscount arrays
+            if ('editDiscount' in minimumQuoteMargins) {
+                // Replace entire minimumQuoteMargins object including editDiscount
+                updateObj.minimumQuoteMargins = minimumQuoteMargins;
+            } else {
+                // Update only the margin fields, preserving editDiscount per state
+                const marginFields = ['lessThan1Lakh', 'between1To2Lakh', 'between2To3Lakh', 'moreThan3Lakh'];
+                marginFields.forEach(field => {
+                    if (minimumQuoteMargins[field] !== undefined) {
+                        updateObj[`minimumQuoteMargins.${field}`] = minimumQuoteMargins[field];
+                    }
+                });
+            }
+        }
+
+        // Update all states with the new margin values
+        const result = await Margin.updateMany(
+            {}, // Empty filter means update all documents
+            { $set: updateObj },
+            { runValidators: true }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ 
+                message: 'No margin settings found to update' 
+            });
+        }
+
+        // Fetch all updated margins
+        const updatedMargins = await Margin.find();
+
+        return res.status(200).json({
+            status: 'success',
+            message: `Successfully updated ${result.modifiedCount} state(s)`,
+            data: {
+                matchedCount: result.matchedCount,
+                modifiedCount: result.modifiedCount,
+                margins: updatedMargins
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+export const getGlobalToggle = async (req, res) => {
+    try {
+        // Get or create the global toggle document (only one document should exist)
+        let globalToggle = await GlobalToggle.findOne({ name: 'globalToggle' });
+        
+        // If no document exists, create one with default value
+        if (!globalToggle) {
+            globalToggle = await GlobalToggle.create({
+                name: 'globalToggle',
+                toggle: false
+            });
+        }
+
+        return res.status(200).json({
+            status: 'success',
+            data: {
+                toggle: globalToggle.toggle
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+export const updateGlobalToggle = async (req, res) => {
+    try {
+        const { toggle } = req.body;
+
+        // Validate that toggle is provided
+        if (toggle === undefined || toggle === null) {
+            return res.status(400).json({ 
+                message: 'Toggle value is required' 
+            });
+        }
+
+        // Convert toggle value to boolean
+        // Accept: true/false, "yes"/"no", "true"/"false", 1/0
+        let toggleValue;
+        if (typeof toggle === 'boolean') {
+            toggleValue = toggle;
+        } else if (typeof toggle === 'string') {
+            const lowerToggle = toggle.toLowerCase().trim();
+            if (lowerToggle === 'yes' || lowerToggle === 'true' || lowerToggle === '1') {
+                toggleValue = true;
+            } else if (lowerToggle === 'no' || lowerToggle === 'false' || lowerToggle === '0') {
+                toggleValue = false;
+            } else {
+                return res.status(400).json({ 
+                    message: 'Invalid toggle value. Accepted values: yes/no, true/false, or 1/0' 
+                });
+            }
+        } else if (typeof toggle === 'number') {
+            toggleValue = toggle === 1;
+        } else {
+            return res.status(400).json({ 
+                message: 'Invalid toggle value type. Accepted types: boolean, string (yes/no), or number (1/0)' 
+            });
+        }
+
+        // Update or create the global toggle document (only one document should exist)
+        const updatedToggle = await GlobalToggle.findOneAndUpdate(
+            { name: 'globalToggle' },
+            { toggle: toggleValue },
+            { 
+                new: true, 
+                upsert: true, // Create if doesn't exist
+                runValidators: true 
+            }
+        );
+
+        return res.status(200).json({
+            status: 'success',
+            message: `Global toggle updated to ${toggleValue ? 'ON' : 'OFF'}`,
+            data: {
+                toggle: updatedToggle.toggle
+            }
         });
     } catch (error) {
         return res.status(500).json({ message: error.message });
