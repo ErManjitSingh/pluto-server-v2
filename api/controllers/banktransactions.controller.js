@@ -275,7 +275,8 @@ export const createTransaction = async (req, res, next) => {
       toBankId,
       isDualBankTransaction,
       leadId,
-      leadName,  
+      leadName,
+      executiveDetail,
       travelDate,
       duration,
       destination,   
@@ -364,6 +365,7 @@ operationId,
       isDualBankTransaction: isDual,
       leadId,
       leadName,
+      executiveDetail,
       travelDate,
       duration,
       destination,
@@ -694,6 +696,7 @@ export const updateTransaction = async (req, res, next) => {
       isDualBankTransaction,
       leadId,
       leadName,
+      executiveDetail,
       travelDate,
       duration,
       destination,
@@ -808,6 +811,7 @@ export const updateTransaction = async (req, res, next) => {
     if (accept !== undefined) tx.accept = accept;
     if (leadId !== undefined) tx.leadId = leadId;
     if (leadName !== undefined) tx.leadName = leadName;
+    if (executiveDetail !== undefined) tx.executiveDetail = executiveDetail;
     if (hotelPayment !== undefined) tx.hotelPayment = hotelPayment;
     if (cabPayment !== undefined) tx.cabPayment = cabPayment;
     if (travelDate !== undefined) tx.travelDate = travelDate;
@@ -1012,6 +1016,7 @@ export const getTransactionsByToBankName = async (req, res, next) => {
     next(error);
   }
 };
+
 // Get automatic payment transactions by toBankName (hotel or cab automatic transactions)
 export const getAutomaticPaymentByToBankName = async (req, res, next) => {
   try {
@@ -1069,6 +1074,7 @@ export const getAutomaticPaymentByToBankName = async (req, res, next) => {
     next(error);
   }
 };
+
 export const deleteTransaction = async (req, res, next) => {
   try {
     const { id } = req.params;
