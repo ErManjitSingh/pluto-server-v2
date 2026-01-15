@@ -86,6 +86,9 @@ cabPayment: {
     leadName: {
       type: String,
     },
+    executiveDetail: {
+      type: mongoose.Schema.Types.Mixed,
+    },
     travelDate: {
       type: String,
     },
