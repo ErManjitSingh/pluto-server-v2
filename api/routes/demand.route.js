@@ -6,7 +6,8 @@ import {
   getDemandBySlug,
   updateDemand,
   deleteDemand,
-  getDemandsByTheme
+  getDemandsByTheme,
+  sendContactEmail
 } from '../controllers/demand.controller.js';
 
 const router = express.Router();
@@ -31,5 +32,8 @@ router.put('/update/:id', updateDemand);
 
 // Delete a demand (DELETE)
 router.delete('/delete/:id', deleteDemand);
+
+// Send contact email (POST)
+router.post('/send-email', sendContactEmail);
 
 export default router;
