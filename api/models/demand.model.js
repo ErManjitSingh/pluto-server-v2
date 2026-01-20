@@ -134,6 +134,10 @@ const demandSchema = new mongoose.Schema({
   tags: {
     type: [String],
     default: []
+  },
+    hidelist: {
+    type: String,
+    default: ''
   }
 }, { timestamps: true });
 
