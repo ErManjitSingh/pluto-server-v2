@@ -125,7 +125,7 @@ const demandSchema = new mongoose.Schema({
       type: String,
       default: ''
     },
-    alttagimage:{
+    altText:{
  type: String,
     }
   }],
