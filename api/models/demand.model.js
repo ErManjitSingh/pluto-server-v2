@@ -124,6 +124,9 @@ const demandSchema = new mongoose.Schema({
       image: {
       type: String,
       default: ''
+    },
+    alttagimage:{
+ type: String,
     }
   }],
   slug: {
