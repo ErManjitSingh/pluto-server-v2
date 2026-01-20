@@ -1,4 +1,5 @@
 import Demand from '../models/demand.model.js';
+import { sendContactEmail as sendEmailService } from '../services/email.service.js';
 
 // Create a new demand
 export const createDemand = async (req, res) => {
@@ -235,6 +236,59 @@ export const getDemandsByTheme = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: error.message 
+    });
+  }
+};
+
+// Send contact email
+export const sendContactEmail = async (req, res) => {
+  try {
+    const { fullName, email, phoneNumber, travellingFrom, destination } = req.body;
+
+    // Validate required fields
+    if (!fullName || !email || !phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Full name, email, and phone number are required fields'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
+    }
+
+    // Validate phone format (basic validation)
+    const phoneRegex = /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/;
+    if (!phoneRegex.test(phoneNumber.replace(/\s/g, ''))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid phone number'
+      });
+    }
+
+    // Send email
+    const emailResult = await sendEmailService(fullName, email, phoneNumber, {
+      travellingFrom: travellingFrom || '',
+      destination: destination || ''
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Email sent successfully',
+      data: {
+        messageId: emailResult.messageId
+      }
+    });
+  } catch (error) {
+    console.error('Error sending contact email:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send email. Please try again later.'
     });
   }
 };
