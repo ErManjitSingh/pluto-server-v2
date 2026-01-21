@@ -88,6 +88,10 @@ const demandSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  canonicalTag: {
+    type: String,
+    default: ''
+  },
   organizationLogo: {
     type: String,
     default: ''
