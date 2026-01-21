@@ -111,6 +111,77 @@ export const updateAdd = async (req, res, next) => {
 };
 
 // --------------------------------------
+// UPDATE ONLY IMAGES + CANONICAL TAG
+// --------------------------------------
+export const updateAddMediaAndCanonical = async (req, res, next) => {
+  try {
+    const allowedKeys = new Set(["images", "canonicalTag"]);
+    const bodyKeys = Object.keys(req.body || {});
+
+    // Reject if request contains anything except the two allowed keys
+    const invalidKeys = bodyKeys.filter((k) => !allowedKeys.has(k));
+    if (invalidKeys.length > 0) {
+      return next(
+        errorHandler(
+          400,
+          `Only images and canonicalTag can be updated here. Invalid fields: ${invalidKeys.join(
+            ", "
+          )}`
+        )
+      );
+    }
+
+    const updateDoc = {};
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "canonicalTag")) {
+      if (
+        req.body.canonicalTag !== null &&
+        req.body.canonicalTag !== undefined &&
+        typeof req.body.canonicalTag !== "string"
+      ) {
+        return next(errorHandler(400, "canonicalTag must be a string"));
+      }
+      updateDoc.canonicalTag = (req.body.canonicalTag || "").trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "images")) {
+      if (!Array.isArray(req.body.images)) {
+        return next(errorHandler(400, "images must be an array"));
+      }
+
+      // Sanitize each image object (only keep known fields)
+      updateDoc.images = req.body.images.map((img) => {
+        const safe = img && typeof img === "object" ? img : {};
+        return {
+          name: typeof safe.name === "string" ? safe.name : "",
+          preview: typeof safe.preview === "string" ? safe.preview : "",
+          id: typeof safe.id === "number" ? safe.id : undefined,
+          altText: typeof safe.altText === "string" ? safe.altText : ""
+        };
+      });
+    }
+
+    // If nothing to update, fail early
+    if (Object.keys(updateDoc).length === 0) {
+      return next(errorHandler(400, "Provide images and/or canonicalTag to update"));
+    }
+
+    const add = await Add.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateDoc },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!add) return next(errorHandler(404, "Add not found!"));
+
+    cacheClear();
+    return res.status(200).json(add);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --------------------------------------
 // DELETE ADD
 // --------------------------------------
 export const deleteAdd = async (req, res, next) => {
