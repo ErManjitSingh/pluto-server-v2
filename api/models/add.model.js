@@ -5,6 +5,27 @@ const addSchema = new mongoose.Schema({
     type: Object,
     required: true
   },
+  images: [{
+    name: {
+      type: String,
+      default: ''
+    },
+    preview: {
+      type: String,
+      default: ''
+    },
+    id: {
+      type: Number
+    },
+    altText: {
+      type: String,
+      default: ''
+    }
+  }],
+  canonicalTag: {
+    type: String,
+    default: ''
+  },
   cabs: {
     type: Object
   },
