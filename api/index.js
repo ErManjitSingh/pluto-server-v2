@@ -165,7 +165,7 @@ app.use("/api/bankaccountdetail", bankAccountDetailRouter);
 app.use("/api/banktransactions", bankTransactionsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/activityuser", activityUserRouter);
-app.use("/api/crm/gmail", gmailRouter);
+app.use("/api/gmail", gmailRouter);
 
 
 // -------------------------------------------------------------
