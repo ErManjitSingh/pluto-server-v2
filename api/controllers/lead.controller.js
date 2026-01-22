@@ -2,6 +2,7 @@ import Lead from '../models/lead.model.js';
 import { errorHandler } from '../utils/error.js';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
+import EmailActivity from '../models/emailActivity.model.js';
 
 // Create new lead
 export const createLead = async (req, res, next) => {
@@ -466,6 +467,54 @@ export const getLeadsByExecutivePhone = async (req, res, next) => {
       message: 'Leads retrieved successfully',
       leads,
       count: leads.length
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get all emails for a specific lead (email timeline)
+ * GET /api/leads/:leadId/emails
+ */
+export const getLeadEmails = async (req, res, next) => {
+  try {
+    const { leadId } = req.params;
+
+    // Verify lead exists and user has access
+    let lead;
+    if (req.isCommonToken || req.isSimpleToken) {
+      lead = await Lead.findOne({
+        _id: leadId,
+        isCommonLead: true
+      });
+    } else {
+      lead = await Lead.findOne({
+        _id: leadId,
+        createdBy: req.user.id,
+        isCommonLead: { $ne: true }
+      });
+    }
+
+    if (!lead) {
+      return next(errorHandler(404, 'Lead not found'));
+    }
+
+    // Get all emails for this lead, sorted by date (newest first)
+    const emails = await EmailActivity.find({
+      leadId: leadId
+    })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'firstName lastName email')
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        leadId: leadId,
+        emails: emails,
+        count: emails.length
+      }
     });
   } catch (error) {
     next(error);
