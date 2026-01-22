@@ -14,7 +14,9 @@ import {
   transferLeadToUser,
   transferMultipleLeadsToUser,
   getLeadsByExecutivePhone,
-  getLeadEmails
+  getLeadEmails,
+    getHelloHarshit
+
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
 
@@ -49,5 +51,6 @@ router.get('/public/get-lead/:id', getLeadPublic);
 router.put('/public/update-lead/:id', updateLeadPublic);
 router.delete('/public/delete-lead/:id', deleteLeadPublic);
 router.delete('/public/delete-leads', deleteMultipleLeadsPublic);
+router.get('/hello-harshit', getHelloHarshit);
 
 export default router;
