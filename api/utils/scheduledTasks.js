@@ -1,5 +1,7 @@
 import cron from 'node-cron';
 import Operation from '../models/finalcosting.model.js';
+import { renewGmailWatch } from '../controllers/gmail.controller.js';
+import GmailToken from '../models/gmailToken.model.js';
 
 /**
  * Deletes old non-converted operations (older than 10 days)
@@ -38,8 +40,54 @@ export const deleteOldNonConvertedOperations = async () => {
 };
 
 /**
+ * Renew Gmail watches for all active makers
+ * Gmail watch expires every 7 days, so we renew every 6 days
+ */
+export const renewAllGmailWatches = async () => {
+  try {
+    // Find all active Gmail tokens that need renewal
+    // Renew if watchExpiration is null or expires within 1 day
+    const oneDayFromNow = new Date();
+    oneDayFromNow.setDate(oneDayFromNow.getDate() + 1);
+
+    const tokensToRenew = await GmailToken.find({
+      isActive: true,
+      $or: [
+        { watchExpiration: null },
+        { watchExpiration: { $lte: oneDayFromNow } }
+      ]
+    });
+
+    console.log(`🔄 Renewing Gmail watches for ${tokensToRenew.length} makers...`);
+
+    const results = await Promise.allSettled(
+      tokensToRenew.map(token => renewGmailWatch(token.userId))
+    );
+
+    const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+    const failed = results.length - successful;
+
+    console.log(`✅ Gmail watch renewal complete: ${successful} successful, ${failed} failed`);
+    
+    return {
+      success: true,
+      total: tokensToRenew.length,
+      successful,
+      failed
+    };
+  } catch (error) {
+    console.error('❌ Error in Gmail watch renewal:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
  * Initialize scheduled tasks
  * Runs cleanup daily at 2:00 AM
+ * Renews Gmail watches daily at 3:00 AM
  */
 export const initializeScheduledTasks = () => {
   // Schedule daily cleanup at 2:00 AM
@@ -50,6 +98,15 @@ export const initializeScheduledTasks = () => {
     await deleteOldNonConvertedOperations();
   });
 
-  console.log('✅ Scheduled tasks initialized: Daily cleanup at 2:00 AM');
+  // Schedule Gmail watch renewal daily at 3:00 AM
+  // This checks and renews watches that expire within 1 day
+  cron.schedule('0 3 * * *', async () => {
+    console.log('🕐 Running Gmail watch renewal...');
+    await renewAllGmailWatches();
+  });
+
+  console.log('✅ Scheduled tasks initialized:');
+  console.log('   - Daily cleanup at 2:00 AM');
+  console.log('   - Gmail watch renewal at 3:00 AM');
 };
 
