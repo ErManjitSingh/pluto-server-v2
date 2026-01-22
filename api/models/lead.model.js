@@ -103,6 +103,16 @@ const leadSchema = new mongoose.Schema({
   isCommonLead: {
     type: Boolean,
     default: false
+  },
+  gmailThreadId: {
+    type: String,
+    index: true
+    // For auto-linking emails to leads using Gmail threadId
+  },
+  lastEmailAt: {
+    type: Date,
+    default: null
+    // Tracks last email activity for sorting hot leads
   }
 }, { timestamps: true });
 
