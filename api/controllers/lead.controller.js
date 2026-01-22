@@ -520,3 +520,12 @@ export const getLeadEmails = async (req, res, next) => {
     next(error);
   }
 };
+// Simple GET endpoint that returns "hello harshit"
+export const getHelloHarshit = async (req, res, next) => {
+  try {
+    res.status(200).json({ message: 'hello harshit' });
+  } catch (error) {
+    next(error);
+  }
+};
+
