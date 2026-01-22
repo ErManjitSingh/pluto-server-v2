@@ -51,6 +51,7 @@ import bankAccountDetailRouter from './routes/bankaccountdetail.route.js';
 import bankTransactionsRouter from './routes/banktransactions.route.js';
 import chatRouter from './routes/chat.route.js';
 import activityUserRouter from './routes/activityuser.route.js';
+import gmailRouter from './routes/gmail.route.js';
 
 dotenv.config();
 
@@ -164,6 +165,7 @@ app.use("/api/bankaccountdetail", bankAccountDetailRouter);
 app.use("/api/banktransactions", bankTransactionsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/activityuser", activityUserRouter);
+app.use("/api/crm/gmail", gmailRouter);
 
 
 // -------------------------------------------------------------
