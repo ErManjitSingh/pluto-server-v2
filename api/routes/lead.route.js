@@ -13,7 +13,8 @@ import {
   deleteMultipleLeadsPublic,
   transferLeadToUser,
   transferMultipleLeadsToUser,
-  getLeadsByExecutivePhone
+  getLeadsByExecutivePhone,
+  getLeadEmails
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
 
@@ -22,6 +23,7 @@ const router = express.Router();
 router.post('/create-lead', verifyToken, createLead);
 router.get('/get-leads', verifyToken, getLeads);
 router.get('/get-lead/:id', verifyToken, getLead);
+router.get('/get-lead/:leadId/emails', verifyToken, getLeadEmails);
 router.put('/update-lead/:id', verifyToken ,  updateLead);
 router.delete('/delete-lead/:id', verifyToken, deleteLead);
 router.delete('/delete-leads', verifyToken, deleteMultipleLeads);
