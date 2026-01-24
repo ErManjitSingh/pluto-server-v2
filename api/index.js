@@ -1,13 +1,12 @@
+import './config/env.js';
 import express from 'express';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
 import compression from "compression";   // ✅ ADD THIS
 import { initializeSocket } from './socket/socket.js';
 import { initializeScheduledTasks } from './utils/scheduledTasks.js';
-
 // ROUTES IMPORTS
 import userRouter from './routes/user.route.js'; 
 import authRouter from './routes/auth.route.js';
@@ -52,8 +51,6 @@ import bankTransactionsRouter from './routes/banktransactions.route.js';
 import chatRouter from './routes/chat.route.js';
 import activityUserRouter from './routes/activityuser.route.js';
 import gmailRouter from './routes/gmail.route.js';
-
-dotenv.config();
 
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
