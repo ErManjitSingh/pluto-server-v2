@@ -287,6 +287,7 @@ operationId,
       transactionAmount,
       transactionId,
       utrNumber,
+      images,
       image,
       transactionDate,
       clearDate,
@@ -377,7 +378,11 @@ operationId,
       transactionAmount: amountNumber,
       transactionId,
       utrNumber,
-      image,
+      images: Array.isArray(images)
+        ? images
+        : image
+        ? [image]
+        : undefined,
       transactionDate: transactionDate ? new Date(transactionDate) : undefined,
       clearDate: clearDate ? new Date(clearDate) : undefined,
       description,
@@ -707,6 +712,7 @@ export const updateTransaction = async (req, res, next) => {
       transactionAmount,
       transactionId,
       utrNumber,
+      images,
       image,
       transactionDate,
       clearDate,
@@ -798,7 +804,13 @@ export const updateTransaction = async (req, res, next) => {
     }
     if (transactionId !== undefined) tx.transactionId = transactionId;
     if (utrNumber !== undefined) tx.utrNumber = utrNumber;
-    if (image !== undefined) tx.image = image;
+    if (images !== undefined || image !== undefined) {
+      if (Array.isArray(images)) {
+        tx.images = images;
+      } else if (image !== undefined) {
+        tx.images = [image];
+      }
+    }
     if (transactionDate !== undefined) tx.transactionDate = transactionDate ? new Date(transactionDate) : undefined;
     if (clearDate !== undefined) tx.clearDate = clearDate ? new Date(clearDate) : undefined;
     if (description !== undefined) tx.description = description;
