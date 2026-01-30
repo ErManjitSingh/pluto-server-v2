@@ -283,3 +283,214 @@ export const deleteAllPackages = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+const formatDate = (date) => date.toISOString().split('T')[0];
+
+const addMonthsClamped = (date, months) => {
+  const base = new Date(date);
+  const day = base.getDate();
+  const target = new Date(base);
+  target.setDate(1);
+  target.setMonth(target.getMonth() + months);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, lastDay));
+  return target;
+};
+
+const parseDateInput = (value) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+// Get packages and downloads within a date range (default: today -> next month)
+export const getPackagesByDateRange = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const start = startDate ? parseDateInput(startDate) : new Date();
+    if (!start) {
+      return res.status(400).json({ message: 'Invalid startDate' });
+    }
+
+    const end = endDate ? parseDateInput(endDate) : addMonthsClamped(start, 1);
+    if (!end) {
+      return res.status(400).json({ message: 'Invalid endDate' });
+    }
+    if (end < start) {
+      return res.status(400).json({ message: 'endDate must be on or after startDate' });
+    }
+
+    const startStr = formatDate(start);
+    const endStr = formatDate(end);
+
+    const packages = await PackageTracker.find()
+      .select('packageId packageName users createdAt updatedAt')
+      .sort({ createdAt: -1 });
+
+    const formattedPackages = packages.map(pkg => {
+      const processedUsers = (pkg.users || []).map(userEntry => {
+        const downloadsInRange = (userEntry.downloads || []).filter(download => {
+          const date = download.downloadDate;
+          return date >= startStr && date <= endStr;
+        });
+
+        if (downloadsInRange.length === 0) {
+          return {
+            user: userEntry.user,
+            downloadHistory: [],
+            totalDownloads: 0
+          };
+        }
+
+        const downloadsByDate = {};
+        downloadsInRange.forEach(download => {
+          const date = download.downloadDate;
+          if (!downloadsByDate[date]) {
+            downloadsByDate[date] = {
+              date,
+              downloads: [],
+              counts: {
+                pluto: 0,
+                'demand-setu': 0,
+                total: 0
+              }
+            };
+          }
+          downloadsByDate[date].downloads.push({
+            downloadType: download.downloadType,
+            timestamp: download.timestamp
+          });
+          downloadsByDate[date].counts[download.downloadType]++;
+          downloadsByDate[date].counts.total++;
+        });
+
+        return {
+          user: userEntry.user,
+          downloadHistory: Object.values(downloadsByDate)
+            .sort((a, b) => new Date(b.date) - new Date(a.date)),
+          totalDownloads: downloadsInRange.length
+        };
+      });
+
+      const filteredUsers = processedUsers.filter(userEntry => userEntry.totalDownloads > 0);
+
+      const allDownloads = filteredUsers.reduce((downloads, userEntry) => {
+        const userDownloads = userEntry.downloadHistory.flatMap(day => day.downloads || []);
+        return downloads.concat(userDownloads);
+      }, []);
+
+      const downloadCounts = allDownloads.reduce((counts, download) => {
+        counts[download.downloadType]++;
+        counts.total++;
+        return counts;
+      }, { pluto: 0, 'demand-setu': 0, total: 0 });
+
+      return {
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        downloadCounts,
+        totalUsers: filteredUsers.length,
+        users: filteredUsers,
+        dateRange: {
+          startDate: startStr,
+          endDate: endStr
+        },
+        createdAt: pkg.createdAt,
+        updatedAt: pkg.updatedAt,
+        _id: pkg._id
+      };
+    });
+
+    res.status(200).json(formattedPackages);
+  } catch (error) {
+    console.error('Error in getPackagesByDateRange:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get packages filtered by team leader (id or name)
+export const getPackagesByTeamLeader = async (req, res) => {
+  try {
+    const { teamLeaderId, teamLeaderName } = req.query;
+
+    if (!teamLeaderId && !teamLeaderName) {
+      return res.status(400).json({ message: 'teamLeaderId or teamLeaderName is required' });
+    }
+
+    const packages = await PackageTracker.find()
+      .select('packageId packageName users createdAt updatedAt')
+      .sort({ createdAt: -1 });
+
+    const formattedPackages = packages.map(pkg => {
+      const matchedUsers = (pkg.users || []).filter(userEntry => {
+        const user = userEntry.user || {};
+        if (teamLeaderId && user.teamLeaderId === teamLeaderId) {
+          return true;
+        }
+        if (teamLeaderName && user.teamLeaderName === teamLeaderName) {
+          return true;
+        }
+        return false;
+      });
+
+      const processedUsers = matchedUsers.map(userEntry => {
+        const downloadsByDate = {};
+
+        (userEntry.downloads || []).forEach(download => {
+          const date = download.downloadDate;
+          if (!downloadsByDate[date]) {
+            downloadsByDate[date] = {
+              date,
+              downloads: [],
+              counts: {
+                pluto: 0,
+                'demand-setu': 0,
+                total: 0
+              }
+            };
+          }
+          downloadsByDate[date].downloads.push({
+            downloadType: download.downloadType,
+            timestamp: download.timestamp
+          });
+          downloadsByDate[date].counts[download.downloadType]++;
+          downloadsByDate[date].counts.total++;
+        });
+
+        return {
+          user: userEntry.user,
+          downloadHistory: Object.values(downloadsByDate)
+            .sort((a, b) => new Date(b.date) - new Date(a.date)),
+          totalDownloads: userEntry.downloads.length
+        };
+      });
+
+      const allDownloads = processedUsers.reduce((downloads, userEntry) => {
+        const userDownloads = userEntry.downloadHistory.flatMap(day => day.downloads || []);
+        return downloads.concat(userDownloads);
+      }, []);
+
+      const downloadCounts = allDownloads.reduce((counts, download) => {
+        counts[download.downloadType]++;
+        counts.total++;
+        return counts;
+      }, { pluto: 0, 'demand-setu': 0, total: 0 });
+
+      return {
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        downloadCounts,
+        totalUsers: processedUsers.length,
+        users: processedUsers,
+        createdAt: pkg.createdAt,
+        updatedAt: pkg.updatedAt,
+        _id: pkg._id
+      };
+    }).filter(pkg => pkg.totalUsers > 0);
+
+    res.status(200).json(formattedPackages);
+  } catch (error) {
+    console.error('Error in getPackagesByTeamLeader:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
