@@ -3,6 +3,8 @@ import {
   trackDownload,
   getDownloadCounts,
   getAllPackages,
+  getPackagesByDateRange,
+  getPackagesByTeamLeader,
   getPackageDetails,
   deletePackage,
   deleteAllPackages
@@ -18,6 +20,12 @@ router.get('/counts/:packageId', getDownloadCounts);
 
 // Get all packages with download counts (GET)
 router.get('/packages', getAllPackages);
+
+// Get packages by date range (GET)
+router.get('/packages-by-date', getPackagesByDateRange);
+
+// Get packages by team leader (GET)
+router.get('/packages-by-team-leader', getPackagesByTeamLeader);
 
 // Get detailed package information including download history (GET)
 router.get('/package/:packageId', getPackageDetails);
