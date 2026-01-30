@@ -106,8 +106,9 @@ cabPayment: {
       type: String,
       trim: true,
     },
-    image: {
-      type: String, // Store image URL or file path
+    images: {
+      type: [String], // Store multiple image URLs or file paths
+      default: [],
     },
     paymentMode: {
       type: String,
