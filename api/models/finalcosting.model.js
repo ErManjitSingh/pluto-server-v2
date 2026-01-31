@@ -134,6 +134,9 @@ const operationSchema = new mongoose.Schema({
       }
     }
   }],
+    hotelsbycategory: {
+    type: mongoose.Schema.Types.Mixed
+  },
   similarhotel: [{
     propertyName: {
       type: String,
