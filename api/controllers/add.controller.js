@@ -338,7 +338,15 @@ export const getPackageOnly = async (req, res, next) => {
         "package.customizablePackage": 1,
         "package.packagePlaces": 1,
         "package.themes": 1,
-        "package.tags": 1
+        "package.tags": 1,
+        metaTitle: 1,
+        metaKeywords: 1,
+        metaDescription: 1,
+        enablePageSchema: 1,
+        focusKeyword: 1,
+        schemaType: 1,
+        images: 1,
+        canonicalTag: 1,
       }
     )
       .skip(skip)
