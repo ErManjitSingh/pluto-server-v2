@@ -26,6 +26,30 @@ const addSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  metaTitle: {
+    type: String,
+    default: ''
+  },
+  metaKeywords: {
+    type: String,
+    default: ''
+  },
+  metaDescription: {
+    type: String,
+    default: ''
+  },
+  enablePageSchema: {
+    type: Boolean,
+    default: false
+  },
+  focusKeyword: {
+    type: String,
+    default: ''
+  },
+  schemaType: {
+    type: String,
+    default: ''
+  },
   cabs: {
     type: Object
   },
