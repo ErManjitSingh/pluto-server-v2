@@ -115,7 +115,16 @@ export const updateAdd = async (req, res, next) => {
 // --------------------------------------
 export const updateAddMediaAndCanonical = async (req, res, next) => {
   try {
-    const allowedKeys = new Set(["images", "canonicalTag"]);
+    const allowedKeys = new Set([
+      "images",
+      "canonicalTag",
+      "metaTitle",
+      "metaKeywords",
+      "metaDescription",
+      "enablePageSchema",
+      "focusKeyword",
+      "schemaType"
+    ]);
     const bodyKeys = Object.keys(req.body || {});
 
     // Reject if request contains anything except the two allowed keys
@@ -144,6 +153,72 @@ export const updateAddMediaAndCanonical = async (req, res, next) => {
       updateDoc.canonicalTag = (req.body.canonicalTag || "").trim();
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, "metaTitle")) {
+      if (
+        req.body.metaTitle !== null &&
+        req.body.metaTitle !== undefined &&
+        typeof req.body.metaTitle !== "string"
+      ) {
+        return next(errorHandler(400, "metaTitle must be a string"));
+      }
+      updateDoc.metaTitle = (req.body.metaTitle || "").trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "metaKeywords")) {
+      if (
+        req.body.metaKeywords !== null &&
+        req.body.metaKeywords !== undefined &&
+        typeof req.body.metaKeywords !== "string"
+      ) {
+        return next(errorHandler(400, "metaKeywords must be a string"));
+      }
+      updateDoc.metaKeywords = (req.body.metaKeywords || "").trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "metaDescription")) {
+      if (
+        req.body.metaDescription !== null &&
+        req.body.metaDescription !== undefined &&
+        typeof req.body.metaDescription !== "string"
+      ) {
+        return next(errorHandler(400, "metaDescription must be a string"));
+      }
+      updateDoc.metaDescription = (req.body.metaDescription || "").trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "enablePageSchema")) {
+      if (
+        req.body.enablePageSchema !== null &&
+        req.body.enablePageSchema !== undefined &&
+        typeof req.body.enablePageSchema !== "boolean"
+      ) {
+        return next(errorHandler(400, "enablePageSchema must be a boolean"));
+      }
+      updateDoc.enablePageSchema = !!req.body.enablePageSchema;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "focusKeyword")) {
+      if (
+        req.body.focusKeyword !== null &&
+        req.body.focusKeyword !== undefined &&
+        typeof req.body.focusKeyword !== "string"
+      ) {
+        return next(errorHandler(400, "focusKeyword must be a string"));
+      }
+      updateDoc.focusKeyword = (req.body.focusKeyword || "").trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "schemaType")) {
+      if (
+        req.body.schemaType !== null &&
+        req.body.schemaType !== undefined &&
+        typeof req.body.schemaType !== "string"
+      ) {
+        return next(errorHandler(400, "schemaType must be a string"));
+      }
+      updateDoc.schemaType = (req.body.schemaType || "").trim();
+    }
+
     if (Object.prototype.hasOwnProperty.call(req.body, "images")) {
       if (!Array.isArray(req.body.images)) {
         return next(errorHandler(400, "images must be an array"));
@@ -163,7 +238,12 @@ export const updateAddMediaAndCanonical = async (req, res, next) => {
 
     // If nothing to update, fail early
     if (Object.keys(updateDoc).length === 0) {
-      return next(errorHandler(400, "Provide images and/or canonicalTag to update"));
+      return next(
+        errorHandler(
+          400,
+          "Provide images and/or canonicalTag/meta fields to update"
+        )
+      );
     }
 
     const add = await Add.findByIdAndUpdate(
