@@ -4,6 +4,7 @@ const customerSchema = new mongoose.Schema(
   {
     userid: {
       type: String,
+      required: true,
       trim: true,
     },
     hotel: {
@@ -22,6 +23,30 @@ const customerSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+    packagename: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    message: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    leadname: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    isSeen: {
+      type: Boolean,
+      default: false,
+    },
+    seenAt: {
+      type: Date,
+      default: null,
+    },
+
     response: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
