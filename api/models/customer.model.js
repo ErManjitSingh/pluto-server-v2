@@ -4,7 +4,6 @@ const customerSchema = new mongoose.Schema(
   {
     userid: {
       type: String,
-      required: true,
       trim: true,
     },
     hotel: {
