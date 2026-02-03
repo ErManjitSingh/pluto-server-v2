@@ -9,7 +9,7 @@ const emitCustomerEvent = (event, payload) => {
 };
 
 const notificationSelect =
-  "userid message leadname packagename leadata isSeen seenAt createdAt updatedAt";
+  "userid message leadname packagename leadata requestcallback isSeen seenAt createdAt updatedAt";
 
 export const createCustomerData = async (req, res) => {
   try {
@@ -22,6 +22,7 @@ export const createCustomerData = async (req, res) => {
       leadname: customer.leadname,
       packagename: customer.packagename,
       leadata: customer.leadata,
+      requestcallback: customer.requestcallback,
       isSeen: customer.isSeen,
       seenAt: customer.seenAt,
       createdAt: customer.createdAt,
