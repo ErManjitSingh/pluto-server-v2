@@ -14,7 +14,12 @@ const getConversationId = (userId1, userId2) => {
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: "*",
+      origin: [
+        "https://packagemakerbackend.demandsetutours.com",
+        "https://crm.ptwholidays.in",
+        "https://packagemaker.demandsetutours.com",
+        "http://localhost:5173"
+      ],
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       credentials: true,
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
