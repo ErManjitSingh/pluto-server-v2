@@ -4,6 +4,7 @@ import Maker from '../models/maker.model.js';
 
 // Store active users and their socket IDs
 const activeUsers = new Map();
+let ioInstance = null;
 
 // Helper function to generate conversation ID
 const getConversationId = (userId1, userId2) => {
@@ -13,18 +14,10 @@ const getConversationId = (userId1, userId2) => {
 export const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'http://localhost:5174',
-        'https://pluto-hotel-server-15c83810c41c.herokuapp.com',
-        'https://packagemaker.plutotours.com',
-        // Add your production frontend URL here
-        // 'https://your-frontend-domain.com'
-      ],
-      methods: ["GET", "POST"],
+      origin: "*",
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       credentials: true,
-      allowedHeaders: ['Content-Type', 'Authorization']
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
     }
   });
 
@@ -190,6 +183,9 @@ export const initializeSocket = (server) => {
     });
   });
 
+  ioInstance = io;
   console.log('Socket.IO initialized');
   return io;
 };
+
+export const getIO = () => ioInstance;
