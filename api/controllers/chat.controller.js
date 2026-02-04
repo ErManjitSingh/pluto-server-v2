@@ -1,5 +1,6 @@
 import ChatMessage from '../models/chat.model.js';
 import Maker from '../models/maker.model.js';
+import Lead from '../models/lead.model.js';
 import { errorHandler } from '../utils/error.js';
 
 // Helper function to generate conversation ID
@@ -7,19 +8,35 @@ const getConversationId = (userId1, userId2) => {
   return [userId1, userId2].sort().join('_');
 };
 
+const getUserModel = (userType) => {
+  return userType === 'Lead' ? Lead : Maker;
+};
+
+const userSelect = 'firstName lastName email name mobile leadId';
+
 // Send a message (also used by REST API)
 export const sendMessage = async (req, res, next) => {
   try {
-    const { senderId, receiverId, message, messageType = 'text' } = req.body;
+    const {
+      senderId,
+      receiverId,
+      message,
+      messageType = 'text',
+      senderModel = 'Maker',
+      receiverModel = 'Maker'
+    } = req.body;
 
     if (!senderId || !receiverId || !message) {
       return next(errorHandler(400, 'SenderId, receiverId, and message are required'));
     }
 
     // Verify both users exist
+    const SenderModel = getUserModel(senderModel);
+    const ReceiverModel = getUserModel(receiverModel);
+
     const [sender, receiver] = await Promise.all([
-      Maker.findById(senderId),
-      Maker.findById(receiverId)
+      SenderModel.findById(senderId),
+      ReceiverModel.findById(receiverId)
     ]);
 
     if (!sender) {
@@ -36,12 +53,14 @@ export const sendMessage = async (req, res, next) => {
       receiverId,
       message,
       messageType,
+      senderModel,
+      receiverModel,
       conversationId
     });
 
     const populatedMessage = await ChatMessage.findById(newMessage._id)
-      .populate('senderId', 'firstName lastName email')
-      .populate('receiverId', 'firstName lastName email');
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect);
 
     return res.status(201).json(populatedMessage);
   } catch (error) {
@@ -62,8 +81,8 @@ export const getConversation = async (req, res, next) => {
     const conversationId = getConversationId(userId1, userId2);
 
     const messages = await ChatMessage.find({ conversationId })
-      .populate('senderId', 'firstName lastName email')
-      .populate('receiverId', 'firstName lastName email')
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect)
       .sort({ createdAt: 1 });
 
     return res.status(200).json(messages);
@@ -86,8 +105,8 @@ export const getUserConversations = async (req, res, next) => {
     const messages = await ChatMessage.find({
       $or: [{ senderId: userId }, { receiverId: userId }]
     })
-      .populate('senderId', 'firstName lastName email')
-      .populate('receiverId', 'firstName lastName email')
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect)
       .sort({ createdAt: -1 });
 
     // Group by conversation and get last message
