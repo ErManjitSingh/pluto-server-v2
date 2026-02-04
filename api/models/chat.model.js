@@ -1,14 +1,24 @@
 import mongoose from 'mongoose';
 
 const chatMessageSchema = new mongoose.Schema({
+  senderModel: {
+    type: String,
+    enum: ['Maker', 'Lead'],
+    default: 'Maker'
+  },
   senderId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Maker',
+    refPath: 'senderModel',
     required: true
+  },
+  receiverModel: {
+    type: String,
+    enum: ['Maker', 'Lead'],
+    default: 'Maker'
   },
   receiverId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Maker',
+    refPath: 'receiverModel',
     required: true
   },
   message: {
