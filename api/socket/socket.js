@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import ChatMessage from "../models/chat.model.js";
 import Maker from "../models/maker.model.js";
+import Lead from "../models/lead.model.js";
 
 let ioInstance = null;
 
@@ -8,6 +9,12 @@ let ioInstance = null;
 const getConversationId = (userId1, userId2) => {
   return [userId1, userId2].sort().join("_");
 };
+
+const getUserModel = (userType) => {
+  return userType === "Lead" ? Lead : Maker;
+};
+
+const userSelect = "firstName lastName email name mobile leadId";
 
 export const initializeSocket = (server) => {
   const io = new Server(server, {
@@ -28,17 +35,24 @@ export const initializeSocket = (server) => {
     console.log("New client connected:", socket.id);
 
     // User connects
-    socket.on("user:connect", async (userId) => {
+    socket.on("user:connect", async (payload) => {
       try {
+        const { userId, userType = "Maker" } =
+          typeof payload === "object" && payload !== null
+            ? payload
+            : { userId: payload, userType: "Maker" };
+
         console.log(`User ${userId} connected`);
 
-        const user = await Maker.findById(userId);
+        const UserModel = getUserModel(userType);
+        const user = await UserModel.findById(userId);
         if (!user) {
           socket.emit("error", { message: "User not found" });
           return;
         }
 
         socket.userId = userId;
+        socket.userType = userType;
 
         // ✅ Join user-specific room
         socket.join(`user:${userId}`);
@@ -60,16 +74,26 @@ export const initializeSocket = (server) => {
     // Send message
     socket.on("message:send", async (data) => {
       try {
-        const { senderId, receiverId, message, messageType = "text" } = data;
+        const {
+          senderId,
+          receiverId,
+          message,
+          messageType = "text",
+          senderModel = "Maker",
+          receiverModel = "Maker",
+        } = data;
 
         if (!senderId || !receiverId || !message) {
           socket.emit("error", { message: "Invalid message data" });
           return;
         }
 
+        const SenderModel = getUserModel(senderModel);
+        const ReceiverModel = getUserModel(receiverModel);
+
         const [sender, receiver] = await Promise.all([
-          Maker.findById(senderId),
-          Maker.findById(receiverId),
+          SenderModel.findById(senderId),
+          ReceiverModel.findById(receiverId),
         ]);
 
         if (!sender || !receiver) {
@@ -85,11 +109,13 @@ export const initializeSocket = (server) => {
           message,
           messageType,
           conversationId,
+          senderModel,
+          receiverModel,
         });
 
         const populatedMessage = await ChatMessage.findById(newMessage._id)
-          .populate("senderId", "firstName lastName email")
-          .populate("receiverId", "firstName lastName email");
+          .populate("senderId", userSelect)
+          .populate("receiverId", userSelect);
 
         // ✅ Emit to receiver room (cluster-safe)
         io.to(`user:${receiverId}`).emit(
