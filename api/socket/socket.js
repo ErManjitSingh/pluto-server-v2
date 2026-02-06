@@ -81,6 +81,10 @@ export const initializeSocket = (server) => {
           messageType = "text",
           senderModel = "Maker",
           receiverModel = "Maker",
+           managerid,
+          managername,
+          teamleaderid,
+          teamleadername,
         } = data;
 
         if (!senderId || !receiverId || !message) {
@@ -111,6 +115,10 @@ export const initializeSocket = (server) => {
           conversationId,
           senderModel,
           receiverModel,
+           managerid,
+          managername,
+          teamleaderid,
+          teamleadername,
         });
 
         const populatedMessage = await ChatMessage.findById(newMessage._id)
