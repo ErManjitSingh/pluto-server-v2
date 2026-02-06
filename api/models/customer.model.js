@@ -7,6 +7,7 @@ const customerSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    
     hotel: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
@@ -58,6 +59,26 @@ const customerSchema = new mongoose.Schema(
     requestcallback: {
       type: mongoose.Schema.Types.Mixed,
       default: null,
+    },
+    teamleaderid: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    teamleadername: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    managername: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    managerid: {
+      type: String,
+      default: null,
+      trim: true,
     },
   },
   { timestamps: true }
