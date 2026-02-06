@@ -30,6 +30,22 @@ const chatMessageSchema = new mongoose.Schema({
     enum: ['text', 'image', 'file'],
     default: 'text'
   },
+  managerid: {
+    type: String,
+    default: null
+  },
+  managername: {
+    type: String,
+    default: null
+  },
+  teamleaderid: {
+    type: String,
+    default: null
+  },
+  teamleadername: {
+    type: String,
+    default: null
+  },
   isRead: {
     type: Boolean,
     default: false
