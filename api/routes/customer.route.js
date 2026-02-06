@@ -4,6 +4,8 @@ import {
   getCustomerData,
   getCustomerDataById,
   getCustomerDataByUserId,
+  getCustomerDataByTeamLeader,
+  getCustomerDataByManager,
   getCustomerNotifications,
   getCustomerNotificationsByUserId,
   markCustomerNotificationSeen,
@@ -19,6 +21,8 @@ router.get("/notifications", getCustomerNotifications);
 router.get("/notifications/user/:userid", getCustomerNotificationsByUserId);
 router.patch("/notifications/:id/seen", markCustomerNotificationSeen);
 router.get("/user/:userid", getCustomerDataByUserId);
+router.get("/teamleader", getCustomerDataByTeamLeader);
+router.get("/manager", getCustomerDataByManager);
 router.get("/:id", getCustomerDataById);
 router.put("/:id", updateCustomerData);
 router.delete("/:id", deleteCustomerData);
