@@ -23,7 +23,11 @@ export const sendMessage = async (req, res, next) => {
       message,
       messageType = 'text',
       senderModel = 'Maker',
-      receiverModel = 'Maker'
+      receiverModel = 'Maker',
+      managerid,
+      managername,
+      teamleaderid,
+      teamleadername
     } = req.body;
 
     if (!senderId || !receiverId || !message) {
@@ -55,6 +59,10 @@ export const sendMessage = async (req, res, next) => {
       messageType,
       senderModel,
       receiverModel,
+      managerid,
+      managername,
+      teamleaderid,
+      teamleadername,
       conversationId
     });
 
