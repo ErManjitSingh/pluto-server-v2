@@ -66,6 +66,46 @@ export const getCustomerDataByUserId = async (req, res) => {
   }
 };
 
+export const getCustomerDataByTeamLeader = async (req, res) => {
+  try {
+    const { teamleaderid, teamleadername } = req.query;
+    if (!teamleaderid && !teamleadername) {
+      return res.status(400).json({
+        message: "Provide teamleaderid or teamleadername",
+      });
+    }
+
+    const filter = {};
+    if (teamleaderid) filter.teamleaderid = teamleaderid;
+    if (teamleadername) filter.teamleadername = teamleadername;
+
+    const customers = await CustomerData.find(filter).sort({ createdAt: -1 });
+    return res.status(200).json(customers);
+  } catch (error) {
+    return res.status(400).json({ message: "Failed to fetch customer data", error: error.message });
+  }
+};
+
+export const getCustomerDataByManager = async (req, res) => {
+  try {
+    const { managerid, managername } = req.query;
+    if (!managerid && !managername) {
+      return res.status(400).json({
+        message: "Provide managerid or managername",
+      });
+    }
+
+    const filter = {};
+    if (managerid) filter.managerid = managerid;
+    if (managername) filter.managername = managername;
+
+    const customers = await CustomerData.find(filter).sort({ createdAt: -1 });
+    return res.status(200).json(customers);
+  } catch (error) {
+    return res.status(400).json({ message: "Failed to fetch customer data", error: error.message });
+  }
+};
+
 export const getCustomerNotifications = async (req, res) => {
   try {
     const includeSeen = req.query.includeSeen === "true";
