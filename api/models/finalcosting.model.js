@@ -251,11 +251,21 @@ const operationSchema = new mongoose.Schema({
   leadVerification: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
+  },
+  openedData: {
+    timestamp: {
+      type: String,
+      default: null
+    },
+    openedAt: {
+      type: Date,
+      default: null
+    }
   }
 }, { timestamps: true });
 
 // Indexes for performance optimization
-operationSchema.index({ converted: 1, createdAt: -1 });
+operationSchema.index({ converted: 1, createdAt: -1 }); 
 operationSchema.index({ id: 1, userId: 1, customerLeadId: 1 }); // Compound index for getOperationById
 operationSchema.index({ id: 1 }); // Single field index for id
 operationSchema.index({ userId: 1 }); // Single field index for userId
