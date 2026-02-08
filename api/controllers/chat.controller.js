@@ -216,3 +216,45 @@ export const getUnreadCount = async (req, res, next) => {
     next(error);
   }
 };
+
+// Get chats by team leader ID
+export const getChatByTeamLeaderId = async (req, res, next) => {
+  try {
+    const { teamleaderid } = req.params;
+
+    if (!teamleaderid) {
+      return next(errorHandler(400, 'Team leader ID is required'));
+    }
+
+    const messages = await ChatMessage.find({ teamleaderid })
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect)
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json(messages);
+  } catch (error) {
+    console.log('Get chat by team leader ID error:', error);
+    next(error);
+  }
+};
+
+// Get chats by manager ID
+export const getChatByManagerId = async (req, res, next) => {
+  try {
+    const { managerid } = req.params;
+
+    if (!managerid) {
+      return next(errorHandler(400, 'Manager ID is required'));
+    }
+
+    const messages = await ChatMessage.find({ managerid })
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect)
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json(messages);
+  } catch (error) {
+    console.log('Get chat by manager ID error:', error);
+    next(error);
+  }
+};
