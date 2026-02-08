@@ -1,5 +1,6 @@
 import CustomerData from "../models/customer.model.js";
 import { getIO } from "../socket/socket.js";
+import { errorHandler } from "../utils/error.js";
 
 const emitCustomerEvent = (event, payload) => {
   const io = getIO();
@@ -11,7 +12,7 @@ const emitCustomerEvent = (event, payload) => {
 const notificationSelect =
   "userid message leadname packagename leadata requestcallback isSeen seenAt createdAt updatedAt";
 
-export const createCustomerData = async (req, res) => {
+export const createCustomerData = async (req, res, next) => {
   try {
     const customer = await CustomerData.create(req.body);
     emitCustomerEvent("customerdata:created", customer);
@@ -29,120 +30,260 @@ export const createCustomerData = async (req, res) => {
     });
     return res.status(201).json(customer);
   } catch (error) {
-    return res.status(400).json({ message: "Failed to create customer data", error: error.message });
+    console.log('Create customer data error:', error);
+    next(error);
   }
 };
 
-export const getCustomerData = async (req, res) => {
+export const getCustomerData = async (req, res, next) => {
   try {
-    const customers = await CustomerData.find().sort({ createdAt: -1 });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    // Use parallel queries for better performance
+    const [customers, totalCount] = await Promise.all([
+      CustomerData.find()
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean(),
+      CustomerData.countDocuments()
+    ]);
+
     emitCustomerEvent("customerdata:fetched", customers);
-    return res.status(200).json(customers);
+    return res.status(200).json({
+      customers,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
   } catch (error) {
-    return res.status(500).json({ message: "Failed to fetch customer data", error: error.message });
+    console.log('Get customer data error:', error);
+    next(error);
   }
 };
 
-export const getCustomerDataById = async (req, res) => {
+export const getCustomerDataById = async (req, res, next) => {
   try {
-    const customer = await CustomerData.findById(req.params.id);
+    const customer = await CustomerData.findById(req.params.id).lean();
     if (!customer) {
-      return res.status(404).json({ message: "Customer data not found" });
+      return next(errorHandler(404, "Customer data not found"));
     }
     emitCustomerEvent("customerdata:fetchedOne", customer);
     return res.status(200).json(customer);
   } catch (error) {
-    return res.status(400).json({ message: "Failed to fetch customer data", error: error.message });
+    console.log('Get customer data by ID error:', error);
+    next(error);
   }
 };
 
-export const getCustomerDataByUserId = async (req, res) => {
+export const getCustomerDataByUserId = async (req, res, next) => {
   try {
-    const customers = await CustomerData.find({ userid: req.params.userid }).sort({ createdAt: -1 });
+    const { userid } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    if (!userid) {
+      return next(errorHandler(400, "User ID is required"));
+    }
+
+    // Use parallel queries for better performance
+    const [customers, totalCount] = await Promise.all([
+      CustomerData.find({ userid })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean(),
+      CustomerData.countDocuments({ userid })
+    ]);
+
     emitCustomerEvent("customerdata:fetchedByUser", customers);
-    return res.status(200).json(customers);
+    return res.status(200).json({
+      customers,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
   } catch (error) {
-    return res.status(400).json({ message: "Failed to fetch customer data", error: error.message });
+    console.log('Get customer data by user ID error:', error);
+    next(error);
   }
 };
 
-export const getCustomerDataByTeamLeader = async (req, res) => {
+export const getCustomerDataByTeamLeader = async (req, res, next) => {
   try {
     const { teamleaderid, teamleadername } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
     if (!teamleaderid && !teamleadername) {
-      return res.status(400).json({
-        message: "Provide teamleaderid or teamleadername",
-      });
+      return next(errorHandler(400, "Provide teamleaderid or teamleadername"));
     }
 
     const filter = {};
     if (teamleaderid) filter.teamleaderid = teamleaderid;
     if (teamleadername) filter.teamleadername = teamleadername;
 
-    const customers = await CustomerData.find(filter).sort({ createdAt: -1 });
-    return res.status(200).json(customers);
+    // Use parallel queries for better performance
+    const [customers, totalCount] = await Promise.all([
+      CustomerData.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean(),
+      CustomerData.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      customers,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
   } catch (error) {
-    return res.status(400).json({ message: "Failed to fetch customer data", error: error.message });
+    console.log('Get customer data by team leader error:', error);
+    next(error);
   }
 };
 
-export const getCustomerDataByManager = async (req, res) => {
+export const getCustomerDataByManager = async (req, res, next) => {
   try {
     const { managerid, managername } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
     if (!managerid && !managername) {
-      return res.status(400).json({
-        message: "Provide managerid or managername",
-      });
+      return next(errorHandler(400, "Provide managerid or managername"));
     }
 
     const filter = {};
     if (managerid) filter.managerid = managerid;
     if (managername) filter.managername = managername;
 
-    const customers = await CustomerData.find(filter).sort({ createdAt: -1 });
-    return res.status(200).json(customers);
+    // Use parallel queries for better performance
+    const [customers, totalCount] = await Promise.all([
+      CustomerData.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean(),
+      CustomerData.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      customers,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
   } catch (error) {
-    return res.status(400).json({ message: "Failed to fetch customer data", error: error.message });
+    console.log('Get customer data by manager error:', error);
+    next(error);
   }
 };
 
-export const getCustomerNotifications = async (req, res) => {
+export const getCustomerNotifications = async (req, res, next) => {
   try {
     const includeSeen = req.query.includeSeen === "true";
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
     const filter = includeSeen ? {} : { isSeen: false };
-    const notifications = await CustomerData.find(filter)
-      .select(notificationSelect)
-      .sort({ createdAt: -1 });
-    return res.status(200).json(notifications);
+
+    // Use parallel queries for better performance
+    const [notifications, totalCount] = await Promise.all([
+      CustomerData.find(filter)
+        .select(notificationSelect)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean(),
+      CustomerData.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      notifications,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
   } catch (error) {
-    return res.status(500).json({ message: "Failed to fetch notifications", error: error.message });
+    console.log('Get customer notifications error:', error);
+    next(error);
   }
 };
 
-export const getCustomerNotificationsByUserId = async (req, res) => {
+export const getCustomerNotificationsByUserId = async (req, res, next) => {
   try {
+    const { userid } = req.params;
     const includeSeen = req.query.includeSeen === "true";
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    if (!userid) {
+      return next(errorHandler(400, "User ID is required"));
+    }
+
     const filter = includeSeen
-      ? { userid: req.params.userid }
-      : { userid: req.params.userid, isSeen: false };
-    const notifications = await CustomerData.find(filter)
-      .select(notificationSelect)
-      .sort({ createdAt: -1 });
-    return res.status(200).json(notifications);
+      ? { userid }
+      : { userid, isSeen: false };
+
+    // Use parallel queries for better performance
+    const [notifications, totalCount] = await Promise.all([
+      CustomerData.find(filter)
+        .select(notificationSelect)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip)
+        .lean(),
+      CustomerData.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      notifications,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
   } catch (error) {
-    return res.status(400).json({ message: "Failed to fetch notifications", error: error.message });
+    console.log('Get customer notifications by user ID error:', error);
+    next(error);
   }
 };
 
-export const markCustomerNotificationSeen = async (req, res) => {
+export const markCustomerNotificationSeen = async (req, res, next) => {
   try {
     const notification = await CustomerData.findByIdAndUpdate(
       req.params.id,
       { isSeen: true, seenAt: new Date() },
       { new: true, runValidators: true }
-    );
+    ).lean();
     if (!notification) {
-      return res.status(404).json({ message: "Notification not found" });
+      return next(errorHandler(404, "Notification not found"));
     }
     emitCustomerEvent("customerdata:notificationSeen", {
       id: notification._id,
@@ -152,36 +293,39 @@ export const markCustomerNotificationSeen = async (req, res) => {
     });
     return res.status(200).json(notification);
   } catch (error) {
-    return res.status(400).json({ message: "Failed to update notification", error: error.message });
+    console.log('Mark customer notification seen error:', error);
+    next(error);
   }
 };
 
-export const updateCustomerData = async (req, res) => {
+export const updateCustomerData = async (req, res, next) => {
   try {
     const customer = await CustomerData.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
-    });
+    }).lean();
     if (!customer) {
-      return res.status(404).json({ message: "Customer data not found" });
+      return next(errorHandler(404, "Customer data not found"));
     }
     emitCustomerEvent("customerdata:updated", customer);
     return res.status(200).json(customer);
   } catch (error) {
-    return res.status(400).json({ message: "Failed to update customer data", error: error.message });
+    console.log('Update customer data error:', error);
+    next(error);
   }
 };
 
-export const deleteCustomerData = async (req, res) => {
+export const deleteCustomerData = async (req, res, next) => {
   try {
-    const customer = await CustomerData.findByIdAndDelete(req.params.id);
+    const customer = await CustomerData.findByIdAndDelete(req.params.id).lean();
     if (!customer) {
-      return res.status(404).json({ message: "Customer data not found" });
+      return next(errorHandler(404, "Customer data not found"));
     }
     emitCustomerEvent("customerdata:deleted", { id: customer._id });
     return res.status(200).json({ message: "Customer data deleted successfully" });
   } catch (error) {
-    return res.status(400).json({ message: "Failed to delete customer data", error: error.message });
+    console.log('Delete customer data error:', error);
+    next(error);
   }
 };
 
