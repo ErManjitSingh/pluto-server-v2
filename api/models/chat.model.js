@@ -60,9 +60,14 @@ const chatMessageSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-// Index for faster queries
+// Indexes for faster queries
 chatMessageSchema.index({ senderId: 1, receiverId: 1 });
 chatMessageSchema.index({ conversationId: 1, createdAt: -1 });
+chatMessageSchema.index({ receiverId: 1, isRead: 1 }); // For unread count and mark as read
+chatMessageSchema.index({ teamleaderid: 1, createdAt: -1 }); // For team leader queries
+chatMessageSchema.index({ managerid: 1, createdAt: -1 }); // For manager queries
+chatMessageSchema.index({ senderId: 1, createdAt: -1 }); // For user conversations
+chatMessageSchema.index({ receiverId: 1, createdAt: -1 }); // For user conversations
 
 const ChatMessage = mongoose.model('ChatMessage', chatMessageSchema);
 export default ChatMessage;
