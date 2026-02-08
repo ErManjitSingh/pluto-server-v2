@@ -7,7 +7,8 @@ import {
   deleteMessage,
   getUnreadCount,
   getChatByTeamLeaderId,
-  getChatByManagerId
+  getChatByManagerId,
+  getAllChats
 } from '../controllers/chat.controller.js';
 
 const router = express.Router();
@@ -35,5 +36,8 @@ router.get('/team-leader/:teamleaderid', getChatByTeamLeaderId);
 
 // Get chats by manager ID
 router.get('/manager/:managerid', getChatByManagerId);
+
+// Get all chats
+router.get('/all', getAllChats);
 
 export default router;
