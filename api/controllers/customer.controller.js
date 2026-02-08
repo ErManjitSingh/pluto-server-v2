@@ -37,30 +37,12 @@ export const createCustomerData = async (req, res, next) => {
 
 export const getCustomerData = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
-
-    // Use parallel queries for better performance
-    const [customers, totalCount] = await Promise.all([
-      CustomerData.find()
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean(),
-      CustomerData.countDocuments()
-    ]);
+    const customers = await CustomerData.find()
+      .sort({ createdAt: -1 })
+      .lean();
 
     emitCustomerEvent("customerdata:fetched", customers);
-    return res.status(200).json({
-      customers,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return res.status(200).json(customers);
   } catch (error) {
     console.log('Get customer data error:', error);
     next(error);
@@ -84,34 +66,17 @@ export const getCustomerDataById = async (req, res, next) => {
 export const getCustomerDataByUserId = async (req, res, next) => {
   try {
     const { userid } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
 
     if (!userid) {
       return next(errorHandler(400, "User ID is required"));
     }
 
-    // Use parallel queries for better performance
-    const [customers, totalCount] = await Promise.all([
-      CustomerData.find({ userid })
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean(),
-      CustomerData.countDocuments({ userid })
-    ]);
+    const customers = await CustomerData.find({ userid })
+      .sort({ createdAt: -1 })
+      .lean();
 
     emitCustomerEvent("customerdata:fetchedByUser", customers);
-    return res.status(200).json({
-      customers,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return res.status(200).json(customers);
   } catch (error) {
     console.log('Get customer data by user ID error:', error);
     next(error);
@@ -121,9 +86,6 @@ export const getCustomerDataByUserId = async (req, res, next) => {
 export const getCustomerDataByTeamLeader = async (req, res, next) => {
   try {
     const { teamleaderid, teamleadername } = req.query;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
 
     if (!teamleaderid && !teamleadername) {
       return next(errorHandler(400, "Provide teamleaderid or teamleadername"));
@@ -133,25 +95,11 @@ export const getCustomerDataByTeamLeader = async (req, res, next) => {
     if (teamleaderid) filter.teamleaderid = teamleaderid;
     if (teamleadername) filter.teamleadername = teamleadername;
 
-    // Use parallel queries for better performance
-    const [customers, totalCount] = await Promise.all([
-      CustomerData.find(filter)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean(),
-      CustomerData.countDocuments(filter)
-    ]);
+    const customers = await CustomerData.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return res.status(200).json({
-      customers,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return res.status(200).json(customers);
   } catch (error) {
     console.log('Get customer data by team leader error:', error);
     next(error);
@@ -161,9 +109,6 @@ export const getCustomerDataByTeamLeader = async (req, res, next) => {
 export const getCustomerDataByManager = async (req, res, next) => {
   try {
     const { managerid, managername } = req.query;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
 
     if (!managerid && !managername) {
       return next(errorHandler(400, "Provide managerid or managername"));
@@ -173,25 +118,11 @@ export const getCustomerDataByManager = async (req, res, next) => {
     if (managerid) filter.managerid = managerid;
     if (managername) filter.managername = managername;
 
-    // Use parallel queries for better performance
-    const [customers, totalCount] = await Promise.all([
-      CustomerData.find(filter)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean(),
-      CustomerData.countDocuments(filter)
-    ]);
+    const customers = await CustomerData.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return res.status(200).json({
-      customers,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return res.status(200).json(customers);
   } catch (error) {
     console.log('Get customer data by manager error:', error);
     next(error);
@@ -201,32 +132,14 @@ export const getCustomerDataByManager = async (req, res, next) => {
 export const getCustomerNotifications = async (req, res, next) => {
   try {
     const includeSeen = req.query.includeSeen === "true";
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
-
     const filter = includeSeen ? {} : { isSeen: false };
 
-    // Use parallel queries for better performance
-    const [notifications, totalCount] = await Promise.all([
-      CustomerData.find(filter)
-        .select(notificationSelect)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean(),
-      CustomerData.countDocuments(filter)
-    ]);
+    const notifications = await CustomerData.find(filter)
+      .select(notificationSelect)
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return res.status(200).json({
-      notifications,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return res.status(200).json(notifications);
   } catch (error) {
     console.log('Get customer notifications error:', error);
     next(error);
@@ -237,9 +150,6 @@ export const getCustomerNotificationsByUserId = async (req, res, next) => {
   try {
     const { userid } = req.params;
     const includeSeen = req.query.includeSeen === "true";
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
 
     if (!userid) {
       return next(errorHandler(400, "User ID is required"));
@@ -249,26 +159,12 @@ export const getCustomerNotificationsByUserId = async (req, res, next) => {
       ? { userid }
       : { userid, isSeen: false };
 
-    // Use parallel queries for better performance
-    const [notifications, totalCount] = await Promise.all([
-      CustomerData.find(filter)
-        .select(notificationSelect)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean(),
-      CustomerData.countDocuments(filter)
-    ]);
+    const notifications = await CustomerData.find(filter)
+      .select(notificationSelect)
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return res.status(200).json({
-      notifications,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return res.status(200).json(notifications);
   } catch (error) {
     console.log('Get customer notifications by user ID error:', error);
     next(error);
