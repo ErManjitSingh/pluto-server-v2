@@ -84,4 +84,14 @@ const customerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Indexes for faster queries
+customerSchema.index({ userid: 1, createdAt: -1 }); // For user-specific queries
+customerSchema.index({ teamleaderid: 1, createdAt: -1 }); // For team leader queries
+customerSchema.index({ teamleadername: 1, createdAt: -1 }); // For team leader name queries
+customerSchema.index({ managerid: 1, createdAt: -1 }); // For manager queries
+customerSchema.index({ managername: 1, createdAt: -1 }); // For manager name queries
+customerSchema.index({ isSeen: 1, createdAt: -1 }); // For notification queries
+customerSchema.index({ userid: 1, isSeen: 1, createdAt: -1 }); // For user notification queries
+customerSchema.index({ createdAt: -1 }); // For general sorting
+
 export default mongoose.model("CustomerData", customerSchema);
