@@ -258,3 +258,18 @@ export const getChatByManagerId = async (req, res, next) => {
     next(error);
   }
 };
+
+// Get all chats
+export const getAllChats = async (req, res, next) => {
+  try {
+    const messages = await ChatMessage.find()
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect)
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json(messages);
+  } catch (error) {
+    console.log('Get all chats error:', error);
+    next(error);
+  }
+};
