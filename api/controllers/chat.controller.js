@@ -1,7 +1,6 @@
 import ChatMessage from '../models/chat.model.js';
 import Maker from '../models/maker.model.js';
 import Lead from '../models/lead.model.js';
-import mongoose from 'mongoose';
 import { errorHandler } from '../utils/error.js';
 
 // Helper function to generate conversation ID
@@ -35,13 +34,13 @@ export const sendMessage = async (req, res, next) => {
       return next(errorHandler(400, 'SenderId, receiverId, and message are required'));
     }
 
-    // Verify both users exist (using lean for faster queries)
+    // Verify both users exist
     const SenderModel = getUserModel(senderModel);
     const ReceiverModel = getUserModel(receiverModel);
 
     const [sender, receiver] = await Promise.all([
-      SenderModel.findById(senderId).lean().select('_id'),
-      ReceiverModel.findById(receiverId).lean().select('_id')
+      SenderModel.findById(senderId),
+      ReceiverModel.findById(receiverId)
     ]);
 
     if (!sender) {
@@ -53,7 +52,6 @@ export const sendMessage = async (req, res, next) => {
 
     const conversationId = getConversationId(senderId, receiverId);
 
-    // Create and populate in one query
     const newMessage = await ChatMessage.create({
       senderId,
       receiverId,
@@ -68,11 +66,9 @@ export const sendMessage = async (req, res, next) => {
       conversationId
     });
 
-    // Populate in single query instead of separate findById
     const populatedMessage = await ChatMessage.findById(newMessage._id)
       .populate('senderId', userSelect)
-      .populate('receiverId', userSelect)
-      .lean();
+      .populate('receiverId', userSelect);
 
     return res.status(201).json(populatedMessage);
   } catch (error) {
@@ -95,8 +91,7 @@ export const getConversation = async (req, res, next) => {
     const messages = await ChatMessage.find({ conversationId })
       .populate('senderId', userSelect)
       .populate('receiverId', userSelect)
-      .sort({ createdAt: 1 })
-      .lean();
+      .sort({ createdAt: 1 });
 
     return res.status(200).json(messages);
   } catch (error) {
@@ -105,7 +100,7 @@ export const getConversation = async (req, res, next) => {
   }
 };
 
-// Get all conversations for a user (optimized with aggregation)
+// Get all conversations for a user
 export const getUserConversations = async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -114,77 +109,42 @@ export const getUserConversations = async (req, res, next) => {
       return next(errorHandler(400, 'User ID is required'));
     }
 
-    const userIdObj = mongoose.Types.ObjectId.isValid(userId) 
-      ? new mongoose.Types.ObjectId(userId) 
-      : userId;
+    // Get all unique conversation partners
+    const messages = await ChatMessage.find({
+      $or: [{ senderId: userId }, { receiverId: userId }]
+    })
+      .populate('senderId', userSelect)
+      .populate('receiverId', userSelect)
+      .sort({ createdAt: -1 });
 
-    // Use aggregation pipeline for efficient grouping and counting
-    const conversations = await ChatMessage.aggregate([
-      {
-        $match: {
-          $or: [
-            { senderId: userIdObj },
-            { receiverId: userIdObj }
-          ]
-        }
-      },
-      {
-        $sort: { createdAt: -1 }
-      },
-      {
-        $group: {
-          _id: '$conversationId',
-          lastMessage: { $first: '$$ROOT' },
-          unreadCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $expr: { $eq: ['$receiverId', userIdObj] } },
-                    { $eq: ['$isRead', false] }
-                  ]
-                },
-                1,
-                0
-              ]
-            }
-          }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          conversationId: '$_id',
-          lastMessage: 1,
-          unreadCount: 1
-        }
-      },
-      {
-        $sort: { 'lastMessage.createdAt': -1 }
+    // Group by conversation and get last message
+    const conversationsMap = new Map();
+
+    messages.forEach(msg => {
+      const conversationId = msg.conversationId;
+      
+      if (!conversationsMap.has(conversationId)) {
+        const otherUser = msg.senderId._id.toString() === userId 
+          ? msg.receiverId 
+          : msg.senderId;
+
+        conversationsMap.set(conversationId, {
+          conversationId,
+          otherUser,
+          lastMessage: msg,
+          unreadCount: 0
+        });
       }
-    ]);
 
-    // Populate sender and receiver for last messages
-    const populatedConversations = await ChatMessage.populate(conversations, [
-      { path: 'lastMessage.senderId', select: userSelect },
-      { path: 'lastMessage.receiverId', select: userSelect }
-    ]);
-
-    // Transform to match expected format
-    const result = populatedConversations.map(conv => {
-      const otherUser = conv.lastMessage.senderId._id.toString() === userId
-        ? conv.lastMessage.receiverId
-        : conv.lastMessage.senderId;
-
-      return {
-        conversationId: conv.conversationId,
-        otherUser,
-        lastMessage: conv.lastMessage,
-        unreadCount: conv.unreadCount
-      };
+      // Count unread messages
+      if (msg.receiverId._id.toString() === userId && !msg.isRead) {
+        conversationsMap.get(conversationId).unreadCount++;
+      }
     });
 
-    return res.status(200).json(result);
+    const conversations = Array.from(conversationsMap.values());
+
+    return res.status(200).json(conversations);
   } catch (error) {
     console.log('Get user conversations error:', error);
     next(error);
@@ -240,12 +200,11 @@ export const deleteMessage = async (req, res, next) => {
   }
 };
 
-// Get unread message count for a user (optimized with index)
+// Get unread message count for a user
 export const getUnreadCount = async (req, res, next) => {
   try {
     const { userId } = req.params;
 
-    // Use countDocuments with indexed fields for fast query
     const count = await ChatMessage.countDocuments({
       receiverId: userId,
       isRead: false
@@ -270,8 +229,7 @@ export const getChatByTeamLeaderId = async (req, res, next) => {
     const messages = await ChatMessage.find({ teamleaderid })
       .populate('senderId', userSelect)
       .populate('receiverId', userSelect)
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
 
     return res.status(200).json(messages);
   } catch (error) {
@@ -292,8 +250,7 @@ export const getChatByManagerId = async (req, res, next) => {
     const messages = await ChatMessage.find({ managerid })
       .populate('senderId', userSelect)
       .populate('receiverId', userSelect)
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
 
     return res.status(200).json(messages);
   } catch (error) {
