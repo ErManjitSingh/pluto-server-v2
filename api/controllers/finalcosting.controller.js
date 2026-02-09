@@ -2111,6 +2111,145 @@ export const initializePropertyNightsBooked = async () => {
   }
 };
 
+/**
+ * Convert operation with category selection.
+ * Body: { converted: true, conversionCategory: 'basic' | 'standard' | 'delux' | 'luxury' }
+ * - basic: set converted true, clear hotelsbycategory only.
+ * - standard (2_star), delux (3_star), luxury (4_star): move that category's hotels to hotels,
+ *   update finalTotal, total, totals.hotelCost, totals.grandTotal from category totals, then clear hotelsbycategory.
+ */
+const CONVERSION_CATEGORY_TO_STAR = {
+  standard: '2_star',
+  delux: '3_star',
+  luxury: '4_star'
+};
+
+export const convertOperationWithCategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { converted, conversionCategory } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid operation ID format' });
+    }
+
+    if (converted !== true) {
+      return res.status(400).json({ message: 'converted must be true to use this API' });
+    }
+
+    const category = typeof conversionCategory === 'string' ? conversionCategory.trim().toLowerCase() : '';
+    const validCategories = ['basic', 'standard', 'delux', 'luxury'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        message: 'conversionCategory must be one of: basic, standard, delux, luxury'
+      });
+    }
+
+    const operation = await Operation.findById(id);
+    if (!operation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    const updates = {
+      converted: true,
+      hotelsbycategory: {}
+    };
+
+    if (category === 'basic') {
+      // Only clear hotelsbycategory; leave hotels, total, finalTotal, totals unchanged
+      const updatedOperation = await Operation.findByIdAndUpdate(
+        id,
+        { $set: updates },
+        { new: true, runValidators: false }
+      );
+      if (updatedOperation?.customerLeadId) {
+        try {
+          await updateLeadTotalAmountFromOperations(updatedOperation.customerLeadId);
+        } catch (e) {
+          console.error('Error updating lead totalAmount:', e);
+        }
+      }
+      if (updatedOperation) {
+        try {
+          await updatePropertyNightsBooked();
+        } catch (e) {
+          console.error('Error updating property nights booked:', e);
+        }
+      }
+      return res.status(200).json(updatedOperation);
+    }
+
+    // standard -> 2_star, delux -> 3_star, luxury -> 4_star
+    const starKey = CONVERSION_CATEGORY_TO_STAR[category];
+    const hotelsbycategory = operation.hotelsbycategory || {};
+    const categoryHotels = hotelsbycategory[starKey];
+
+    if (!Array.isArray(categoryHotels) || categoryHotels.length === 0) {
+      return res.status(400).json({
+        message: `No hotels found in hotelsbycategory for category: ${category} (${starKey})`
+      });
+    }
+
+    const totalKey = `${starKey}_total`;
+    const baseTotalKey = `${starKey}_baseTotal`;
+    const hotelPriceKey = `${starKey}_hotel_price`;
+
+    const categoryTotal = Number(hotelsbycategory[totalKey]) || 0;
+    const categoryBaseTotal = Number(hotelsbycategory[baseTotalKey]) || 0;
+    const categoryHotelPrice = Number(hotelsbycategory[hotelPriceKey]) || 0;
+
+    // Build hotels array from category: same structure as hotels, add similarhotel: [] if missing
+    const newHotels = categoryHotels.map((h) => {
+      const hotel = { ...h };
+      if (!Array.isArray(hotel.similarhotel)) {
+        hotel.similarhotel = [];
+      }
+      return hotel;
+    });
+
+    const existingTotals = operation.totals || {};
+    const transferCost = Number(existingTotals.transferCost) || 0;
+    const activitiesCost = Number(existingTotals.activitiesCost) || 0;
+    const grandTotal = transferCost + categoryHotelPrice + activitiesCost;
+
+    updates.hotels = newHotels;
+    updates.finalTotal = categoryTotal;
+    updates.total = categoryBaseTotal;
+    updates['totals.transferCost'] = transferCost;
+    updates['totals.hotelCost'] = categoryHotelPrice;
+    updates['totals.activitiesCost'] = activitiesCost;
+    updates['totals.grandTotal'] = grandTotal;
+
+    const updatedOperation = await Operation.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true, runValidators: false }
+    );
+
+    if (!updatedOperation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    if (updatedOperation.customerLeadId) {
+      try {
+        await updateLeadTotalAmountFromOperations(updatedOperation.customerLeadId);
+      } catch (e) {
+        console.error('Error updating lead totalAmount:', e);
+      }
+    }
+
+    try {
+      await updatePropertyNightsBooked();
+    } catch (e) {
+      console.error('Error updating property nights booked:', e);
+    }
+
+    res.status(200).json(updatedOperation);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Track when an operation is opened/viewed
 export const trackOperationOpened = async (req, res, next) => {
   try {
