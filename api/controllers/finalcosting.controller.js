@@ -16,38 +16,65 @@ async function findLeadByIdentifier(leadIdentifier) {
   return Lead.findOne({ leadId: String(leadIdentifier) });
 }
 
-// Helper function to update lead's totalAmount by summing all finalTotals from converted operations
+// Helper function to update lead's totalAmount by summing all finalTotals from converted operations,
+// set lead.converted = true, and sync margin/discount/cost from the operation(s)
 async function updateLeadTotalAmountFromOperations(customerLeadId) {
   try {
     if (!customerLeadId) return null;
 
-    // Find all converted operations for this customerLeadId
+    // Find all converted operations for this customerLeadId (with fields needed for margin/discount/cost)
     const convertedOperations = await Operation.find({
       customerLeadId: customerLeadId,
       converted: true
-    }).select({ finalTotal: 1 }).lean();
+    }).select({ finalTotal: 1, marginPercentage: 1, discountPercentage: 1, total: 1, 'editdetail.totalCost': 1 }).lean();
 
-    // Sum all finalTotals
+    // Sum all finalTotals (may be 0 if no converted operations left after un-convert)
     const totalAmount = convertedOperations.reduce((sum, op) => {
       return sum + (Number(op.finalTotal) || 0);
     }, 0);
 
     // Find and update the lead
     const lead = await findLeadByIdentifier(customerLeadId);
-    if (lead) {
-      lead.totalAmount = totalAmount;
-      await lead.save();
-      
-      // Recalculate remainingAmount after updating totalAmount
-      try {
-        await recalculateLeadRemainingAmount(lead._id.toString());
-      } catch (error) {
-        console.error('Error recalculating remaining amount:', error);
-      }
-      
-      return lead;
+    if (!lead) return null;
+
+    lead.totalAmount = totalAmount;
+    // Mark lead as converted only when it has at least one converted operation
+    lead.converted = convertedOperations.length > 0;
+
+    if (convertedOperations.length > 0) {
+      // Sync margin/discount/cost from the first converted operation (so lead has marginAmount, marginPercentage, etc.)
+      const firstOp = convertedOperations[0];
+      const marginPct = Number(firstOp.marginPercentage) || 0;
+      const discountPct = Number(firstOp.discountPercentage) || 0;
+      const totalForCalc = Number(firstOp.total) != null && firstOp.total !== '' ? Number(firstOp.total) : totalAmount;
+      const totalCost = firstOp.editdetail && firstOp.editdetail.totalCost != null
+        ? Number(firstOp.editdetail.totalCost)
+        : totalForCalc;
+
+      lead.marginPercentage = marginPct;
+      lead.discountPercentage = discountPct;
+      lead.totalCost = totalCost;
+      lead.marginAmount = (totalForCalc * marginPct) / 100;
+      lead.discountAmount = (totalForCalc * discountPct) / 100;
+    } else {
+      // No converted operations left - clear margin/discount/cost on lead
+      lead.marginPercentage = 0;
+      lead.discountPercentage = 0;
+      lead.totalCost = undefined;
+      lead.marginAmount = 0;
+      lead.discountAmount = 0;
     }
-    return null;
+
+    await lead.save();
+
+    // Recalculate remainingAmount after updating totalAmount
+    try {
+      await recalculateLeadRemainingAmount(lead._id.toString());
+    } catch (error) {
+      console.error('Error recalculating remaining amount:', error);
+    }
+
+    return lead;
   } catch (error) {
     console.error('Error updating lead totalAmount from operations:', error);
     return null;
