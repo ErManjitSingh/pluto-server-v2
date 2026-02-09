@@ -1,5 +1,5 @@
 import express from 'express';
-import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
@@ -39,5 +39,6 @@ router.put('/update-converted-by-customer-lead-id/:customerLeadId', updateConver
 router.get('/get-specific-fields/:id', getOperationSpecificFields);
 router.put('/update-specific-fields/:id', updateOperationSpecificFields);
 router.post('/opened', trackOperationOpened);
+router.put('/convert-with-category/:id', convertOperationWithCategory);
 
 export default router;
