@@ -2111,13 +2111,54 @@ export const initializePropertyNightsBooked = async () => {
   }
 };
 
-/**
- * Convert operation with category selection.
- * Body: { converted: true, conversionCategory: 'basic' | 'standard' | 'delux' | 'luxury' }
- * - basic: set converted true, clear hotelsbycategory only.
- * - standard (2_star), delux (3_star), luxury (4_star): move that category's hotels to hotels,
- *   update finalTotal, total, totals.hotelCost, totals.grandTotal from category totals, then clear hotelsbycategory.
- */
+// Track when an operation is opened/viewed
+export const trackOperationOpened = async (req, res, next) => {
+  try {
+    const { packageId, timestamp } = req.body;
+
+    // Validate input
+    if (!packageId) {
+      return res.status(400).json({ message: 'packageId is required' });
+    }
+
+    if (!timestamp) {
+      return res.status(400).json({ message: 'timestamp is required' });
+    }
+
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(packageId)) {
+      return res.status(400).json({ message: 'Invalid packageId format' });
+    }
+
+    // Update the operation with new opened data (replaces existing)
+    const updatedOperation = await Operation.findByIdAndUpdate(
+      packageId,
+      {
+        $set: {
+          'openedData.timestamp': timestamp,
+          'openedData.openedAt': new Date()
+        }
+      },
+      {
+        new: true,
+        runValidators: false
+      }
+    );
+
+    if (!updatedOperation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    res.status(200).json({
+      message: 'Operation opened tracked successfully',
+      operationId: packageId,
+      openedData: updatedOperation.openedData
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const CONVERSION_CATEGORY_TO_STAR = {
   standard: '2_star',
   delux: '3_star',
@@ -2213,54 +2254,6 @@ export const convertOperationWithCategory = async (req, res, next) => {
     }
 
     res.status(200).json(updatedOperation);
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Track when an operation is opened/viewed
-export const trackOperationOpened = async (req, res, next) => {
-  try {
-    const { packageId, timestamp } = req.body;
-
-    // Validate input
-    if (!packageId) {
-      return res.status(400).json({ message: 'packageId is required' });
-    }
-
-    if (!timestamp) {
-      return res.status(400).json({ message: 'timestamp is required' });
-    }
-
-    // Validate MongoDB ObjectId format
-    if (!mongoose.Types.ObjectId.isValid(packageId)) {
-      return res.status(400).json({ message: 'Invalid packageId format' });
-    }
-
-    // Update the operation with new opened data (replaces existing)
-    const updatedOperation = await Operation.findByIdAndUpdate(
-      packageId,
-      {
-        $set: {
-          'openedData.timestamp': timestamp,
-          'openedData.openedAt': new Date()
-        }
-      },
-      {
-        new: true,
-        runValidators: false
-      }
-    );
-
-    if (!updatedOperation) {
-      return res.status(404).json({ message: 'Operation not found' });
-    }
-
-    res.status(200).json({
-      message: 'Operation opened tracked successfully',
-      operationId: packageId,
-      openedData: updatedOperation.openedData
-    });
   } catch (error) {
     next(error);
   }
