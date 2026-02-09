@@ -2127,15 +2127,12 @@ const CONVERSION_CATEGORY_TO_STAR = {
 export const convertOperationWithCategory = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { converted, conversionCategory } = req.body;
+    const { conversionCategory } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid operation ID format' });
     }
 
-    if (converted !== true) {
-      return res.status(400).json({ message: 'converted must be true to use this API' });
-    }
 
     const category = typeof conversionCategory === 'string' ? conversionCategory.trim().toLowerCase() : '';
     const validCategories = ['basic', 'standard', 'delux', 'luxury'];
@@ -2151,7 +2148,6 @@ export const convertOperationWithCategory = async (req, res, next) => {
     }
 
     const updates = {
-      converted: true,
       hotelsbycategory: {}
     };
 
@@ -2162,20 +2158,6 @@ export const convertOperationWithCategory = async (req, res, next) => {
         { $set: updates },
         { new: true, runValidators: false }
       );
-      if (updatedOperation?.customerLeadId) {
-        try {
-          await updateLeadTotalAmountFromOperations(updatedOperation.customerLeadId);
-        } catch (e) {
-          console.error('Error updating lead totalAmount:', e);
-        }
-      }
-      if (updatedOperation) {
-        try {
-          await updatePropertyNightsBooked();
-        } catch (e) {
-          console.error('Error updating property nights booked:', e);
-        }
-      }
       return res.status(200).json(updatedOperation);
     }
 
@@ -2228,20 +2210,6 @@ export const convertOperationWithCategory = async (req, res, next) => {
 
     if (!updatedOperation) {
       return res.status(404).json({ message: 'Operation not found' });
-    }
-
-    if (updatedOperation.customerLeadId) {
-      try {
-        await updateLeadTotalAmountFromOperations(updatedOperation.customerLeadId);
-      } catch (e) {
-        console.error('Error updating lead totalAmount:', e);
-      }
-    }
-
-    try {
-      await updatePropertyNightsBooked();
-    } catch (e) {
-      console.error('Error updating property nights booked:', e);
     }
 
     res.status(200).json(updatedOperation);
@@ -2297,4 +2265,3 @@ export const trackOperationOpened = async (req, res, next) => {
     next(error);
   }
 };
-
