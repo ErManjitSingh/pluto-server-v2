@@ -121,11 +121,16 @@ export const getUserConversations = async (req, res, next) => {
     const conversationsMap = new Map();
 
     messages.forEach(msg => {
+      // Skip messages where sender or receiver was deleted (populate returns null)
+      if (!msg.senderId || !msg.receiverId) return;
+
       const conversationId = msg.conversationId;
-      
+      const senderIdStr = msg.senderId._id?.toString?.();
+      const receiverIdStr = msg.receiverId._id?.toString?.();
+
       if (!conversationsMap.has(conversationId)) {
-        const otherUser = msg.senderId._id.toString() === userId 
-          ? msg.receiverId 
+        const otherUser = senderIdStr === userId
+          ? msg.receiverId
           : msg.senderId;
 
         conversationsMap.set(conversationId, {
@@ -137,7 +142,7 @@ export const getUserConversations = async (req, res, next) => {
       }
 
       // Count unread messages
-      if (msg.receiverId._id.toString() === userId && !msg.isRead) {
+      if (receiverIdStr === userId && !msg.isRead) {
         conversationsMap.get(conversationId).unreadCount++;
       }
     });
