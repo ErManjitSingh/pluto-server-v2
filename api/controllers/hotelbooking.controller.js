@@ -33,6 +33,42 @@ export const getHotelBookingById = async (req, res, next) => {
   }
 };
 
+// Get hotel bookings by property name (root propertyName or hotels[0].propertyName)
+export const getHotelBookingsByPropertyName = async (req, res, next) => {
+  try {
+    const { propertyName } = req.query;
+    if (!propertyName) {
+      return res.status(400).json({ message: 'propertyName query parameter is required' });
+    }
+    const hotelBookings = await HotelBooking.find({
+      $or: [
+        { propertyName },
+        { 'hotels.0.propertyName': propertyName },
+      ],
+    });
+    res.status(200).json(hotelBookings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update only bookingresponse by id
+export const updateBookingResponse = async (req, res, next) => {
+  try {
+    const hotelBooking = await HotelBooking.findByIdAndUpdate(
+      req.params.id,
+      { $set: { bookingresponse: req.body.bookingresponse } },
+      { new: true }
+    );
+    if (!hotelBooking) {
+      return res.status(404).json({ message: 'Hotel booking not found' });
+    }
+    res.status(200).json(hotelBooking);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Update hotel booking
 export const updateHotelBooking = async (req, res, next) => {
   try {
