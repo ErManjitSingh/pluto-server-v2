@@ -1,6 +1,8 @@
 import express from 'express';
 import {
   getAllHotelBookings,
+  getHotelBookingsSummary,
+  getHotelBookingSummaryByBookingId,
   createHotelBooking,
   getHotelBookingById,
   getHotelBookingsByPropertyName,
@@ -12,6 +14,8 @@ import {
 const router = express.Router();
 
 router.get('/get', getAllHotelBookings);
+router.get('/getsummary', getHotelBookingsSummary);
+router.get('/getsummarybybookingid/:bookingId', getHotelBookingSummaryByBookingId);
 router.get('/getbypropertyname', getHotelBookingsByPropertyName);
 router.post('/create', createHotelBooking);
 router.get('/:id', getHotelBookingById);
