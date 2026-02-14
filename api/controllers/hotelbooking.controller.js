@@ -10,6 +10,34 @@ export const getAllHotelBookings = async (req, res, next) => {
   }
 };
 
+// Get hotel bookings with only bookingId, cityName, hotels, bookingresponse
+export const getHotelBookingsSummary = async (req, res, next) => {
+  try {
+    const hotelBookings = await HotelBooking.find().select(
+      'bookingId cityName hotels bookingresponse'
+    );
+    res.status(200).json(hotelBookings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get one hotel booking by bookingId with only bookingId, cityName, hotels, bookingresponse
+export const getHotelBookingSummaryByBookingId = async (req, res, next) => {
+  try {
+    const { bookingId } = req.params;
+    const hotelBooking = await HotelBooking.findOne({ bookingId }).select(
+      'bookingId cityName hotels bookingresponse'
+    );
+    if (!hotelBooking) {
+      return res.status(404).json({ message: 'Hotel booking not found' });
+    }
+    res.status(200).json(hotelBooking);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Create new hotel booking
 export const createHotelBooking = async (req, res, next) => {
   try {
