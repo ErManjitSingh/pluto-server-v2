@@ -53,6 +53,7 @@ import chatRouter from './routes/chat.route.js';
 import activityUserRouter from './routes/activityuser.route.js';
 import gmailRouter from './routes/gmail.route.js';
 import customerRouter from './routes/customer.route.js';
+import paymentPolicyRouter from './routes/paymentpolicy.route.js';
 
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
@@ -167,6 +168,7 @@ app.use("/api/chat", chatRouter);
 app.use("/api/activityuser", activityUserRouter);
 app.use("/api/gmail", gmailRouter);
 app.use("/api/customerdata", customerRouter);
+app.use("/api/paymentpolicy", paymentPolicyRouter);
 
 
 // -------------------------------------------------------------
