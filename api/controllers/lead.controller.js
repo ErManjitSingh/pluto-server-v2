@@ -53,6 +53,7 @@ export const createLead = async (req, res, next) => {
 };
 
 // Get all leads (modified to handle common token and simple token)
+// For executive/team leader: also includes leads where isAssignedLead true and assignedUserId = their id
 export const getLeads = async (req, res, next) => {
   try {
     let leads;
@@ -61,8 +62,13 @@ export const getLeads = async (req, res, next) => {
       // If using common token or simple token, get all leads created with these tokens
       leads = await Lead.find({ isCommonLead: true });
     } else {
-      // If using individual token, get only user's leads
-      leads = await Lead.find({ createdBy: req.user.id, isCommonLead: { $ne: true } });
+      // If using individual token: user's own leads OR leads assigned to them
+      leads = await Lead.find({
+        $or: [
+          { createdBy: req.user.id, isCommonLead: { $ne: true } },
+          { isAssignedLead: true, assignedUserId: req.user.id }
+        ]
+      });
     }
     
     res.status(200).json(leads);
@@ -72,6 +78,7 @@ export const getLeads = async (req, res, next) => {
 };
 
 // Get single lead (modified to handle common token and simple token)
+// For executive/team leader: also allows access if lead is assigned to them
 export const getLead = async (req, res, next) => {
   try {
     let lead;
@@ -83,11 +90,13 @@ export const getLead = async (req, res, next) => {
         isCommonLead: true
       });
     } else {
-      // If using individual token, find user's lead
+      // If using individual token: user's lead OR lead assigned to them
       lead = await Lead.findOne({
         _id: req.params.id,
-        createdBy: req.user.id,
-        isCommonLead: { $ne: true }
+        $or: [
+          { createdBy: req.user.id, isCommonLead: { $ne: true } },
+          { isAssignedLead: true, assignedUserId: req.user.id }
+        ]
       });
     }
     
@@ -98,13 +107,16 @@ export const getLead = async (req, res, next) => {
   }
 };
 
-// Update lead
+// Update lead (owner or assignee can update)
 export const updateLead = async (req, res, next) => {
   try {
     const updatedLead = await Lead.findOneAndUpdate(
        {
         _id: req.params.id,
-        createdBy: req.user.id
+        $or: [
+          { createdBy: req.user.id },
+          { isAssignedLead: true, assignedUserId: req.user.id }
+        ]
       },
       { $set: req.body },
       { new: true }
@@ -143,11 +155,13 @@ export const deleteLead = async (req, res, next) => {
         isCommonLead: true
       });
     } else {
-      // If using individual token, delete from user's leads
+      // If using individual token: user's leads OR leads assigned to them
       deletedLead = await Lead.findOneAndDelete({
         _id: req.params.id,
-        createdBy: req.user.id,
-        isCommonLead: { $ne: true }
+        $or: [
+          { createdBy: req.user.id, isCommonLead: { $ne: true } },
+          { isAssignedLead: true, assignedUserId: req.user.id }
+        ]
       });
     }
     
@@ -524,6 +538,104 @@ export const getLeadEmails = async (req, res, next) => {
 export const getHelloHarshit = async (req, res, next) => {
   try {
     res.status(200).json({ message: 'hello harshit' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========== Assigned Leads API (only isAssignedLead: true) ==========
+
+// GET assigned leads – only leads where isAssignedLead true, for current user (assignedUserId = req.user.id)
+export const getAssignedLeads = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return next(errorHandler(401, 'User not authenticated'));
+    }
+    const leads = await Lead.find({
+      isAssignedLead: true,
+      assignedUserId: req.user.id
+    });
+    res.status(200).json(leads);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// POST create assigned lead – sets isAssignedLead true and assignedUserId from body
+export const createAssignedLead = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return next(errorHandler(401, 'User not authenticated'));
+    }
+    const leadData = {
+      ...req.body,
+      createdBy: req.user.id,
+      isAssignedLead: true,
+      assignedUserId: req.body.assignedUserId || req.user.id
+    };
+    const newLead = new Lead(leadData);
+    const savedLead = await newLead.save();
+    try {
+      if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
+        await initializeLeadRemainingAmount(savedLead._id);
+        const finalLead = await Lead.findById(savedLead._id);
+        return res.status(201).json(finalLead);
+      }
+    } catch (error) {
+      console.error('Error initializing remaining amount:', error);
+    }
+    res.status(201).json(savedLead);
+  } catch (error) {
+    console.error('Assigned lead creation error:', error);
+    next(error);
+  }
+};
+
+// PUT update assigned lead – only if lead is assigned to current user
+export const updateAssignedLead = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return next(errorHandler(401, 'User not authenticated'));
+    }
+    const updatedLead = await Lead.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        isAssignedLead: true,
+        assignedUserId: req.user.id
+      },
+      { $set: req.body },
+      { new: true }
+    );
+    if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+    if (req.body.totalAmount !== undefined) {
+      try {
+        await recalculateLeadRemainingAmount(updatedLead._id);
+        const finalLead = await Lead.findById(updatedLead._id);
+        return res.status(200).json(finalLead);
+      } catch (error) {
+        console.error('Error recalculating remaining amount:', error);
+        return res.status(200).json(updatedLead);
+      }
+    }
+    res.status(200).json(updatedLead);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// DELETE assigned lead – only if lead is assigned to current user
+export const deleteAssignedLead = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return next(errorHandler(401, 'User not authenticated'));
+    }
+    const deletedLead = await Lead.findOneAndDelete({
+      _id: req.params.id,
+      isAssignedLead: true,
+      assignedUserId: req.user.id
+    });
+    if (!deletedLead) return res.status(404).json({ message: 'Lead not found' });
+    res.status(200).json({ message: 'Lead deleted successfully' });
   } catch (error) {
     next(error);
   }
