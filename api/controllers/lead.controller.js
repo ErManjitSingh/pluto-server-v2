@@ -588,14 +588,10 @@ export const createAssignedLead = async (req, res, next) => {
 // PUT update assigned lead – only if lead is assigned to current user
 export const updateAssignedLead = async (req, res, next) => {
   try {
-    if (!req.user || !req.user.id) {
-      return next(errorHandler(401, 'User not authenticated'));
-    }
     const updatedLead = await Lead.findOneAndUpdate(
       {
         _id: req.params.id,
-        isAssignedLead: true,
-        assignedUserId: req.user.id
+        isAssignedLead: true
       },
       { $set: req.body },
       { new: true }
@@ -616,7 +612,6 @@ export const updateAssignedLead = async (req, res, next) => {
     next(error);
   }
 };
-
 // DELETE assigned lead – only if lead is assigned to current user
 export const deleteAssignedLead = async (req, res, next) => {
   try {
