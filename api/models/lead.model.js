@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const leadSchema = new mongoose.Schema({
    leadId: {
     type: String,
-    unique: true,
+  
   },
    
    leadStatus:{
@@ -103,6 +103,15 @@ const leadSchema = new mongoose.Schema({
   isCommonLead: {
     type: Boolean,
     default: false
+  },
+  isAssignedLead: {
+    type: Boolean,
+    default: false
+  },
+  assignedUserId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
   },
   gmailThreadId: {
     type: String,
