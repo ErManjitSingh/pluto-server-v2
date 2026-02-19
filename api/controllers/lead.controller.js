@@ -548,13 +548,7 @@ export const getHelloHarshit = async (req, res, next) => {
 // GET assigned leads – only leads where isAssignedLead true, for current user (assignedUserId = req.user.id)
 export const getAssignedLeads = async (req, res, next) => {
   try {
-    if (!req.user || !req.user.id) {
-      return next(errorHandler(401, 'User not authenticated'));
-    }
-    const leads = await Lead.find({
-      isAssignedLead: true,
-      assignedUserId: req.user.id
-    });
+    const leads = await Lead.find({ isAssignedLead: true });
     res.status(200).json(leads);
   } catch (error) {
     next(error);
