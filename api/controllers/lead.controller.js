@@ -28,21 +28,16 @@ function parseTimingToDate(timingStr) {
 }
 
 /**
- * Show notification when current date/time has reached "today at (timing - 10 minutes)".
- * Example: note timing "9/5/2026 7.10pm" -> show when current time is 7.00pm on the current day (e.g. 2/20/2026 7.00pm).
- * So we use today's date with the time from the note (minus 10 min). Past times (e.g. 5.30pm, 6.10pm) show immediately.
+ * Show notification when current date/time has reached (timing - 10 minutes).
+ * Uses full date and time from the timing string, e.g. "1/2/2026 6.20pm" -> show when now >= Jan 2, 2026 6:10 PM.
  * If timing is empty or unparseable, show immediately (return true).
  */
 function shouldShowNotificationByTime(timingStr) {
   if (!timingStr || typeof timingStr !== 'string') return true;
   const timingDate = parseTimingToDate(timingStr);
   if (!timingDate) return true;
-  const showAfterTime = new Date(timingDate.getTime() - 10 * 60 * 1000);
-  const showHour = showAfterTime.getHours();
-  const showMin = showAfterTime.getMinutes();
-  const now = new Date();
-  const showAfter = new Date(now.getFullYear(), now.getMonth(), now.getDate(), showHour, showMin, 0, 0);
-  return now >= showAfter;
+  const showAfter = new Date(timingDate.getTime() - 10 * 60 * 1000);
+  return new Date() >= showAfter;
 }
 
 // Create new lead
@@ -730,7 +725,9 @@ export const updateLeadStatusNote = async (req, res, next) => {
 
 /**
  * Get lead status notifications by userid (seen: false only).
- * Only returns notifications when current time has reached (timing - 10 minutes).
+ * Fetches from Lead.leadstatusnote where userid matches (primary source).
+ * Falls back to LeadStatusNotification if no leadstatusnote data.
+ * Applies timing filter: only when current time >= (timing - 10 min).
  */
 export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
   try {
@@ -738,13 +735,34 @@ export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
     if (!userId) {
       return res.status(400).json({ message: 'userId is required' });
     }
-    const all = await LeadStatusNotification.find({
-      userid: userId,
-      seen: false
-    })
-      .sort({ createdAt: -1 })
-      .lean();
-    const notifications = all.filter((n) => shouldShowNotificationByTime(n.timing));
+    // Fetch from Lead.leadstatusnote (embedded notes)
+    const leads = await Lead.aggregate([
+      { $match: { 'leadstatusnote.userid': userId } },
+      { $unwind: '$leadstatusnote' },
+      { $match: { 'leadstatusnote.userid': userId, 'leadstatusnote.seen': { $ne: true } } },
+      {
+        $project: {
+          _id: '$leadstatusnote._id',
+          leadId: '$_id',
+          leadstatus: '$leadstatusnote.leadstatus',
+          note: '$leadstatusnote.note',
+          timing: '$leadstatusnote.timing',
+          userid: '$leadstatusnote.userid',
+          teamleaderid: '$leadstatusnote.teamleaderid',
+          managerid: '$leadstatusnote.managerid',
+          seen: '$leadstatusnote.seen'
+        }
+      },
+      { $sort: { _id: -1 } }
+    ]);
+    let notifications = leads.filter((n) => shouldShowNotificationByTime(n.timing || ''));
+    // Fallback to LeadStatusNotification if no leadstatusnote results
+    if (notifications.length === 0) {
+      const all = await LeadStatusNotification.find({ userid: userId, seen: false })
+        .sort({ createdAt: -1 })
+        .lean();
+      notifications = all.filter((n) => shouldShowNotificationByTime(n.timing));
+    }
     res.status(200).json(notifications);
   } catch (error) {
     next(error);
@@ -796,11 +814,24 @@ export const markLeadStatusNoteSeen = async (req, res, next) => {
 
 /**
  * Mark a specific lead status notification as seen (seen: true).
+ * Supports both: (1) noteId from leadstatusnote - finds Lead and updates note
+ * (2) LeadStatusNotification _id - updates that document.
  * PUT /mark-lead-status-notification-seen/:id
+ * PATCH /lead-status-notification/:id/seen (frontend-friendly)
  */
 export const markLeadStatusNotificationSeen = async (req, res, next) => {
   try {
     const { id } = req.params;
+    // First try: update Lead.leadstatusnote by note _id
+    const leadUpdated = await Lead.findOneAndUpdate(
+      { 'leadstatusnote._id': id },
+      { $set: { 'leadstatusnote.$.seen': true } },
+      { new: true }
+    );
+    if (leadUpdated) {
+      return res.status(200).json({ success: true, message: 'Marked as seen' });
+    }
+    // Fallback: update LeadStatusNotification
     const updated = await LeadStatusNotification.findByIdAndUpdate(
       id,
       { $set: { seen: true } },
