@@ -7,6 +7,7 @@ import EmailActivity from '../models/emailActivity.model.js';
 
 /**
  * Parse timing string like "9/5/2026 5.30pm", "2/20/2026 6.30pm", or "2/26.2026 5.50pm" (m/d/yyyy or m/d.yyyy, h.mm am/pm) to Date.
+ * Assumes timing is in IST (India Standard Time, UTC+5:30) since server often runs in UTC.
  * Returns null if parsing fails.
  */
 function parseTimingToDate(timingStr) {
@@ -22,7 +23,9 @@ function parseTimingToDate(timingStr) {
   if (ampm.toLowerCase() === 'am' && h === 12) h = 0;
   const month = parseInt(n1, 10) - 1;
   const day = parseInt(n2, 10);
-  const date = new Date(y, month, day, h, mn, 0, 0);
+  // Treat as IST (UTC+5:30): subtract 5.5 hours to get UTC equivalent for server comparison
+  const utcMs = Date.UTC(y, month, day, h, mn, 0, 0) - (5.5 * 60 * 60 * 1000);
+  const date = new Date(utcMs);
   if (isNaN(date.getTime())) return null;
   return date;
 }
