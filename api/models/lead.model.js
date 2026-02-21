@@ -9,7 +9,16 @@ const leadSchema = new mongoose.Schema({
    leadStatus:{
    type:String,
    },
-   
+   leadstatusnote: [{
+     leadstatus: { type: String },
+     note: { type: String, required: false },
+     timing: { type: String, required: false },
+     userid: { type: mongoose.Schema.Types.Mixed },
+     teamleaderid: { type: mongoose.Schema.Types.Mixed },
+     managerid: { type: mongoose.Schema.Types.Mixed },
+     seen: { type: Boolean, default: false }
+   }],
+
   name: {
     type: String,
     required: false,
