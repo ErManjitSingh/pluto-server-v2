@@ -1,8 +1,49 @@
 import Lead from '../models/lead.model.js';
+import LeadStatusNotification from '../models/leadStatusNotification.model.js';
 import { errorHandler } from '../utils/error.js';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
 import EmailActivity from '../models/emailActivity.model.js';
+
+/**
+ * Parse timing string like "9/5/2026 5.30pm", "2/20/2026 6.30pm", or "2/26.2026 5.50pm" (m/d/yyyy or m/d.yyyy, h.mm am/pm) to Date.
+ * Returns null if parsing fails.
+ */
+function parseTimingToDate(timingStr) {
+  if (!timingStr || typeof timingStr !== 'string') return null;
+  const s = timingStr.trim();
+  const match = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\s+(\d{1,2})\.(\d{2})\s*(am|pm)$/i);
+  if (!match) return null;
+  const [, n1, n2, year, hour, min, ampm] = match;
+  const y = parseInt(year, 10);
+  let h = parseInt(hour, 10);
+  const mn = parseInt(min, 10);
+  if (ampm.toLowerCase() === 'pm' && h !== 12) h += 12;
+  if (ampm.toLowerCase() === 'am' && h === 12) h = 0;
+  const month = parseInt(n1, 10) - 1;
+  const day = parseInt(n2, 10);
+  const date = new Date(y, month, day, h, mn, 0, 0);
+  if (isNaN(date.getTime())) return null;
+  return date;
+}
+
+/**
+ * Show notification when current date/time has reached "today at (timing - 10 minutes)".
+ * Example: note timing "9/5/2026 7.10pm" -> show when current time is 7.00pm on the current day (e.g. 2/20/2026 7.00pm).
+ * So we use today's date with the time from the note (minus 10 min). Past times (e.g. 5.30pm, 6.10pm) show immediately.
+ * If timing is empty or unparseable, show immediately (return true).
+ */
+function shouldShowNotificationByTime(timingStr) {
+  if (!timingStr || typeof timingStr !== 'string') return true;
+  const timingDate = parseTimingToDate(timingStr);
+  if (!timingDate) return true;
+  const showAfterTime = new Date(timingDate.getTime() - 10 * 60 * 1000);
+  const showHour = showAfterTime.getHours();
+  const showMin = showAfterTime.getMinutes();
+  const now = new Date();
+  const showAfter = new Date(now.getFullYear(), now.getMonth(), now.getDate(), showHour, showMin, 0, 0);
+  return now >= showAfter;
+}
 
 // Create new lead
 export const createLead = async (req, res, next) => {
@@ -625,6 +666,171 @@ export const deleteAssignedLead = async (req, res, next) => {
     });
     if (!deletedLead) return res.status(404).json({ message: 'Lead not found' });
     res.status(200).json({ message: 'Lead deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ========== Lead status note & notifications ==========
+
+/**
+ * Update lead status note: append to leadstatusnote, set leadStatus to latest, create notification (timing stored as person sent).
+ * Notification appears in get API only when current time >= (timing - 10 min).
+ * Body: leadstatus, note? (optional), timing? (optional), userid, teamleaderid, managerid
+ */
+export const updateLeadStatusNote = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { leadstatus, note, timing, userid, teamleaderid, managerid } = req.body;
+
+    if (!leadstatus) {
+      return res.status(400).json({ message: 'leadstatus is required' });
+    }
+    if (!userid && !teamleaderid && !managerid) {
+      return res.status(400).json({ message: 'At least one of userid, teamleaderid, managerid is required' });
+    }
+
+    const noteEntry = {
+      leadstatus,
+      ...(note !== undefined && note !== null && { note }),
+      ...(timing !== undefined && timing !== null && { timing }),
+      userid: userid || undefined,
+      teamleaderid: teamleaderid || undefined,
+      managerid: managerid || undefined
+    };
+
+    const lead = await Lead.findById(id);
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+
+    const updatedLead = await Lead.findByIdAndUpdate(
+      id,
+      {
+        $push: { leadstatusnote: noteEntry },
+        $set: { leadStatus: leadstatus }
+      },
+      { new: true }
+    );
+
+    await LeadStatusNotification.create({
+      leadId: id,
+      leadstatus,
+      note: note || '',
+      timing: timing || '',
+      userid: userid || null,
+      teamleaderid: teamleaderid || null,
+      managerid: managerid || null,
+      seen: false
+    });
+
+    res.status(200).json(updatedLead);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get lead status notifications by userid (seen: false only).
+ * Only returns notifications when current time has reached (timing - 10 minutes).
+ */
+export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
+  try {
+    const userId = req.params.userId || req.query.userId;
+    if (!userId) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+    const all = await LeadStatusNotification.find({
+      userid: userId,
+      seen: false
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    const notifications = all.filter((n) => shouldShowNotificationByTime(n.timing));
+    res.status(200).json(notifications);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get lead status notifications by teamleaderid (seen: false only).
+ * Only returns notifications when current time has reached (timing - 10 minutes).
+ */
+export const getLeadStatusNotificationsByTeamLeaderId = async (req, res, next) => {
+  try {
+    const teamLeaderId = req.params.teamLeaderId || req.query.teamLeaderId;
+    if (!teamLeaderId) {
+      return res.status(400).json({ message: 'teamLeaderId is required' });
+    }
+    const all = await LeadStatusNotification.find({
+      teamleaderid: teamLeaderId,
+      seen: false
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    const notifications = all.filter((n) => shouldShowNotificationByTime(n.timing));
+    res.status(200).json(notifications);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Mark a specific leadstatusnote subdocument as seen (seen: true).
+ * PUT /mark-lead-status-note-seen/:leadId/:noteId
+ * leadId = Lead._id, noteId = leadstatusnote[]._id (e.g. 699953418d7e2f48a7fecf51)
+ */
+export const markLeadStatusNoteSeen = async (req, res, next) => {
+  try {
+    const { leadId, noteId } = req.params;
+    const updated = await Lead.findOneAndUpdate(
+      { _id: leadId, 'leadstatusnote._id': noteId },
+      { $set: { 'leadstatusnote.$.seen': true } },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ message: 'Lead or lead status note not found' });
+    res.status(200).json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Mark a specific lead status notification as seen (seen: true).
+ * PUT /mark-lead-status-notification-seen/:id
+ */
+export const markLeadStatusNotificationSeen = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const updated = await LeadStatusNotification.findByIdAndUpdate(
+      id,
+      { $set: { seen: true } },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ message: 'Lead status notification not found' });
+    res.status(200).json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get lead status notifications by managerid (seen: false only).
+ * Only returns notifications when current time has reached (timing - 10 minutes).
+ */
+export const getLeadStatusNotificationsByManagerId = async (req, res, next) => {
+  try {
+    const managerId = req.params.managerId || req.query.managerId;
+    if (!managerId) {
+      return res.status(400).json({ message: 'managerId is required' });
+    }
+    const all = await LeadStatusNotification.find({
+      managerid: managerId,
+      seen: false
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    const notifications = all.filter((n) => shouldShowNotificationByTime(n.timing));
+    res.status(200).json(notifications);
   } catch (error) {
     next(error);
   }
