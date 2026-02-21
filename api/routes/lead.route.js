@@ -19,7 +19,13 @@ import {
   getAssignedLeads,
   createAssignedLead,
   updateAssignedLead,
-  deleteAssignedLead
+  deleteAssignedLead,
+  updateLeadStatusNote,
+  getLeadStatusNotificationsByUserId,
+  getLeadStatusNotificationsByTeamLeaderId,
+  getLeadStatusNotificationsByManagerId,
+  markLeadStatusNotificationSeen,
+  markLeadStatusNoteSeen
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
 
@@ -61,5 +67,13 @@ router.put('/public/update-lead/:id', updateLeadPublic);
 router.delete('/public/delete-lead/:id', deleteLeadPublic);
 router.delete('/public/delete-leads', deleteMultipleLeadsPublic);
 router.get('/hello-harshit', getHelloHarshit);
+
+// Lead status note & notifications (no change to existing logic)
+router.put('/update-lead-status-note/:id', updateLeadStatusNote);
+router.put('/mark-lead-status-notification-seen/:id', markLeadStatusNotificationSeen);
+router.put('/mark-lead-status-note-seen/:leadId/:noteId', markLeadStatusNoteSeen);
+router.get('/get-lead-status-notifications-by-user/:userId', getLeadStatusNotificationsByUserId);
+router.get('/get-lead-status-notifications-by-teamleader/:teamLeaderId', getLeadStatusNotificationsByTeamLeaderId);
+router.get('/get-lead-status-notifications-by-manager/:managerId', getLeadStatusNotificationsByManagerId);
 
 export default router;
