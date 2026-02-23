@@ -759,8 +759,7 @@ export const getLeadStatusNotificationsByTeamLeaderId = async (req, res, next) =
       return res.status(400).json({ message: 'teamLeaderId is required' });
     }
     const all = await LeadStatusNotification.find({
-      teamleaderid: teamLeaderId,
-      seen: false
+      teamleaderid: teamLeaderId
     })
       .sort({ createdAt: -1 })
       .lean();
@@ -834,8 +833,7 @@ export const getLeadStatusNotificationsByManagerId = async (req, res, next) => {
       return res.status(400).json({ message: 'managerId is required' });
     }
     const all = await LeadStatusNotification.find({
-      managerid: managerId,
-      seen: false
+      managerid: managerId
     })
       .sort({ createdAt: -1 })
       .lean();
