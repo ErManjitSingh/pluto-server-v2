@@ -727,10 +727,10 @@ export const updateLeadStatusNote = async (req, res, next) => {
 };
 
 /**
- * Get lead status notifications by userid (seen: false only).
- * Fetches from Lead.leadstatusnote where userid matches (primary source).
- * Falls back to LeadStatusNotification if no leadstatusnote data.
- * Applies timing filter: only when current time >= (timing - 10 min).
+ * Get ALL lead status notifications for a user (userid) from ALL leads.
+ * Single source: LeadStatusNotification. Filter by userid only (e.g. 1232).
+ * Same userid can appear in many leads' notes — we return all of them.
+ * seen: false only. Timing filter applied (show when current time >= timing - 10 min).
  */
 export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
   try {
@@ -738,34 +738,10 @@ export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
     if (!userId) {
       return res.status(400).json({ message: 'userId is required' });
     }
-    // Fetch from Lead.leadstatusnote (embedded notes)
-    const leads = await Lead.aggregate([
-      { $match: { 'leadstatusnote.userid': userId } },
-      { $unwind: '$leadstatusnote' },
-      { $match: { 'leadstatusnote.userid': userId, 'leadstatusnote.seen': { $ne: true } } },
-      {
-        $project: {
-          _id: '$leadstatusnote._id',
-          leadId: '$_id',
-          leadstatus: '$leadstatusnote.leadstatus',
-          note: '$leadstatusnote.note',
-          timing: '$leadstatusnote.timing',
-          userid: '$leadstatusnote.userid',
-          teamleaderid: '$leadstatusnote.teamleaderid',
-          managerid: '$leadstatusnote.managerid',
-          seen: '$leadstatusnote.seen'
-        }
-      },
-      { $sort: { _id: -1 } }
-    ]);
-    let notifications = leads.filter((n) => shouldShowNotificationByTime(n.timing || ''));
-    // Fallback to LeadStatusNotification if no leadstatusnote results
-    if (notifications.length === 0) {
-      const all = await LeadStatusNotification.find({ userid: userId, seen: false })
-        .sort({ createdAt: -1 })
-        .lean();
-      notifications = all.filter((n) => shouldShowNotificationByTime(n.timing));
-    }
+    const all = await LeadStatusNotification.find({ userid: userId, seen: false })
+      .sort({ createdAt: -1 })
+      .lean();
+    const notifications = all.filter((n) => shouldShowNotificationByTime(n.timing || ''));
     res.status(200).json(notifications);
   } catch (error) {
     next(error);
@@ -869,4 +845,3 @@ export const getLeadStatusNotificationsByManagerId = async (req, res, next) => {
     next(error);
   }
 };
-
