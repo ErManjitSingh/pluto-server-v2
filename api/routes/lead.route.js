@@ -25,6 +25,7 @@ import {
   getLeadStatusNotificationsByTeamLeaderId,
   getLeadStatusNotificationsByManagerId,
   markLeadStatusNotificationSeen,
+  deleteLeadStatusNotification,
   markLeadStatusNoteSeen
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
@@ -75,5 +76,6 @@ router.put('/mark-lead-status-note-seen/:leadId/:noteId', markLeadStatusNoteSeen
 router.get('/get-lead-status-notifications-by-user/:userId', getLeadStatusNotificationsByUserId);
 router.get('/get-lead-status-notifications-by-teamleader/:teamLeaderId', getLeadStatusNotificationsByTeamLeaderId);
 router.get('/get-lead-status-notifications-by-manager/:managerId', getLeadStatusNotificationsByManagerId);
+router.delete('/delete-lead-status-notification/:id', deleteLeadStatusNotification);
 
 export default router;
