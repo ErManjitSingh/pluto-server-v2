@@ -116,8 +116,8 @@ app.use(
   })
 );
 
-app.use(bodyParser.json({ limit: "10mb" }));
-app.use(bodyParser.urlencoded({ extended: true, limit: "10mb" }));
+app.use(bodyParser.json({ limit: "30mb" }));
+app.use(bodyParser.urlencoded({ extended: true, limit: "30mb" }));
 app.use(express.json());
 app.use(cookieParser());
 
