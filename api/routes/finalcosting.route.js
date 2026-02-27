@@ -1,11 +1,12 @@
 import express from 'express';
-import {getOperationByMongoId,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
 router.post('/create', createOperation);
 router.get('/get', getOperations);
 router.get('/get/:id/:userId/:customerLeadId', getOperationById);
+router.get('/get-by-id-base64/:encodedId', getOperationByMongoIdBase64);
 router.get('/get-by-id/:id', getOperationByMongoId);
 router.put('/update/:id', updateOperation);
 router.put('/update-editdetail/:operationId', updateEditdetail);
