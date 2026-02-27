@@ -1247,7 +1247,43 @@ export const getOperationByMongoId = async (req, res, next) => {
     next(error);
   }
 };
-
+export const getOperationByMongoIdBase64 = async (req, res, next) => {
+  try {
+    const { encodedId } = req.params;
+    
+    if (!encodedId) {
+      return res.status(400).json({ message: 'Encoded ID is required' });
+    }
+    
+    let id;
+    try {
+      id = Buffer.from(encodedId, 'base64').toString('utf8');
+    } catch (decodeError) {
+      return res.status(400).json({ message: 'Invalid base64 encoded ID' });
+    }
+    
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid operation ID format' });
+    }
+    
+    // Find operation by MongoDB _id
+    const operation = await Operation.findById(id)
+      .lean() // Faster - returns plain objects
+      .maxTimeMS(70000); // Set timeout to prevent hanging queries
+    
+    if (!operation) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+    
+    // Return operation data as base64-encoded JSON
+    const jsonString = JSON.stringify(operation);
+    const dataBase64 = Buffer.from(jsonString, 'utf8').toString('base64');
+    res.status(200).json({ data: dataBase64 });
+  } catch (error) {
+    next(error);
+  }
+};
 export const getConvertedOperationById = async (req, res, next) => {
   try {
     const { id } = req.params;
