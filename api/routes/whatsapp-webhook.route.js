@@ -29,31 +29,27 @@ router.get('/webhook', (req, res) => {
  * Saves phone + message to MongoDB for CRM.
  */
 router.post('/webhook', async (req, res) => {
-  try {
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const value = change?.value;
-    const message = value?.messages?.[0];
+  const value = req.body.entry?.[0]?.changes?.[0]?.value;
 
-    if (message) {
-      const phone = message.from;
-      let text = message.text?.body;
-      if (!text && (message.image || message.audio || message.video || message.document)) {
-        text = `[${message.type}]`;
-      }
-      if (text) {
-        await WhatsappMessage.create({
-          phone,
-          message: text,
-          direction: 'incoming',
-          metaMessageId: message.id || null,
-        });
-        console.log('WhatsApp saved to DB:', phone, text);
-      }
-    }
-  } catch (err) {
-    console.error('Webhook save error:', err);
+  // Handle Incoming Message
+  if (value?.messages) {
+    const message = value.messages[0];
+
+    await WhatsappMessage.create({
+      phone: message.from,
+      message: message.text?.body || `[${message.type}]`,
+      direction: 'incoming',
+      metaMessageId: message.id || null,
+    });
+
+    console.log("✅ Incoming message saved");
   }
+
+  // Handle Status Updates (ignore)
+  if (value?.statuses) {
+    console.log("📦 Status update received");
+  }
+
   res.sendStatus(200);
 });
 
