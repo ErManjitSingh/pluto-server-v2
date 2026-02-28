@@ -54,6 +54,7 @@ import activityUserRouter from './routes/activityuser.route.js';
 import gmailRouter from './routes/gmail.route.js';
 import customerRouter from './routes/customer.route.js';
 import paymentPolicyRouter from './routes/paymentpolicy.route.js';
+import whatsappWebhookRouter from './routes/whatsapp-webhook.route.js';
 
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
@@ -125,6 +126,7 @@ app.use(cookieParser());
 // -------------------------------------------------------------
 //  ROUTES
 // -------------------------------------------------------------
+app.use("/api/whatsapp", whatsappWebhookRouter);
 app.use("/api/user", userRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/listing", listingRouter);
