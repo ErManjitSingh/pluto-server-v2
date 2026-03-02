@@ -3,6 +3,8 @@ import {
   trackDownload,
   getDownloadCounts,
   getAllPackages,
+  getPackagesByDemandSetu,
+  getPackagesByPluto,
   getPackagesByDateRange,
   getPackagesByTeamLeader,
   getPackageDetails,
@@ -20,6 +22,10 @@ router.get('/counts/:packageId', getDownloadCounts);
 
 // Get all packages with download counts (GET)
 router.get('/packages', getAllPackages);
+
+// Get packages by download type (GET)
+router.get('/packages/demand-setu', getPackagesByDemandSetu);
+router.get('/packages/pluto', getPackagesByPluto);
 
 // Get packages by date range (GET)
 router.get('/packages-by-date', getPackagesByDateRange);
