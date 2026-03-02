@@ -186,6 +186,130 @@ export const getAllPackages = async (req, res) => {
   }
 };
 
+// Get packages with at least one demand-setu download
+export const getPackagesByDemandSetu = async (req, res) => {
+  try {
+    const packages = await PackageTracker.find({ 'downloadCounts.demand-setu': { $gt: 0 } })
+      .select('packageId packageName downloadCounts users createdAt updatedAt')
+      .sort({ createdAt: -1 });
+
+    const formattedPackages = packages.map(pkg => {
+      const processedUsers = (pkg.users || []).map(userEntry => {
+        const downloadsByDate = {};
+        (userEntry.downloads || []).forEach(download => {
+          const date = download.downloadDate;
+          if (!downloadsByDate[date]) {
+            downloadsByDate[date] = {
+              date,
+              downloads: [],
+              counts: { pluto: 0, 'demand-setu': 0, total: 0 }
+            };
+          }
+          downloadsByDate[date].downloads.push({
+            downloadType: download.downloadType,
+            timestamp: download.timestamp
+          });
+          downloadsByDate[date].counts[download.downloadType]++;
+          downloadsByDate[date].counts.total++;
+        });
+        return {
+          user: userEntry.user,
+          downloadHistory: Object.values(downloadsByDate)
+            .sort((a, b) => new Date(b.date) - new Date(a.date)),
+          totalDownloads: userEntry.downloads.length
+        };
+      });
+      const allDownloads = (pkg.users || []).reduce((downloads, userEntry) => {
+        return downloads.concat(userEntry.downloads || []);
+      }, []);
+      const lastDownload = allDownloads.length > 0
+        ? allDownloads.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+        : null;
+      return {
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        downloadCounts: pkg.downloadCounts || { pluto: 0, 'demand-setu': 0, total: 0 },
+        totalUsers: processedUsers.length,
+        users: processedUsers,
+        lastDownload: lastDownload ? {
+          downloadType: lastDownload.downloadType,
+          downloadDate: lastDownload.downloadDate,
+          timestamp: lastDownload.timestamp
+        } : null,
+        createdAt: pkg.createdAt,
+        updatedAt: pkg.updatedAt,
+        _id: pkg._id
+      };
+    });
+    res.status(200).json(formattedPackages);
+  } catch (error) {
+    console.error('Error in getPackagesByDemandSetu:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get packages with at least one pluto download
+export const getPackagesByPluto = async (req, res) => {
+  try {
+    const packages = await PackageTracker.find({ 'downloadCounts.pluto': { $gt: 0 } })
+      .select('packageId packageName downloadCounts users createdAt updatedAt')
+      .sort({ createdAt: -1 });
+
+    const formattedPackages = packages.map(pkg => {
+      const processedUsers = (pkg.users || []).map(userEntry => {
+        const downloadsByDate = {};
+        (userEntry.downloads || []).forEach(download => {
+          const date = download.downloadDate;
+          if (!downloadsByDate[date]) {
+            downloadsByDate[date] = {
+              date,
+              downloads: [],
+              counts: { pluto: 0, 'demand-setu': 0, total: 0 }
+            };
+          }
+          downloadsByDate[date].downloads.push({
+            downloadType: download.downloadType,
+            timestamp: download.timestamp
+          });
+          downloadsByDate[date].counts[download.downloadType]++;
+          downloadsByDate[date].counts.total++;
+        });
+        return {
+          user: userEntry.user,
+          downloadHistory: Object.values(downloadsByDate)
+            .sort((a, b) => new Date(b.date) - new Date(a.date)),
+          totalDownloads: userEntry.downloads.length
+        };
+      });
+      const allDownloads = (pkg.users || []).reduce((downloads, userEntry) => {
+        return downloads.concat(userEntry.downloads || []);
+      }, []);
+      const lastDownload = allDownloads.length > 0
+        ? allDownloads.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+        : null;
+      return {
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        downloadCounts: pkg.downloadCounts || { pluto: 0, 'demand-setu': 0, total: 0 },
+        totalUsers: processedUsers.length,
+        users: processedUsers,
+        lastDownload: lastDownload ? {
+          downloadType: lastDownload.downloadType,
+          downloadDate: lastDownload.downloadDate,
+          timestamp: lastDownload.timestamp
+        } : null,
+        createdAt: pkg.createdAt,
+        updatedAt: pkg.updatedAt,
+        _id: pkg._id
+      };
+    });
+    res.status(200).json(formattedPackages);
+  } catch (error) {
+    console.error('Error in getPackagesByPluto:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Get detailed package information including download history
 export const getPackageDetails = async (req, res) => {
   try {
