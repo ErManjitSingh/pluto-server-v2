@@ -25,6 +25,22 @@ function emitWhatsappMessageToViewRooms(messagePayload) {
   }
 }
 
+/** Emit message deleted to view rooms so clients can remove it from their list */
+function emitWhatsappMessageDeleted(deletedPayload) {
+  const io = getIO();
+  if (!io) return;
+  const { _id, phone, assignedTo } = deletedPayload;
+  io.to('whatsapp').emit('whatsapp:message:deleted', { _id });
+  io.to('whatsapp:all').emit('whatsapp:message:deleted', { _id });
+  if (phone) io.to(`whatsapp:by-phone:${phone}`).emit('whatsapp:message:deleted', { _id });
+  if (!assignedTo) {
+    io.to('whatsapp:unassigned').emit('whatsapp:message:deleted', { _id });
+  } else {
+    const assignedId = assignedTo?._id ?? assignedTo;
+    if (assignedId) io.to(`whatsapp:by-assigned:${assignedId}`).emit('whatsapp:message:deleted', { _id });
+  }
+}
+
 // Same value as in Meta Configuration → Verify token
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'plutotours123';
 
@@ -242,6 +258,35 @@ router.post('/send-reply', async (req, res) => {
       success: false,
       message: err.message || 'Internal server error',
     });
+  }
+});
+
+/**
+ * DELETE /messages/:id — Delete a WhatsApp message by ID (CRM only; does not delete on WhatsApp).
+ */
+router.delete('/messages/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid message ID' });
+    }
+    const doc = await WhatsappMessage.findById(id).lean();
+    if (!doc) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+    await WhatsappMessage.findByIdAndDelete(id);
+
+    emitWhatsappMessageDeleted({
+      _id: doc._id,
+      phone: doc.phone,
+      assignedTo: doc.assignedTo,
+    });
+
+    console.log('✅ WhatsApp message deleted:', id);
+    res.json({ success: true, message: 'Message deleted' });
+  } catch (err) {
+    console.error('WhatsApp delete message error:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
