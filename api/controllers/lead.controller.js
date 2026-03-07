@@ -91,6 +91,58 @@ export const createLead = async (req, res, next) => {
   }
 };
 
+// CRM create lead: if lead_meta_id is sent, check if it already exists; if yes, skip create; else create
+export const crmCreateLead = async (req, res, next) => {
+  try {
+    const { lead_meta_id } = req.body;
+    if (lead_meta_id) {
+      const existing = await Lead.findOne({ lead_meta_id });
+      if (existing) {
+        return res.status(200).json({
+          message: 'Lead already exists with this lead_meta_id',
+          lead: existing,
+          created: false
+        });
+      }
+    }
+
+    let leadData;
+    if (req.isSimpleToken) {
+      leadData = {
+        ...req.body,
+        createdBy: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+        isCommonLead: true
+      };
+    } else {
+      if (!req.user || !req.user.id) {
+        return next(errorHandler(401, 'User not authenticated'));
+      }
+      leadData = {
+        ...req.body,
+        createdBy: req.user.id,
+        isCommonLead: req.isCommonToken || false
+      };
+    }
+
+    const newLead = new Lead(leadData);
+    const savedLead = await newLead.save();
+
+    try {
+      if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
+        await initializeLeadRemainingAmount(savedLead._id);
+        const finalLead = await Lead.findById(savedLead._id);
+        return res.status(201).json({ ...finalLead.toObject(), created: true });
+      }
+    } catch (error) {
+      console.error("Error initializing remaining amount:", error);
+    }
+    res.status(201).json({ ...savedLead.toObject(), created: true });
+  } catch (error) {
+    console.error("❌ CRM lead creation error:", error);
+    next(error);
+  }
+};
+
 // Get all leads (modified to handle common token and simple token)
 // For executive/team leader: also includes leads where isAssignedLead true and assignedUserId = their id
 export const getLeads = async (req, res, next) => {
@@ -647,6 +699,33 @@ export const updateAssignedLead = async (req, res, next) => {
       }
     }
     res.status(200).json(updatedLead);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PUT bulk update assignedUserId for multiple leads
+// Body: { leadIds: string[], assignedUserId: string }
+export const bulkUpdateAssignedUserId = async (req, res, next) => {
+  try {
+    const { leadIds, assignedUserId } = req.body;
+    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+      return res.status(400).json({ message: 'leadIds array is required' });
+    }
+    if (!assignedUserId) {
+      return res.status(400).json({ message: 'assignedUserId is required' });
+    }
+
+    const result = await Lead.updateMany(
+      { _id: { $in: leadIds } },
+      { $set: { assignedUserId, isAssignedLead: true } }
+    );
+
+    res.status(200).json({
+      message: `Updated assignedUserId for ${result.modifiedCount} lead(s)`,
+      modifiedCount: result.modifiedCount,
+      matchedCount: result.matchedCount
+    });
   } catch (error) {
     next(error);
   }
