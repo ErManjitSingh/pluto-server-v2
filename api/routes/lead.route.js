@@ -1,6 +1,7 @@
 import express from 'express';
 import { 
   createLead, 
+  crmCreateLead,
   getLeads, 
   getLead, 
   updateLead, 
@@ -19,6 +20,7 @@ import {
   getAssignedLeads,
   createAssignedLead,
   updateAssignedLead,
+  bulkUpdateAssignedUserId,
   deleteAssignedLead,
   updateLeadStatusNote,
   getLeadStatusNotificationsByUserId,
@@ -44,6 +46,7 @@ router.delete('/delete-leads', verifyToken, deleteMultipleLeads);
 router.get('/get-assigned-leads',  getAssignedLeads);
 router.post('/create-assigned-lead', createAssignedLead);
 router.put('/update-assigned-lead/:id',  updateAssignedLead);
+router.put('/update-assigned-leads-bulk', bulkUpdateAssignedUserId);
 router.delete('/delete-assigned-lead/:id',  deleteAssignedLead);
 
 // Transfer routes for moving leads from static token to user token
@@ -54,7 +57,7 @@ router.post('/create-lead-flexible', verifyTokenOrCommon, createLead);
 router.get('/get-leads-flexible', verifyTokenOrCommon, getLeads);
 router.get('/get-lead-flexible/:id', verifyTokenOrCommon, getLead);
 
-router.post('/crm-create-lead', verifySimpleToken, createLead);
+router.post('/crm-create-lead', verifySimpleToken, crmCreateLead);
 router.get('/crm-get-leads', verifySimpleToken, getLeads);
 router.get('/crm-get-leads-by-executive-phone', verifySimpleToken, getLeadsByExecutivePhone);
 router.get('/crm-get-lead/:id', verifySimpleToken, getLead);
