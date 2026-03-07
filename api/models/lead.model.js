@@ -122,6 +122,12 @@ const leadSchema = new mongoose.Schema({
     ref: 'User',
     required: false
   },
+  lead_meta_id: {
+    type: String,
+    index: true,
+    sparse: true
+    // External CRM meta id – used to avoid duplicate leads when creating via crm-create-lead
+  },
   gmailThreadId: {
     type: String,
     index: true
