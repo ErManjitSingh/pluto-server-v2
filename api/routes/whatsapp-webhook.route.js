@@ -41,10 +41,21 @@ function emitWhatsappMessageDeleted(deletedPayload) {
   if (phone) io.to(`whatsapp:by-phone:${phone}`).emit('whatsapp:message:deleted', { _id });
   if (!assignedTo) {
     io.to('whatsapp:unassigned').emit('whatsapp:message:deleted', { _id });
+    io.to('whatsapp:unassigned:filtered').emit('whatsapp:message:deleted', { _id });
+    io.to('whatsapp:unassigned:first').emit('whatsapp:message:deleted', { _id });
   } else {
     const assignedId = assignedTo?._id ?? assignedTo;
     if (assignedId) io.to(`whatsapp:by-assigned:${assignedId}`).emit('whatsapp:message:deleted', { _id });
   }
+}
+
+/** Notify unassigned rooms that a message was assigned (removed from unassigned lists) */
+function emitWhatsappMessageLeftUnassigned(messageId) {
+  const io = getIO();
+  if (!io) return;
+  io.to('whatsapp:unassigned').emit('whatsapp:message:deleted', { _id: messageId });
+  io.to('whatsapp:unassigned:filtered').emit('whatsapp:message:deleted', { _id: messageId });
+  io.to('whatsapp:unassigned:first').emit('whatsapp:message:deleted', { _id: messageId });
 }
 
 // Same value as in Meta Configuration → Verify token
@@ -90,6 +101,46 @@ router.post('/webhook', async (req, res) => {
       .populate('assignedTo', 'name email')
       .lean();
     emitWhatsappMessageToViewRooms(messagePayload);
+
+    // Real-time for filtered unassigned: emit only if this message would appear in GET /message/unassigned
+    const io = getIO();
+    if (io && !messagePayload.assignedTo) {
+      try {
+        const leads = await Lead.find({ mobile: { $exists: true, $ne: null } })
+          .select('mobile')
+          .lean();
+        const leadPhoneSet = new Set(
+          leads.map((l) => normalizePhone(l.mobile)).filter(Boolean)
+        );
+        const normPhone = normalizePhone(doc.phone);
+        if (normPhone && !leadPhoneSet.has(normPhone)) {
+          const firstFromThisPhone = await WhatsappMessage.countDocuments({
+            phone: doc.phone,
+            assignedTo: null,
+            direction: 'incoming',
+          });
+          if (firstFromThisPhone === 1) {
+            io.to('whatsapp:unassigned:filtered').emit(
+              'whatsapp:message:unassigned:filtered:new',
+              messagePayload
+            );
+          }
+        }
+        // Real-time for first-per-phone unassigned: emit when this is the first unassigned from this phone
+        const firstUnassignedFromPhone = await WhatsappMessage.countDocuments({
+          phone: doc.phone,
+          assignedTo: null,
+        });
+        if (firstUnassignedFromPhone === 1) {
+          io.to('whatsapp:unassigned:first').emit(
+            'whatsapp:message:unassigned:first:new',
+            messagePayload
+          );
+        }
+      } catch (e) {
+        console.error('Filtered unassigned emit check:', e);
+      }
+    }
 
     console.log("✅ Incoming message saved");
   }
@@ -162,6 +213,38 @@ router.get('/messages/unassigned', async (req, res) => {
 });
 
 /**
+ * GET /messages/unassigned/first — Get first message (earliest) per phone where assignedTo is null.
+ * No lead check; purely deduplicates by phone and keeps only the first message from each number.
+ */
+router.get('/messages/unassigned/first', async (req, res) => {
+  try {
+    const messages = await WhatsappMessage.find({ assignedTo: null })
+      .sort({ createdAt: 1 })
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    const seenPhones = new Set();
+    const result = [];
+
+    for (const msg of messages) {
+      const normPhone = normalizePhone(msg.phone);
+      if (!normPhone) continue;
+      if (seenPhones.has(normPhone)) continue;
+      seenPhones.add(normPhone);
+      result.push(msg);
+    }
+
+    // For UI convenience, return newest first
+    result.sort((a, b) => b.createdAt - a.createdAt);
+
+    res.json(result);
+  } catch (err) {
+    console.error('WhatsApp first-unassigned-per-phone error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
  * GET /message/unassigned — Filtered unassigned messages for WhatsApp inbox.
  * - Skip phones that already exist as leads (by Lead.mobile, normalized to last 10 digits).
  * - Only include the first incoming message we ever got from each phone.
@@ -224,6 +307,110 @@ router.get('/messages/by-assigned/:executiveId', async (req, res) => {
     res.json(messages);
   } catch (err) {
     console.error('WhatsApp messages by-assigned error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * PUT /messages/:id/assign — Update assignedTo for a single WhatsApp message.
+ * Body: { assignedTo: string | null }
+ */
+router.put('/messages/:id/assign', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { assignedTo } = req.body;
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid message ID' });
+    }
+
+    let assigneeId = null;
+    if (assignedTo !== null && assignedTo !== undefined && assignedTo !== '') {
+      if (!isValidObjectId(String(assignedTo))) {
+        return res.status(400).json({ success: false, message: 'Invalid assignedTo ID' });
+      }
+      assigneeId = String(assignedTo);
+    }
+
+    const previous = await WhatsappMessage.findById(id).lean();
+    if (!previous) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+
+    const updated = await WhatsappMessage.findByIdAndUpdate(
+      id,
+      { $set: { assignedTo: assigneeId } },
+      { new: true }
+    )
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Message not found' });
+    }
+
+    if (previous.assignedTo == null && assigneeId != null) {
+      emitWhatsappMessageLeftUnassigned(id);
+    }
+    emitWhatsappMessageToViewRooms(updated);
+    res.json(updated);
+  } catch (err) {
+    console.error('WhatsApp assign message error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * PUT /messages/assign/bulk — Update assignedTo for multiple WhatsApp messages.
+ * Body: { messageIds: string[], assignedTo: string | null }
+ */
+router.put('/messages/assign/bulk', async (req, res) => {
+  try {
+    const { messageIds, assignedTo } = req.body;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'messageIds array is required' });
+    }
+    if (!messageIds.every((id) => isValidObjectId(String(id)))) {
+      return res.status(400).json({ success: false, message: 'One or more messageIds are invalid' });
+    }
+
+    let assigneeId = null;
+    if (assignedTo !== null && assignedTo !== undefined && assignedTo !== '') {
+      if (!isValidObjectId(String(assignedTo))) {
+        return res.status(400).json({ success: false, message: 'Invalid assignedTo ID' });
+      }
+      assigneeId = String(assignedTo);
+    }
+
+    const previousMessages = await WhatsappMessage.find({ _id: { $in: messageIds } })
+      .select('_id assignedTo')
+      .lean();
+
+    await WhatsappMessage.updateMany(
+      { _id: { $in: messageIds } },
+      { $set: { assignedTo: assigneeId } }
+    );
+
+    const updatedMessages = await WhatsappMessage.find({ _id: { $in: messageIds } })
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    if (assigneeId != null) {
+      previousMessages.forEach((prev) => {
+        if (prev.assignedTo == null) emitWhatsappMessageLeftUnassigned(prev._id);
+      });
+    }
+    updatedMessages.forEach((msg) => emitWhatsappMessageToViewRooms(msg));
+
+    res.json({
+      success: true,
+      message: 'AssignedTo updated for selected messages',
+      updatedCount: updatedMessages.length,
+      messages: updatedMessages,
+    });
+  } catch (err) {
+    console.error('WhatsApp bulk assign messages error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
