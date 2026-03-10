@@ -12,6 +12,11 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id;
 };
 
+const normalizePhone = (phone) => {
+  if (!phone) return "";
+  return String(phone).replace(/\D/g, "").slice(-10);
+};
+
 // Helper function to generate conversation ID
 const getConversationId = (userId1, userId2) => {
   return [userId1, userId2].sort().join("_");
@@ -260,6 +265,63 @@ export const initializeSocket = (server) => {
       } catch (err) {
         console.error("whatsapp:subscribe:unassigned error:", err);
         socket.emit("error", { message: "Failed to load unassigned messages" });
+      }
+    });
+
+    // Real-time list: first message per phone where assignedTo is null (GET /messages/unassigned/first)
+    socket.on("whatsapp:subscribe:unassigned:first", async () => {
+      try {
+        socket.join("whatsapp:unassigned:first");
+        const messages = await WhatsappMessage.find({ assignedTo: null })
+          .sort({ createdAt: 1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        const seenPhones = new Set();
+        const result = [];
+        for (const msg of messages) {
+          const normPhone = normalizePhone(msg.phone);
+          if (!normPhone || seenPhones.has(normPhone)) continue;
+          seenPhones.add(normPhone);
+          result.push(msg);
+        }
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        socket.emit("whatsapp:list:unassigned:first", result);
+      } catch (err) {
+        console.error("whatsapp:subscribe:unassigned:first error:", err);
+        socket.emit("error", { message: "Failed to load first unassigned per phone" });
+      }
+    });
+
+    // Real-time list: filtered unassigned (GET /message/unassigned) — exclude lead phones, first message per phone only
+    socket.on("whatsapp:subscribe:unassigned:filtered", async () => {
+      try {
+        socket.join("whatsapp:unassigned:filtered");
+        const leads = await Lead.find({ mobile: { $exists: true, $ne: null } })
+          .select("mobile")
+          .lean();
+        const leadPhoneSet = new Set(
+          leads.map((l) => normalizePhone(l.mobile)).filter(Boolean)
+        );
+        const messages = await WhatsappMessage.find({
+          assignedTo: null,
+          direction: "incoming",
+        })
+          .sort({ createdAt: 1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        const seenPhones = new Set();
+        const result = [];
+        for (const msg of messages) {
+          const normPhone = normalizePhone(msg.phone);
+          if (!normPhone || leadPhoneSet.has(normPhone) || seenPhones.has(normPhone)) continue;
+          seenPhones.add(normPhone);
+          result.push(msg);
+        }
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        socket.emit("whatsapp:list:unassigned:filtered", result);
+      } catch (err) {
+        console.error("whatsapp:subscribe:unassigned:filtered error:", err);
+        socket.emit("error", { message: "Failed to load filtered unassigned messages" });
       }
     });
 
