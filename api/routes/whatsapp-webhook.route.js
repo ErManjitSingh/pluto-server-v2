@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import WhatsappMessage from '../models/whatsappMessage.model.js';
+import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
 
 const router = express.Router();
@@ -8,6 +9,11 @@ const router = express.Router();
 function isValidObjectId(id) {
   if (!id || typeof id !== 'string') return false;
   return mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id;
+}
+
+function normalizePhone(phone) {
+  if (!phone) return '';
+  return String(phone).replace(/\D/g, '').slice(-10);
 }
 
 /** Emit new message to generic room + view-specific rooms so subscribed clients get real-time updates */
@@ -151,6 +157,53 @@ router.get('/messages/unassigned', async (req, res) => {
     res.json(messages);
   } catch (err) {
     console.error('WhatsApp unassigned messages error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /message/unassigned — Filtered unassigned messages for WhatsApp inbox.
+ * - Skip phones that already exist as leads (by Lead.mobile, normalized to last 10 digits).
+ * - Only include the first incoming message we ever got from each phone.
+ * - Final list is sorted by createdAt desc for UI.
+ */
+router.get('/message/unassigned', async (req, res) => {
+  try {
+    const leads = await Lead.find({ mobile: { $exists: true, $ne: null } })
+      .select('mobile')
+      .lean();
+
+    const leadPhoneSet = new Set(
+      leads
+        .map((l) => normalizePhone(l.mobile))
+        .filter(Boolean)
+    );
+
+    const messages = await WhatsappMessage.find({
+      assignedTo: null,
+      direction: 'incoming',
+    })
+      .sort({ createdAt: 1 })
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    const seenPhones = new Set();
+    const result = [];
+
+    for (const msg of messages) {
+      const normPhone = normalizePhone(msg.phone);
+      if (!normPhone) continue;
+      if (leadPhoneSet.has(normPhone)) continue;
+      if (seenPhones.has(normPhone)) continue;
+      seenPhones.add(normPhone);
+      result.push(msg);
+    }
+
+    result.sort((a, b) => b.createdAt - a.createdAt);
+
+    res.json(result);
+  } catch (err) {
+    console.error('WhatsApp filtered unassigned messages error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
