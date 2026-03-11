@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import Operation from '../models/finalcosting.model.js';
 import { renewGmailWatch } from '../controllers/gmail.controller.js';
 import GmailToken from '../models/gmailToken.model.js';
+import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 
 /**
  * Deletes old non-converted operations (older than 10 days)
@@ -105,8 +106,18 @@ export const initializeScheduledTasks = () => {
     await renewAllGmailWatches();
   });
 
+  // Meta (FB/Instagram) lead sync: every 3 minutes – fetch leads, skip if lead_meta_id exists, else create
+  cron.schedule('*/3 * * * *', async () => {
+    try {
+      await syncMetaLeads();
+    } catch (err) {
+      console.error('❌ Meta lead sync scheduled run error:', err);
+    }
+  });
+
   console.log('✅ Scheduled tasks initialized:');
   console.log('   - Daily cleanup at 2:00 AM');
   console.log('   - Gmail watch renewal at 3:00 AM');
+  console.log('   - Meta lead sync every 3 minutes');
 };
 
