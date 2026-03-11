@@ -4,6 +4,8 @@ import { errorHandler } from '../utils/error.js';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
 import EmailActivity from '../models/emailActivity.model.js';
+import { getNextLeadId } from '../services/leadId.service.js';
+import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 
 /**
  * Parse timing string like "9/5/2026 5.30pm", "2/20/2026 6.30pm", or "2/26.2026 5.50pm" (m/d/yyyy or m/d.yyyy, h.mm am/pm) to Date.
@@ -122,6 +124,11 @@ export const crmCreateLead = async (req, res, next) => {
         createdBy: req.user.id,
         isCommonLead: req.isCommonToken || false
       };
+    }
+
+    // Assign next leadId if not provided (shared sequence for manual and Meta leads)
+    if (leadData.leadId == null || leadData.leadId === '') {
+      leadData.leadId = await getNextLeadId();
     }
 
     const newLead = new Lead(leadData);
@@ -634,12 +641,46 @@ export const getHelloHarshit = async (req, res, next) => {
   }
 };
 
+/**
+ * Manually trigger Meta (FB/Instagram) lead sync.
+ * GET /api/leads/sync-meta-leads
+ */
+export const syncMetaLeadsController = async (req, res, next) => {
+  try {
+    const result = await syncMetaLeads();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Sync meta leads error:', error);
+    next(error);
+  }
+};
+
 // ========== Assigned Leads API (only isAssignedLead: true) ==========
 
 // GET assigned leads – only leads where isAssignedLead true, for current user (assignedUserId = req.user.id)
 export const getAssignedLeads = async (req, res, next) => {
   try {
     const leads = await Lead.find({ isAssignedLead: true });
+    res.status(200).json(leads);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET assigned leads where isAssignedLead true and publish "ptw"
+export const getAssignedLeadsPtw = async (req, res, next) => {
+  try {
+    const leads = await Lead.find({ isAssignedLead: true, publish: 'ptw' });
+    res.status(200).json(leads);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET assigned leads where isAssignedLead true and publish "demand"
+export const getAssignedLeadsDemand = async (req, res, next) => {
+  try {
+    const leads = await Lead.find({ isAssignedLead: true, publish: 'demand' });
     res.status(200).json(leads);
   } catch (error) {
     next(error);
