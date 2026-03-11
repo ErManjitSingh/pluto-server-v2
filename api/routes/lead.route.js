@@ -28,7 +28,8 @@ import {
   getLeadStatusNotificationsByManagerId,
   markLeadStatusNotificationSeen,
   deleteLeadStatusNotification,
-  markLeadStatusNoteSeen
+  markLeadStatusNoteSeen,
+  syncMetaLeadsController
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
 
@@ -71,6 +72,9 @@ router.put('/public/update-lead/:id', updateLeadPublic);
 router.delete('/public/delete-lead/:id', deleteLeadPublic);
 router.delete('/public/delete-leads', deleteMultipleLeadsPublic);
 router.get('/hello-harshit', getHelloHarshit);
+
+// Meta lead sync: manual trigger (scheduled sync runs every 3 min via scheduledTasks)
+router.get('/sync-meta-leads', syncMetaLeadsController);
 
 // Lead status note & notifications (no change to existing logic)
 router.put('/update-lead-status-note/:id', updateLeadStatusNote);
