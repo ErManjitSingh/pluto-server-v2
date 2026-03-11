@@ -18,6 +18,8 @@ import {
   getLeadEmails,
   getHelloHarshit,
   getAssignedLeads,
+  getAssignedLeadsPtw,
+  getAssignedLeadsDemand,
   createAssignedLead,
   updateAssignedLead,
   bulkUpdateAssignedUserId,
@@ -44,7 +46,9 @@ router.delete('/delete-lead/:id', verifyToken, deleteLead);
 router.delete('/delete-leads', verifyToken, deleteMultipleLeads);
 
 // Assigned leads API (only isAssignedLead: true; executive/team leader see their assigned leads)
-router.get('/get-assigned-leads',  getAssignedLeads);
+router.get('/get-assigned-leads', getAssignedLeads);
+router.get('/get-assigned-leads-ptw', getAssignedLeadsPtw);
+router.get('/get-assigned-leads-demand', getAssignedLeadsDemand);
 router.post('/create-assigned-lead', createAssignedLead);
 router.put('/update-assigned-lead/:id',  updateAssignedLead);
 router.put('/update-assigned-leads-bulk', bulkUpdateAssignedUserId);
