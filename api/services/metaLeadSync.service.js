@@ -5,6 +5,35 @@ import { initializeLeadRemainingAmount } from '../controllers/banktransactions.c
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
+// Form ID -> Form name (from Meta Lead Ad forms)
+const FORM_ID_TO_NAME = {
+  '2674038349644478': 'Hotel JK Dharamshala-copy',
+  '1223842246538694': 'Hotel JK Dharamshala',
+  '1471047764590067': 'Leh Tour Packages-copy-copy',
+  '740770488625534': 'Andaman Beach Escape — Just ₹19,000/Person-copy',
+  '1606772576983358': 'Andaman Beach Escape — Just ₹19,000/Person',
+  '803369272680705': 'Spiti Tour Packass',
+  '1382788463517327': 'Meghalaya Tour Packages-copy-copy-copy',
+  '1595736464927418': 'Spiti Tour Packagess',
+  '1528098575144345': 'Spiti Tour Packages-copy',
+  '1908365669781665': 'Gujarat  Tour Packages',
+  '1398680488634977': 'Only Job',
+  '1245471024064781': 'Shimla–Manali Tour Packages-copy',
+  '1367808738124925': 'Meghalaya Tour Packages-copy-copy',
+  '1393329672350546': 'Arunachal  Tour Packages-copy-copy',
+  '4254475408166247': 'Meghalaya Tour Packages-copy',
+  '4078392495747198': 'Spiti Tour Packages',
+  '814847136887082': 'DUBAI TOUR PACKAGE-copy',
+  '1981206252297495': 'Vietnam Tour Packages',
+  '1616441215777324': 'Bali Tour package',
+  '1415240969129159': 'DUBAI TOUR PACKAGE',
+  '1146314916381605': 'DS Amarnath Query',
+  '1876547592761895': 'DS Bhutan Query-copy',
+  '2472954876232013': 'DS Bhutan Query',
+  '409968121678852': 'DS Himachal Query form-copy',
+  '463909945988547': 'DS Himachal Query form'
+};
+
 // Form IDs from Meta (FB/Instagram Lead Ads) - can override via env META_FORM_IDS (comma-separated)
 const DEFAULT_FORM_IDS = [
   '2674038349644478', '1223842246538694', '1471047764590067', '740770488625534',
@@ -33,10 +62,48 @@ function getFieldValue(fieldData, name) {
   return field.values[0];
 }
 
+const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
+
+/** Normalize mobile for duplicate check (trim, strip spaces) */
+function normalizeMobile(mobile) {
+  if (mobile == null || typeof mobile !== 'string') return '';
+  return mobile.replace(/\s+/g, '').trim();
+}
+
 /**
- * Transform one Meta lead item to base CRM payload (no lead_meta_id - we set that per ptw/demand)
+ * Check if we should skip creating lead due to mobile duplicate:
+ * If same mobile exists and the most recent lead from that mobile is within 10 days of this meta lead's time, skip.
+ * Returns true = skip (do not post), false = allow post.
  */
-function transformMetaLeadToPayload(metaLead) {
+/** Build regex to match mobile with optional spaces (e.g. 9876543210 matches "98765 43210") */
+function mobileMatchRegex(normalized) {
+  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const withOptionalSpaces = escaped.split('').join('\\s*');
+  return new RegExp(`^\\s*${withOptionalSpaces}\\s*$`);
+}
+
+async function shouldSkipByMobile(mobile, metaLeadCreatedTime) {
+  const normalized = normalizeMobile(mobile);
+  if (!normalized) return false;
+
+  const metaTime = metaLeadCreatedTime ? new Date(metaLeadCreatedTime).getTime() : Date.now();
+  const re = mobileMatchRegex(normalized);
+  const latestByMobile = await Lead.findOne({ mobile: { $regex: re } })
+    .sort({ createdAt: -1 })
+    .select('createdAt')
+    .lean();
+  if (!latestByMobile) return false;
+
+  const lastCreated = new Date(latestByMobile.createdAt).getTime();
+  const gapMs = metaTime - lastCreated;
+  return gapMs < TEN_DAYS_MS;
+}
+
+/**
+ * Transform one Meta lead item to base CRM payload (no lead_meta_id - we set that per ptw/demand).
+ * Includes sourceFormId and sourceFormName for source display.
+ */
+function transformMetaLeadToPayload(metaLead, formId) {
   const fieldData = metaLead.field_data || [];
   const name = getFieldValue(fieldData, 'full_name');
   const mobile = getFieldValue(fieldData, 'phone_number');
@@ -44,6 +111,7 @@ function transformMetaLeadToPayload(metaLead) {
   const travelType = getFieldValue(fieldData, 'your_travel_type_');
   const lookingFor = getFieldValue(fieldData, 'what_you_are_looking_for_?');
   const travelDateStr = getFieldValue(fieldData, 'your_travel_date_?');
+  const formName = formId ? (FORM_ID_TO_NAME[formId] || formId) : '';
 
   return {
     name: name || '',
@@ -52,6 +120,8 @@ function transformMetaLeadToPayload(metaLead) {
     packageType: travelType || lookingFor || undefined,
     destination: travelDateStr || undefined,
     source: 'meta',
+    sourceFormId: formId || undefined,
+    sourceFormName: formName || undefined,
     submittedAt: metaLead.created_time ? new Date(metaLead.created_time) : new Date()
   };
 }
@@ -99,7 +169,12 @@ export async function syncMetaLeads() {
         const metaId = metaLead.id;
         if (!metaId) continue;
 
-        const payload = transformMetaLeadToPayload(metaLead);
+        const payload = transformMetaLeadToPayload(metaLead, formId);
+
+        // Skip if same mobile already submitted within 10 days (do not post duplicate)
+        if (await shouldSkipByMobile(payload.mobile, metaLead.created_time)) {
+          continue;
+        }
 
         // 1) PTW lead: create if lead_meta_id "{metaId}_ptw" does not exist
         const existingPtw = await Lead.findOne({ lead_meta_id: `${metaId}_ptw` });
