@@ -8,6 +8,7 @@ import {
   getPackagesByDateRange,
   getPackagesByTeamLeader,
   getPackageDetails,
+  getPackageTrackerByLeadId,
   deletePackage,
   deleteAllPackages
 } from '../controllers/packagetracker.controller.js';
@@ -35,6 +36,9 @@ router.get('/packages-by-team-leader', getPackagesByTeamLeader);
 
 // Get detailed package information including download history (GET)
 router.get('/package/:packageId', getPackageDetails);
+
+// Get package tracker by leaddetails _id (GET)
+router.get('/package-by-lead/:leadId', getPackageTrackerByLeadId);
 
 // Delete a package tracker (DELETE)
 router.delete('/package-delete/:packageId', deletePackage);
