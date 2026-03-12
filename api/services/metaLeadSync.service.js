@@ -75,20 +75,13 @@ function normalizeMobile(mobile) {
  * If same mobile exists and the most recent lead from that mobile is within 10 days of this meta lead's time, skip.
  * Returns true = skip (do not post), false = allow post.
  */
-/** Build regex to match mobile with optional spaces (e.g. 9876543210 matches "98765 43210") */
-function mobileMatchRegex(normalized) {
-  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const withOptionalSpaces = escaped.split('').join('\\s*');
-  return new RegExp(`^\\s*${withOptionalSpaces}\\s*$`);
-}
-
 async function shouldSkipByMobile(mobile, metaLeadCreatedTime) {
   const normalized = normalizeMobile(mobile);
   if (!normalized) return false;
 
   const metaTime = metaLeadCreatedTime ? new Date(metaLeadCreatedTime).getTime() : Date.now();
-  const re = mobileMatchRegex(normalized);
-  const latestByMobile = await Lead.findOne({ mobile: { $regex: re } })
+  // Simple: treat the incoming Meta mobile as canonical and look for an exact match
+  const latestByMobile = await Lead.findOne({ mobile })
     .sort({ createdAt: -1 })
     .select('createdAt')
     .lean();
