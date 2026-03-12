@@ -67,6 +67,8 @@ const leadSchema = new mongoose.Schema({
   persons: String,
   publish: String,
   source: String,
+  sourceFormId: { type: String, required: false },
+  sourceFormName: { type: String, required: false },
     converted: {
     type: Boolean,
     default: false
