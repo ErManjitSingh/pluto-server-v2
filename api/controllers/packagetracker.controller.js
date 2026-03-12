@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import PackageTracker from '../models/packagetracker.model.js';
 
 // Track a new download
@@ -306,6 +307,106 @@ export const getPackagesByPluto = async (req, res) => {
     res.status(200).json(formattedPackages);
   } catch (error) {
     console.error('Error in getPackagesByPluto:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get package tracker(s) by leaddetails _id
+export const getPackageTrackerByLeadId = async (req, res) => {
+  try {
+    const { leadId } = req.params;
+
+    if (!leadId) {
+      return res.status(400).json({ message: 'Lead ID (leaddetails _id) is required' });
+    }
+
+    const leadQuery = mongoose.Types.ObjectId.isValid(leadId) && String(new mongoose.Types.ObjectId(leadId)) === leadId
+      ? { $in: [leadId, new mongoose.Types.ObjectId(leadId)] }
+      : leadId;
+
+    const packageTrackers = await PackageTracker.find({
+      'users.user.leaddetails._id': leadQuery
+    })
+      .select('packageId packageName downloadCounts users createdAt updatedAt')
+      .sort({ createdAt: -1 });
+
+    if (!packageTrackers || packageTrackers.length === 0) {
+      return res.status(404).json({ message: 'No package tracker found for this lead' });
+    }
+
+    const formattedPackages = packageTrackers.map(packageTracker => {
+      // Only include users that have this leadId in leaddetails
+      const matchingUserEntries = (packageTracker.users || []).filter(
+        userEntry => userEntry.user?.leaddetails?._id?.toString() === leadId
+      );
+
+      const processedUsers = matchingUserEntries.map(userEntry => {
+        const downloadsByDate = {};
+
+        (userEntry.downloads || []).forEach(download => {
+          const date = download.downloadDate;
+          if (!downloadsByDate[date]) {
+            downloadsByDate[date] = {
+              date,
+              downloads: [],
+              counts: {
+                pluto: 0,
+                'demand-setu': 0,
+                total: 0
+              }
+            };
+          }
+          downloadsByDate[date].downloads.push({
+            downloadType: download.downloadType,
+            timestamp: download.timestamp
+          });
+          downloadsByDate[date].counts[download.downloadType]++;
+          downloadsByDate[date].counts.total++;
+        });
+
+        return {
+          user: userEntry.user,
+          downloadHistory: Object.values(downloadsByDate)
+            .sort((a, b) => new Date(b.date) - new Date(a.date)),
+          totalDownloads: userEntry.downloads.length
+        };
+      });
+
+      const allDownloads = (packageTracker.users || []).reduce((downloads, userEntry) => {
+        return downloads.concat(userEntry.downloads || []);
+      }, []);
+      const lastDownload = allDownloads.length > 0
+        ? allDownloads.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]
+        : null;
+
+      return {
+        packageId: packageTracker.packageId,
+        packageName: packageTracker.packageName,
+        downloadCounts: packageTracker.downloadCounts || {
+          pluto: 0,
+          'demand-setu': 0,
+          total: 0
+        },
+        totalUsers: processedUsers.length,
+        users: processedUsers,
+        lastDownload: lastDownload
+          ? {
+              downloadType: lastDownload.downloadType,
+              downloadDate: lastDownload.downloadDate,
+              timestamp: lastDownload.timestamp
+            }
+          : null,
+        createdAt: packageTracker.createdAt,
+        updatedAt: packageTracker.updatedAt,
+        _id: packageTracker._id
+      };
+    });
+
+    res.status(200).json(
+      formattedPackages.length === 1 ? formattedPackages[0] : formattedPackages
+    );
+  } catch (error) {
+    console.error('Error in getPackageTrackerByLeadId:', error);
     res.status(500).json({ message: error.message });
   }
 };
