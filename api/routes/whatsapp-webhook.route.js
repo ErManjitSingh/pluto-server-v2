@@ -502,6 +502,105 @@ router.post('/send-reply', async (req, res) => {
 });
 
 /**
+ * POST /send-template — Send a WhatsApp template message (e.g. new_first_message).
+ * Use this when the lead has not messaged in 24h or to start the conversation from CRM.
+ * Body: { phone, templateName, language?, components? } — components only if template has variables (e.g. {{1}}).
+ */
+router.post('/send-template', async (req, res) => {
+  try {
+    const { phone, templateName, language = 'en', components } = req.body;
+    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+    if (!token || !phoneNumberId) {
+      return res.status(500).json({
+        success: false,
+        message: 'WhatsApp not configured. Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in .env',
+      });
+    }
+    if (!phone || !templateName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: phone and templateName',
+      });
+    }
+
+    // Phone: digits only, with country code (e.g. 919876543210)
+    const to = String(phone).replace(/\D/g, '');
+    if (!to.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number',
+      });
+    }
+
+    const templatePayload = {
+      name: String(templateName),
+      language: { code: String(language) },
+    };
+    if (Array.isArray(components) && components.length > 0) {
+      templatePayload.components = components;
+    }
+
+    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'template',
+      template: templatePayload,
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('WhatsApp send-template API error:', data);
+      return res.status(response.status).json({
+        success: false,
+        message: data.error?.message || 'Failed to send WhatsApp template',
+        details: data.error || data,
+      });
+    }
+
+    // Save outgoing template as a message in CRM for history
+    const doc = await WhatsappMessage.create({
+      phone: to,
+      message: `[Template: ${templateName}]`,
+      direction: 'outgoing',
+      assignedTo: null,
+      metaMessageId: data.messages?.[0]?.id || null,
+    });
+
+    const messagePayload = await WhatsappMessage.findById(doc._id)
+      .populate('assignedTo', 'name email')
+      .lean();
+    emitWhatsappMessageToViewRooms(messagePayload);
+
+    console.log('✅ WhatsApp template sent to', to, 'template:', templateName);
+    res.json({
+      success: true,
+      message: 'Template sent',
+      messageId: data.messages?.[0]?.id,
+    });
+  } catch (err) {
+    console.error('WhatsApp send-template error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error',
+    });
+  }
+});
+
+/**
  * DELETE /messages/:id — Delete a WhatsApp message by ID (CRM only; does not delete on WhatsApp).
  */
 router.delete('/messages/:id', async (req, res) => {
