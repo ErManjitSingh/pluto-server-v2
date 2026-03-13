@@ -71,14 +71,14 @@ export const createCalendarEvent = async (user, options) => {
     ]
       .filter(Boolean)
       .join('\n'),
-      start: {
-        dateTime: startDate.toISOString(),
-        timeZone: 'Asia/Kolkata',
-      },
-      end: {
-        dateTime: endDate.toISOString(),
-        timeZone: 'Asia/Kolkata',
-      },
+  start: {
+  dateTime: startDate.toLocaleString('sv-SE').replace(' ', 'T'),
+  timeZone: 'Asia/Kolkata',
+},
+end: {
+  dateTime: endDate.toLocaleString('sv-SE').replace(' ', 'T'),
+  timeZone: 'Asia/Kolkata',
+},
     reminders: {
       useDefault: false,
       overrides: [
