@@ -63,6 +63,7 @@ export const googleCalendarCallback = async (req, res) => {
   }
 };
 
+/**
  * GET /api/google-calendar/status
  * Simple status endpoint to check if Google Calendar is connected for current maker.
  */
@@ -82,3 +83,4 @@ export const googleCalendarStatus = async (req, res, next) => {
     next(error);
   }
 };
+
