@@ -15,16 +15,15 @@ const makerSchema = new mongoose.Schema({
   },
   userType: {
     type: String,
-   
   },
   teamLeaderName: {
     type: String,
   },
-  teamLeaderId:{
-type:String,
+  teamLeaderId: {
+    type: String,
   },
-    managerId:{
-type:String,
+  managerId: {
+    type: String,
   },
   managerName: {
     type: String,
@@ -53,7 +52,7 @@ type:String,
   contactNo: {
     type: String,
     required: true,
-      unique: true
+    unique: true
   },
   address: {
     type: String,
@@ -62,7 +61,17 @@ type:String,
   publish: {
     type: String,
     default: 'No'
-  }
+  },
+  // Google Calendar integration tokens (stored on maker instead of user)
+  googleAccessToken: {
+    type: String,
+  },
+  googleRefreshToken: {
+    type: String,
+  },
+  googleTokenExpiry: {
+    type: Date,
+  },
 }, { timestamps: true });
 
 const Maker = mongoose.model('Maker', makerSchema);
