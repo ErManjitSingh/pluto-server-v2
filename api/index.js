@@ -52,6 +52,7 @@ import bankTransactionsRouter from './routes/banktransactions.route.js';
 import chatRouter from './routes/chat.route.js';
 import activityUserRouter from './routes/activityuser.route.js';
 import gmailRouter from './routes/gmail.route.js';
+import googleCalendarRouter from './routes/googleCalendar.route.js';
 import customerRouter from './routes/customer.route.js';
 import paymentPolicyRouter from './routes/paymentpolicy.route.js';
 import whatsappWebhookRouter from './routes/whatsapp-webhook.route.js';
@@ -129,6 +130,8 @@ app.use(cookieParser());
 //  ROUTES
 // -------------------------------------------------------------
 app.use("/api/privacy-policy", privacyPolicyRouter);
+app.use("/api/google", googleRouter);
+app.use("/api/google-calendar", googleCalendarRouter);
 
 app.use("/api/whatsapp", whatsappWebhookRouter);
 app.use("/api/user", userRouter);
@@ -175,7 +178,6 @@ app.use("/api/activityuser", activityUserRouter);
 app.use("/api/gmail", gmailRouter);
 app.use("/api/customerdata", customerRouter);
 app.use("/api/paymentpolicy", paymentPolicyRouter);
-app.use("/api/google", googleRouter);
 
 
 // -------------------------------------------------------------
