@@ -1,11 +1,13 @@
 import Lead from '../models/lead.model.js';
 import LeadStatusNotification from '../models/leadStatusNotification.model.js';
+import Maker from '../models/maker.model.js';
 import { errorHandler } from '../utils/error.js';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
 import EmailActivity from '../models/emailActivity.model.js';
 import { getNextLeadId } from '../services/leadId.service.js';
 import { syncMetaLeads } from '../services/metaLeadSync.service.js';
+import { createCalendarEvent } from '../services/googleCalendar.service.js';
 
 /**
  * Parse timing string like "9/5/2026 5.30pm", "2/20/2026 6.30pm", or "2/26.2026 5.50pm" (m/d/yyyy or m/d.yyyy, h.mm am/pm) to Date.
@@ -814,7 +816,8 @@ export const updateLeadStatusNote = async (req, res, next) => {
       ...(timing !== undefined && timing !== null && { timing }),
       userid: userid || undefined,
       teamleaderid: teamleaderid || undefined,
-      managerid: managerid || undefined
+      managerid: managerid || undefined,
+      // googleEventId will be filled after successful Calendar call
     };
 
     const lead = await Lead.findById(id);
@@ -839,6 +842,42 @@ export const updateLeadStatusNote = async (req, res, next) => {
       managerid: managerid || null,
       seen: false
     });
+
+    // Also create or update a Google Calendar event for the maker/executive, if connected
+    try {
+      if (timing) {
+        // Last pushed note (the one we just added)
+        const lastNote =
+          updatedLead.leadstatusnote && updatedLead.leadstatusnote.length
+            ? updatedLead.leadstatusnote[updatedLead.leadstatusnote.length - 1]
+            : null;
+
+        const makerIdForCalendar = lead.assignedUserId || lead.createdBy;
+        if (makerIdForCalendar && lastNote) {
+          const makerForCalendar = await Maker.findById(makerIdForCalendar);
+          if (makerForCalendar && makerForCalendar.googleRefreshToken) {
+            const googleEventId = await createCalendarEvent(makerForCalendar, {
+              lead,
+              leadstatus,
+              note,
+              timing,
+              googleEventId: lastNote.googleEventId,
+            });
+
+            if (googleEventId) {
+              // Persist event id on the same leadstatusnote subdocument
+              await Lead.updateOne(
+                { _id: id, 'leadstatusnote._id': lastNote._id },
+                { $set: { 'leadstatusnote.$.googleEventId': googleEventId } }
+              );
+            }
+          }
+        }
+      }
+    } catch (calendarError) {
+      console.error('Google Calendar event creation failed:', calendarError?.message || calendarError);
+      // Do not block normal notification flow on calendar errors
+    }
 
     res.status(200).json(updatedLead);
   } catch (error) {
