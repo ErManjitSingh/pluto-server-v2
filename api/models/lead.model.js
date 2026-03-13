@@ -16,7 +16,9 @@ const leadSchema = new mongoose.Schema({
      userid: { type: mongoose.Schema.Types.Mixed },
      teamleaderid: { type: mongoose.Schema.Types.Mixed },
      managerid: { type: mongoose.Schema.Types.Mixed },
-     seen: { type: Boolean, default: false }
+     seen: { type: Boolean, default: false },
+     // Optional Google Calendar event id for this specific follow-up
+     googleEventId: { type: String, required: false }
    }],
 
   name: {
