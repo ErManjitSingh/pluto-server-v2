@@ -63,3 +63,22 @@ export const googleCalendarCallback = async (req, res) => {
   }
 };
 
+ * GET /api/google-calendar/status
+ * Simple status endpoint to check if Google Calendar is connected for current maker.
+ */
+export const googleCalendarStatus = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const maker = await Maker.findById(userId).select('googleRefreshToken');
+
+    res.json({
+      connected: !!maker?.googleRefreshToken,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
