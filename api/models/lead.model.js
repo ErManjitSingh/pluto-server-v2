@@ -126,6 +126,11 @@ const leadSchema = new mongoose.Schema({
     ref: 'User',
     required: false
   },
+  assignedAt: {
+    type: Date,
+    default: null
+    // When lead was assigned to maker (for today/month counts)
+  },
   lead_meta_id: {
     type: String,
     index: true,
