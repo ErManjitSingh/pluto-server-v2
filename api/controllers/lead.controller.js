@@ -210,6 +210,18 @@ export const getLead = async (req, res, next) => {
 // Update lead (owner or assignee can update)
 export const updateLead = async (req, res, next) => {
   try {
+    const leadBefore = await Lead.findOne({
+      _id: req.params.id,
+      $or: [
+        { createdBy: req.user.id },
+        { isAssignedLead: true, assignedUserId: req.user.id }
+      ]
+    });
+    if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
+
+    const setPayload = { ...req.body };
+    if (req.body.assignedUserId !== undefined) setPayload.assignedAt = new Date();
+
     const updatedLead = await Lead.findOneAndUpdate(
        {
         _id: req.params.id,
@@ -218,10 +230,14 @@ export const updateLead = async (req, res, next) => {
           { isAssignedLead: true, assignedUserId: req.user.id }
         ]
       },
-      { $set: req.body },
+      { $set: setPayload },
       { new: true }
     );
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    if (req.body.converted === true && !leadBefore.converted && updatedLead.assignedUserId) {
+      await Maker.findByIdAndUpdate(updatedLead.assignedUserId, { $inc: { totalConvertedLeads: 1 } });
+    }
     
     // If totalAmount was updated, recalculate remainingAmount
     if (req.body.totalAmount !== undefined) {
@@ -367,13 +383,23 @@ export const getLeadPublic = async (req, res, next) => {
 // Update lead without token (public API)
 export const updateLeadPublic = async (req, res, next) => {
   try {
+    const leadBefore = await Lead.findById(req.params.id);
+    if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
+
+    const setPayload = { ...req.body };
+    if (req.body.assignedUserId !== undefined) setPayload.assignedAt = new Date();
+
     const updatedLead = await Lead.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      { $set: setPayload },
       { new: true }
     );
     
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    if (req.body.converted === true && !leadBefore.converted && updatedLead.assignedUserId) {
+      await Maker.findByIdAndUpdate(updatedLead.assignedUserId, { $inc: { totalConvertedLeads: 1 } });
+    }
     
     // If totalAmount was updated, recalculate remainingAmount
     if (req.body.totalAmount !== undefined) {
@@ -699,7 +725,8 @@ export const createAssignedLead = async (req, res, next) => {
       ...req.body,
       createdBy: req.user.id,
       isAssignedLead: true,
-      assignedUserId: req.body.assignedUserId || req.user.id
+      assignedUserId: req.body.assignedUserId || req.user.id,
+      assignedAt: new Date()
     };
     const newLead = new Lead(leadData);
     const savedLead = await newLead.save();
@@ -722,15 +749,25 @@ export const createAssignedLead = async (req, res, next) => {
 // PUT update assigned lead – only if lead is assigned to current user
 export const updateAssignedLead = async (req, res, next) => {
   try {
+    const leadBefore = await Lead.findOne({ _id: req.params.id, isAssignedLead: true });
+    if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
+
+    const setPayload = { ...req.body };
+    if (req.body.assignedUserId !== undefined) setPayload.assignedAt = new Date();
+
     const updatedLead = await Lead.findOneAndUpdate(
       {
         _id: req.params.id,
         isAssignedLead: true
       },
-      { $set: req.body },
+      { $set: setPayload },
       { new: true }
     );
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    if (req.body.converted === true && !leadBefore.converted && updatedLead.assignedUserId) {
+      await Maker.findByIdAndUpdate(updatedLead.assignedUserId, { $inc: { totalConvertedLeads: 1 } });
+    }
     if (req.body.totalAmount !== undefined) {
       try {
         await recalculateLeadRemainingAmount(updatedLead._id);
@@ -761,7 +798,7 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
 
     const result = await Lead.updateMany(
       { _id: { $in: leadIds } },
-      { $set: { assignedUserId, isAssignedLead: true } }
+      { $set: { assignedUserId, isAssignedLead: true, assignedAt: new Date() } }
     );
 
     res.status(200).json({
