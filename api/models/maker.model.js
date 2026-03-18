@@ -72,6 +72,11 @@ const makerSchema = new mongoose.Schema({
   googleTokenExpiry: {
     type: Date,
   },
+  totalConvertedLeads: {
+    type: Number,
+    default: 0
+    // Total leads (assigned to this maker) with converted: true
+  },
 }, { timestamps: true });
 
 const Maker = mongoose.model('Maker', makerSchema);
