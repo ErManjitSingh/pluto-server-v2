@@ -1,4 +1,5 @@
 import Maker from '../models/maker.model.js';
+import Lead from '../models/lead.model.js';
 import { errorHandler } from '../utils/error.js';
 import bcryptjs from 'bcryptjs';
 
@@ -48,7 +49,29 @@ export const createMaker = async (req, res, next) => {
 export const getMakers = async (req, res, next) => {
   try {
     const makers = await Maker.find();
-    return res.status(200).json(makers);
+    const now = new Date();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const [todayCounts, monthCounts] = await Promise.all([
+      Lead.aggregate([
+        { $match: { assignedAt: { $gte: startOfToday } } },
+        { $group: { _id: '$assignedUserId', count: { $sum: 1 } } }
+      ]),
+      Lead.aggregate([
+        { $match: { assignedAt: { $gte: startOfMonth } } },
+        { $group: { _id: '$assignedUserId', count: { $sum: 1 } } }
+      ])
+    ]);
+    const todayMap = Object.fromEntries(todayCounts.map((r) => [String(r._id), r.count]));
+    const monthMap = Object.fromEntries(monthCounts.map((r) => [String(r._id), r.count]));
+    const result = makers.map((m) => {
+      const obj = m.toObject ? m.toObject() : { ...m };
+      obj.leadsAssignedToday = todayMap[String(m._id)] ?? 0;
+      obj.leadsAssignedThisMonth = monthMap[String(m._id)] ?? 0;
+      obj.totalConvertedLeads = m.totalConvertedLeads != null ? m.totalConvertedLeads : 0;
+      return obj;
+    });
+    return res.status(200).json(result);
   } catch (error) {
     next(error);
   }
@@ -60,7 +83,18 @@ export const getMakerById = async (req, res, next) => {
     if (!maker) {
       return next(errorHandler(404, 'Maker not found'));
     }
-    return res.status(200).json(maker);
+    const now = new Date();
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const [leadsAssignedToday, leadsAssignedThisMonth] = await Promise.all([
+      Lead.countDocuments({ assignedUserId: maker._id, assignedAt: { $gte: startOfToday } }),
+      Lead.countDocuments({ assignedUserId: maker._id, assignedAt: { $gte: startOfMonth } })
+    ]);
+    const result = maker.toObject ? maker.toObject() : { ...maker };
+    result.leadsAssignedToday = leadsAssignedToday;
+    result.leadsAssignedThisMonth = leadsAssignedThisMonth;
+    result.totalConvertedLeads = maker.totalConvertedLeads != null ? maker.totalConvertedLeads : 0;
+    return res.status(200).json(result);
   } catch (error) {
     next(error);
   }
