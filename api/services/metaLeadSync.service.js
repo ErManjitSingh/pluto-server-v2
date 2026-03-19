@@ -115,7 +115,8 @@ function transformMetaLeadToPayload(metaLead, formId) {
     source: 'meta',
     sourceFormId: formId || undefined,
     sourceFormName: formName || undefined,
-    submittedAt: metaLead.created_time ? new Date(metaLead.created_time) : new Date()
+    submittedAt: metaLead.created_time ? new Date(metaLead.created_time) : new Date(),
+    leadStatus: 'New Lead'
   };
 }
 
