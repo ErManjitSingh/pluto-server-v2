@@ -12,6 +12,7 @@ import {
   updateLeadPublic,
   deleteLeadPublic,
   deleteMultipleLeadsPublic,
+  deleteAllLeadsPublic,
   transferLeadToUser,
   transferMultipleLeadsToUser,
   getLeadsByExecutivePhone,
@@ -75,6 +76,7 @@ router.get('/public/get-lead/:id', getLeadPublic);
 router.put('/public/update-lead/:id', updateLeadPublic);
 router.delete('/public/delete-lead/:id', deleteLeadPublic);
 router.delete('/public/delete-leads', deleteMultipleLeadsPublic);
+router.delete('/public/delete-all-leads', deleteAllLeadsPublic);
 router.get('/hello-harshit', getHelloHarshit);
 
 // Meta lead sync: manual trigger (scheduled sync runs every 3 min via scheduledTasks)
