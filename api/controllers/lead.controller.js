@@ -5,7 +5,7 @@ import { errorHandler } from '../utils/error.js';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
 import EmailActivity from '../models/emailActivity.model.js';
-import { getNextLeadId } from '../services/leadId.service.js';
+import { getNextLeadIdAndPublish } from '../services/leadId.service.js';
 import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
 
@@ -128,9 +128,21 @@ export const crmCreateLead = async (req, res, next) => {
       };
     }
 
-    // Assign next leadId if not provided (shared sequence for manual and Meta leads)
+    // Assign leadId if not provided
+    // If client sends publish ("ptw" / "demand"), generate leadId that matches that publish.
+    // Otherwise, fall back to the shared automatic sequence (Meta + CRM).
     if (leadData.leadId == null || leadData.leadId === '') {
-      leadData.leadId = await getNextLeadId();
+      const publishFromBody = (leadData.publish || '').toLowerCase();
+      if (publishFromBody === 'ptw' || publishFromBody === 'demand') {
+        const countForPublish = await Lead.countDocuments({ publish: publishFromBody });
+        const nextNum = countForPublish + 1;
+        leadData.leadId = `${publishFromBody}${nextNum}`;
+        leadData.publish = publishFromBody;
+      } else {
+        const { leadId, publish } = await getNextLeadIdAndPublish();
+        leadData.leadId = leadId;
+        leadData.publish = publish;
+      }
     }
 
     const newLead = new Lead(leadData);
@@ -449,6 +461,19 @@ export const deleteMultipleLeadsPublic = async (req, res, next) => {
     }
 
     res.status(200).json({ 
+      message: `Successfully deleted ${result.deletedCount} leads`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Delete all leads without requiring ids or token (use with caution)
+export const deleteAllLeadsPublic = async (req, res, next) => {
+  try {
+    const result = await Lead.deleteMany({});
+    res.status(200).json({
       message: `Successfully deleted ${result.deletedCount} leads`,
       deletedCount: result.deletedCount
     });
