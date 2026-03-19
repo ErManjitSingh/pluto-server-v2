@@ -5,7 +5,7 @@ import { errorHandler } from '../utils/error.js';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
 import EmailActivity from '../models/emailActivity.model.js';
-import { getNextLeadIdAndPublish } from '../services/leadId.service.js';
+import { getNextLeadIdAndPublish, getNextLeadIdAndPublishPrefer } from '../services/leadId.service.js';
 import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
 
@@ -128,21 +128,22 @@ export const crmCreateLead = async (req, res, next) => {
       };
     }
 
-    // Assign leadId if not provided
-    // If client sends publish ("ptw" / "demand"), generate leadId that matches that publish.
-    // Otherwise, fall back to the shared automatic sequence (Meta + CRM).
+    // Assign leadId if not provided — shared atomic counter (same as Meta sync).
+    // If client sends publish "ptw" | "demand", next ID matches that type (counter may skip one step).
     if (leadData.leadId == null || leadData.leadId === '') {
-      const publishFromBody = (leadData.publish || '').toLowerCase();
-      if (publishFromBody === 'ptw' || publishFromBody === 'demand') {
-        const countForPublish = await Lead.countDocuments({ publish: publishFromBody });
-        const nextNum = countForPublish + 1;
-        leadData.leadId = `${publishFromBody}${nextNum}`;
-        leadData.publish = publishFromBody;
-      } else {
-        const { leadId, publish } = await getNextLeadIdAndPublish();
-        leadData.leadId = leadId;
-        leadData.publish = publish;
-      }
+      const publishPref = (leadData.publish || '').toString().toLowerCase();
+      const gen =
+        publishPref === 'ptw' || publishPref === 'demand'
+          ? await getNextLeadIdAndPublishPrefer(publishPref)
+          : await getNextLeadIdAndPublish();
+      leadData.leadId = gen.leadId;
+      leadData.publish = gen.publish;
+    }
+
+    // Meta-sourced CRM creates should default to New Lead when status not sent
+    const src = (leadData.source || '').toString().toLowerCase();
+    if (src === 'meta' && (leadData.leadStatus == null || leadData.leadStatus === '')) {
+      leadData.leadStatus = 'New Lead';
     }
 
     const newLead = new Lead(leadData);
