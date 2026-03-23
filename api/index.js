@@ -4,7 +4,6 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
-import prerender from "prerender-node";
 import compression from "compression";   // ✅ ADD THIS
 import { initializeSocket } from './socket/socket.js';
 import { initializeScheduledTasks } from './utils/scheduledTasks.js';
@@ -125,14 +124,8 @@ app.use(bodyParser.json({ limit: "30mb" }));
 app.use(bodyParser.urlencoded({ extended: true, limit: "30mb" }));
 app.use(express.json());
 app.use(cookieParser());
-prerender.set('beforeRender', function(req, done) {
-  req.prerender = req.prerender || {};
-  req.prerender.url = 'https://www.demandsetutours.com' + req.url;
-  done();
-});
-prerender.set('prerenderToken', 'd7ETPT8tBADNzXkgAfZq');
 
-app.use(prerender);
+
 // -------------------------------------------------------------
 //  ROUTES
 // -------------------------------------------------------------
