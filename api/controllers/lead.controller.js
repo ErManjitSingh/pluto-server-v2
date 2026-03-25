@@ -640,6 +640,33 @@ export const getLeadsByExecutivePhone = async (req, res, next) => {
 };
 
 /**
+ * GET assigned leads for a user: isAssignedLead true and assignedUserId matches path param.
+ */
+
+export const getLeadsByAssignedUserId = async (req, res, next) => {
+  try {
+    const { assignedUserId } = req.params;
+    if (!assignedUserId) {
+      return res.status(400).json({ message: 'assignedUserId is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
+      return res.status(400).json({ message: 'Invalid assignedUserId' });
+    }
+    const oid = new mongoose.Types.ObjectId(assignedUserId);
+    const leads = await Lead.find({
+      assignedUserId: oid,
+      isAssignedLead: true
+    }).sort({ createdAt: -1 });
+    res.status(200).json({
+      message: 'Leads retrieved successfully',
+      leads,
+      count: leads.length
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+/**
  * Get all emails for a specific lead (email timeline)
  * GET /api/leads/:leadId/emails
  */
