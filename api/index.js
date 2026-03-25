@@ -56,6 +56,7 @@ import googleCalendarRouter from './routes/googleCalendar.route.js';
 import customerRouter from './routes/customer.route.js';
 import paymentPolicyRouter from './routes/paymentpolicy.route.js';
 import whatsappWebhookRouter from './routes/whatsapp-webhook.route.js';
+import whatsappWebhookDemandRouter from './routes/whatsapp_webhook_demand.route.js';
 import privacyPolicyRouter from './routes/privacy-policy.route.js';
 import googleRouter from './routes/google.route.js';
 
@@ -134,6 +135,7 @@ app.use("/api/google", googleRouter);
 app.use("/api/google-calendar", googleCalendarRouter);
 
 app.use("/api/whatsapp", whatsappWebhookRouter);
+app.use("/api/whatsapp-demand", whatsappWebhookDemandRouter);
 app.use("/api/user", userRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/listing", listingRouter);
