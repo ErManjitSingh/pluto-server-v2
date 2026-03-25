@@ -4,6 +4,7 @@ import ChatMessage from "../models/chat.model.js";
 import Maker from "../models/maker.model.js";
 import Lead from "../models/lead.model.js";
 import WhatsappMessage from "../models/whatsappMessage.model.js";
+import WhatsappMessageDemand from "../models/whatsappMessageDemand.model.js";
 
 let ioInstance = null;
 
@@ -342,6 +343,147 @@ export const initializeSocket = (server) => {
       } catch (err) {
         console.error("whatsapp:subscribe:by-assigned error:", err);
         socket.emit("error", { message: "Failed to load messages" });
+      }
+    });
+
+    // WhatsApp Demand line — separate collection + rooms (see whatsapp_webhook_demand.route.js)
+    socket.on("whatsapp-demand:subscribe", () => {
+      socket.join("whatsapp:demand");
+      socket.emit("whatsapp-demand:subscribed", { room: "whatsapp:demand" });
+    });
+    socket.on("whatsapp-demand:unsubscribe", () => {
+      socket.leave("whatsapp:demand");
+    });
+
+    socket.on("whatsapp-demand:subscribe:all", async () => {
+      try {
+        socket.join("whatsapp:demand:all");
+        const messages = await WhatsappMessageDemand.find()
+          .sort({ createdAt: -1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        socket.emit("whatsapp-demand:list:all", messages);
+      } catch (err) {
+        console.error("whatsapp-demand:subscribe:all error:", err);
+        socket.emit("error", { message: "Failed to load demand messages" });
+      }
+    });
+
+    socket.on("whatsapp-demand:subscribe:by-phone", async (payload) => {
+      try {
+        const phone = payload?.phone;
+        if (!phone) {
+          socket.emit("error", { message: "phone required" });
+          return;
+        }
+        const raw = String(phone).replace(/\D/g, "");
+        if (!raw) {
+          socket.emit("error", { message: "Invalid phone" });
+          return;
+        }
+        const normalized = raw.length <= 10 && !raw.startsWith("91") ? "91" + raw : raw;
+        const query =
+          raw.length <= 10 && !raw.startsWith("91")
+            ? { $or: [{ phone: raw }, { phone: "91" + raw }] }
+            : { phone: raw };
+        const messages = await WhatsappMessageDemand.find(query)
+          .sort({ createdAt: 1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        socket.join(`whatsapp:demand:by-phone:${normalized}`);
+        if (normalized !== raw) socket.join(`whatsapp:demand:by-phone:${raw}`);
+        socket.emit("whatsapp-demand:list:by-phone", messages);
+      } catch (err) {
+        console.error("whatsapp-demand:subscribe:by-phone error:", err);
+        socket.emit("error", { message: "Failed to load demand messages" });
+      }
+    });
+
+    socket.on("whatsapp-demand:subscribe:unassigned", async () => {
+      try {
+        socket.join("whatsapp:demand:unassigned");
+        const messages = await WhatsappMessageDemand.find({ assignedTo: null })
+          .sort({ createdAt: -1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        socket.emit("whatsapp-demand:list:unassigned", messages);
+      } catch (err) {
+        console.error("whatsapp-demand:subscribe:unassigned error:", err);
+        socket.emit("error", { message: "Failed to load unassigned demand messages" });
+      }
+    });
+
+    socket.on("whatsapp-demand:subscribe:unassigned:first", async () => {
+      try {
+        socket.join("whatsapp:demand:unassigned:first");
+        const messages = await WhatsappMessageDemand.find({ assignedTo: null })
+          .sort({ createdAt: 1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        const seenPhones = new Set();
+        const result = [];
+        for (const msg of messages) {
+          const normPhone = normalizePhone(msg.phone);
+          if (!normPhone || seenPhones.has(normPhone)) continue;
+          seenPhones.add(normPhone);
+          result.push(msg);
+        }
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        socket.emit("whatsapp-demand:list:unassigned:first", result);
+      } catch (err) {
+        console.error("whatsapp-demand:subscribe:unassigned:first error:", err);
+        socket.emit("error", { message: "Failed to load first unassigned per phone (demand)" });
+      }
+    });
+
+    socket.on("whatsapp-demand:subscribe:unassigned:filtered", async () => {
+      try {
+        socket.join("whatsapp:demand:unassigned:filtered");
+        const leads = await Lead.find({ mobile: { $exists: true, $ne: null } })
+          .select("mobile")
+          .lean();
+        const leadPhoneSet = new Set(
+          leads.map((l) => normalizePhone(l.mobile)).filter(Boolean)
+        );
+        const messages = await WhatsappMessageDemand.find({
+          assignedTo: null,
+          direction: "incoming",
+        })
+          .sort({ createdAt: 1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        const seenPhones = new Set();
+        const result = [];
+        for (const msg of messages) {
+          const normPhone = normalizePhone(msg.phone);
+          if (!normPhone || leadPhoneSet.has(normPhone) || seenPhones.has(normPhone)) continue;
+          seenPhones.add(normPhone);
+          result.push(msg);
+        }
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        socket.emit("whatsapp-demand:list:unassigned:filtered", result);
+      } catch (err) {
+        console.error("whatsapp-demand:subscribe:unassigned:filtered error:", err);
+        socket.emit("error", { message: "Failed to load filtered unassigned demand messages" });
+      }
+    });
+
+    socket.on("whatsapp-demand:subscribe:by-assigned", async (payload) => {
+      try {
+        const executiveId = payload?.executiveId;
+        if (!executiveId || !isValidObjectId(executiveId)) {
+          socket.emit("error", { message: "Valid executiveId required" });
+          return;
+        }
+        socket.join(`whatsapp:demand:by-assigned:${executiveId}`);
+        const messages = await WhatsappMessageDemand.find({ assignedTo: executiveId })
+          .sort({ createdAt: -1 })
+          .populate("assignedTo", "name email")
+          .lean();
+        socket.emit("whatsapp-demand:list:by-assigned", messages);
+      } catch (err) {
+        console.error("whatsapp-demand:subscribe:by-assigned error:", err);
+        socket.emit("error", { message: "Failed to load demand messages" });
       }
     });
 
