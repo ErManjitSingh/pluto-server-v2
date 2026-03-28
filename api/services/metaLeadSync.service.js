@@ -53,6 +53,23 @@ function getFormIds() {
   return DEFAULT_FORM_IDS;
 }
 
+/** Min Meta `created_time` (inclusive). Only leads on or after this instant are posted. Override with META_LEAD_SYNC_MIN_CREATED_AT (ISO 8601, e.g. 2026-03-28T14:42:00+05:30). */
+function getMetaLeadSyncMinCreatedAtMs() {
+  const env = process.env.META_LEAD_SYNC_MIN_CREATED_AT;
+  if (env && typeof env === 'string' && env.trim()) {
+    const t = Date.parse(env.trim());
+    if (!Number.isNaN(t)) return t;
+  }
+  return Date.parse('2026-03-28T14:42:00+05:30');
+}
+
+function isMetaLeadOnOrAfterMinCreated(metaLead) {
+  if (!metaLead.created_time) return false;
+  const t = new Date(metaLead.created_time).getTime();
+  if (Number.isNaN(t)) return false;
+  return t >= getMetaLeadSyncMinCreatedAtMs();
+}
+
 /**
  * Extract value from Meta field_data by field name (first value in values array)
  */
@@ -194,6 +211,10 @@ export async function syncMetaLeads() {
       for (const metaLead of leads) {
         const metaId = metaLead.id;
         if (!metaId) continue;
+
+        if (!isMetaLeadOnOrAfterMinCreated(metaLead)) {
+          continue;
+        }
 
         const payload = transformMetaLeadToPayload(metaLead, formId);
 
