@@ -70,26 +70,58 @@ function normalizeMobile(mobile) {
   return mobile.replace(/\s+/g, '').trim();
 }
 
+/** Digits only — used so +91..., 91..., spaces all match the same subscriber */
+function digitsOnly(mobile) {
+  return normalizeMobile(mobile).replace(/\D/g, '');
+}
+
+/**
+ * Last 10 digits for India-style dedupe (same person even if Meta sends +91 vs 0 vs 10 digits).
+ */
+function phoneMatchKey(mobile) {
+  const d = digitsOnly(mobile);
+  if (d.length < 10) return '';
+  return d.slice(-10);
+}
+
+/**
+ * Find most recent lead whose phone matches by digit key (not string equality).
+ */
+async function findLatestLeadByPhoneDigits(mobile) {
+  const key = phoneMatchKey(mobile);
+  if (!key) return null;
+
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const candidates = await Lead.find({
+    $or: [{ mobile: mobile }, { mobile: new RegExp(`${escaped}$`) }]
+  })
+    .sort({ createdAt: -1 })
+    .limit(80)
+    .select('mobile createdAt')
+    .lean();
+
+  for (const doc of candidates) {
+    if (phoneMatchKey(doc.mobile) === key) return doc;
+  }
+  return null;
+}
+
 /**
  * Check if we should skip creating lead due to mobile duplicate:
- * If same mobile exists and the most recent lead from that mobile is within 10 days of this meta lead's time, skip.
+ * If same mobile exists (any common formatting) and the most recent such lead is within 10 days of this meta lead's time, skip.
  * Returns true = skip (do not post), false = allow post.
  */
 async function shouldSkipByMobile(mobile, metaLeadCreatedTime) {
-  const normalized = normalizeMobile(mobile);
-  if (!normalized) return false;
+  const key = phoneMatchKey(mobile);
+  if (!key) return false;
 
   const metaTime = metaLeadCreatedTime ? new Date(metaLeadCreatedTime).getTime() : Date.now();
-  // Simple: treat the incoming Meta mobile as canonical and look for an exact match
-  const latestByMobile = await Lead.findOne({ mobile })
-    .sort({ createdAt: -1 })
-    .select('createdAt')
-    .lean();
+  const latestByMobile = await findLatestLeadByPhoneDigits(mobile);
   if (!latestByMobile) return false;
 
   const lastCreated = new Date(latestByMobile.createdAt).getTime();
-  const gapMs = metaTime - lastCreated;
-  return gapMs < TEN_DAYS_MS;
+  // Same Meta lead submitted twice: created_time may be seconds apart from our DB time — use abs so we never miss duplicates
+  return Math.abs(metaTime - lastCreated) < TEN_DAYS_MS;
 }
 
 /**
