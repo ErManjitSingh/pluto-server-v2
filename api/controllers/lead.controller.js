@@ -863,6 +863,36 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
     next(error);
   }
 };
+
+// PUT bulk update isAssignedLead without token (public API)
+// Body: { ids: string[], isAssignedLead: boolean }
+export const bulkUpdateIsAssignedLeadPublic = async (req, res, next) => {
+  try {
+    const { ids, isAssignedLead } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'ids array is required' });
+    }
+    if (typeof isAssignedLead !== 'boolean') {
+      return res.status(400).json({ message: 'isAssignedLead must be boolean (true/false)' });
+    }
+
+    const update =
+      isAssignedLead === true
+        ? { $set: { isAssignedLead: true } }
+        : { $set: { isAssignedLead: false, assignedUserId: null, assignedAt: null } };
+
+    const result = await Lead.updateMany({ _id: { $in: ids } }, update);
+
+    res.status(200).json({
+      message: `Updated isAssignedLead for ${result.modifiedCount} lead(s)`,
+      modifiedCount: result.modifiedCount,
+      matchedCount: result.matchedCount
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 // DELETE assigned lead – only if lead is assigned to current user
 export const deleteAssignedLead = async (req, res, next) => {
   try {
