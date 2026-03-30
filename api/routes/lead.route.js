@@ -24,6 +24,7 @@ import {
   createAssignedLead,
   updateAssignedLead,
   bulkUpdateAssignedUserId,
+  bulkUpdateIsAssignedLeadPublic,
   deleteAssignedLead,
   updateLeadStatusNote,
   getLeadStatusNotificationsByUserId,
@@ -76,6 +77,7 @@ router.delete('/crm-delete-leads', verifySimpleToken, deleteMultipleLeads);
 router.get('/public/get-leads', getLeadsPublic);
 router.get('/public/get-lead/:id', getLeadPublic);
 router.put('/public/update-lead/:id', updateLeadPublic);
+router.put('/public/bulk-update-is-assigned-lead', bulkUpdateIsAssignedLeadPublic);
 router.delete('/public/delete-lead/:id', deleteLeadPublic);
 router.delete('/public/delete-leads', deleteMultipleLeadsPublic);
 router.delete('/public/delete-all-leads', deleteAllLeadsPublic);
