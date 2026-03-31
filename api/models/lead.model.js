@@ -126,6 +126,10 @@ const leadSchema = new mongoose.Schema({
     ref: 'User',
     required: false
   },
+  isseen: {
+    type: Boolean,
+    default: false
+  },
   assignedAt: {
     type: Date,
     default: null
