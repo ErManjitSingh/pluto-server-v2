@@ -666,6 +666,30 @@ export const getLeadsByAssignedUserId = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * GET leads by assignedUserId (basic projection)
+ * Returns only: name, email, mobile, isseen
+ */
+export const getLeadsByAssignedUserIdBasic = async (req, res, next) => {
+  try {
+    const { assignedUserId } = req.params;
+    if (!assignedUserId) {
+      return res.status(400).json({ message: 'assignedUserId is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
+      return res.status(400).json({ message: 'Invalid assignedUserId' });
+    }
+    const oid = new mongoose.Types.ObjectId(assignedUserId);
+    const leads = await Lead.find({ assignedUserId: oid })
+      .select('name email mobile isseen')
+      .sort({ createdAt: -1 })
+      .lean();
+    return res.status(200).json(leads);
+  } catch (error) {
+    next(error);
+  }
+};
 /**
  * Get all emails for a specific lead (email timeline)
  * GET /api/leads/:leadId/emails
