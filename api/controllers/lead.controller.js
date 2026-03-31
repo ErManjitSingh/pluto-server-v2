@@ -681,7 +681,11 @@ export const getLeadsByAssignedUserIdBasic = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
     const oid = new mongoose.Types.ObjectId(assignedUserId);
-    const leads = await Lead.find({ assignedUserId: oid })
+    const leads = await Lead.find({
+      assignedUserId: oid,
+      isAssignedLead: true,
+      isseen: false
+    })
       .select('name email mobile isseen')
       .sort({ createdAt: -1 })
       .lean();
