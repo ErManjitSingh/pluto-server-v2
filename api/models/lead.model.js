@@ -135,6 +135,11 @@ const leadSchema = new mongoose.Schema({
     default: null
     // When lead was assigned to maker (for today/month counts)
   },
+  // Optional Google Calendar event id for "new lead assigned" notification
+  assignedGoogleEventId: {
+    type: String,
+    required: false
+  },
   lead_meta_id: {
     type: String,
     index: true,
