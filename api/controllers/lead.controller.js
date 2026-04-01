@@ -248,6 +248,39 @@ export const updateLead = async (req, res, next) => {
     );
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
 
+    // If lead newly assigned/re-assigned, create an immediate Google Calendar "New lead assigned" event
+    try {
+      const prevAssigned = leadBefore.assignedUserId ? leadBefore.assignedUserId.toString() : null;
+      const nextAssigned = updatedLead.assignedUserId ? updatedLead.assignedUserId.toString() : null;
+      const assignedChanged =
+        req.body.assignedUserId !== undefined && nextAssigned && nextAssigned !== prevAssigned;
+
+      if (assignedChanged) {
+        const makerForCalendar = await Maker.findById(updatedLead.assignedUserId);
+        if (makerForCalendar?.googleRefreshToken) {
+          const googleEventId = await createCalendarEvent(makerForCalendar, {
+            lead: updatedLead,
+            leadstatus: updatedLead.leadStatus,
+            note: 'A new lead has been assigned to you.',
+            startDate: new Date(),
+            durationMinutes: 5,
+            summaryPrefix: 'New lead assigned'
+          });
+          if (googleEventId) {
+            await Lead.updateOne(
+              { _id: updatedLead._id },
+              { $set: { assignedGoogleEventId: googleEventId } }
+            );
+          }
+        }
+      }
+    } catch (calendarError) {
+      console.error(
+        'Google Calendar assignment event creation failed:',
+        calendarError?.message || calendarError
+      );
+    }
+
     if (req.body.converted === true && !leadBefore.converted && updatedLead.assignedUserId) {
       await Maker.findByIdAndUpdate(updatedLead.assignedUserId, { $inc: { totalConvertedLeads: 1 } });
     }
@@ -409,6 +442,39 @@ export const updateLeadPublic = async (req, res, next) => {
     );
     
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    // If lead newly assigned/re-assigned (public), create an immediate Google Calendar "New lead assigned" event
+    try {
+      const prevAssigned = leadBefore.assignedUserId ? leadBefore.assignedUserId.toString() : null;
+      const nextAssigned = updatedLead.assignedUserId ? updatedLead.assignedUserId.toString() : null;
+      const assignedChanged =
+        req.body.assignedUserId !== undefined && nextAssigned && nextAssigned !== prevAssigned;
+
+      if (assignedChanged) {
+        const makerForCalendar = await Maker.findById(updatedLead.assignedUserId);
+        if (makerForCalendar?.googleRefreshToken) {
+          const googleEventId = await createCalendarEvent(makerForCalendar, {
+            lead: updatedLead,
+            leadstatus: updatedLead.leadStatus,
+            note: 'A new lead has been assigned to you.',
+            startDate: new Date(),
+            durationMinutes: 5,
+            summaryPrefix: 'New lead assigned'
+          });
+          if (googleEventId) {
+            await Lead.updateOne(
+              { _id: updatedLead._id },
+              { $set: { assignedGoogleEventId: googleEventId } }
+            );
+          }
+        }
+      }
+    } catch (calendarError) {
+      console.error(
+        'Google Calendar assignment event creation failed (public):',
+        calendarError?.message || calendarError
+      );
+    }
 
     if (req.body.converted === true && !leadBefore.converted && updatedLead.assignedUserId) {
       await Maker.findByIdAndUpdate(updatedLead.assignedUserId, { $inc: { totalConvertedLeads: 1 } });
@@ -811,6 +877,33 @@ export const createAssignedLead = async (req, res, next) => {
     };
     const newLead = new Lead(leadData);
     const savedLead = await newLead.save();
+
+    // Create an immediate Google Calendar "New lead assigned" event for the assigned executive (if connected)
+    try {
+      const makerForCalendar = await Maker.findById(savedLead.assignedUserId);
+      if (makerForCalendar?.googleRefreshToken) {
+        const googleEventId = await createCalendarEvent(makerForCalendar, {
+          lead: savedLead,
+          leadstatus: savedLead.leadStatus,
+          note: 'A new lead has been assigned to you.',
+          startDate: new Date(),
+          durationMinutes: 5,
+          summaryPrefix: 'New lead assigned'
+        });
+        if (googleEventId) {
+          await Lead.updateOne(
+            { _id: savedLead._id },
+            { $set: { assignedGoogleEventId: googleEventId } }
+          );
+        }
+      }
+    } catch (calendarError) {
+      console.error(
+        'Google Calendar assignment event creation failed (createAssignedLead):',
+        calendarError?.message || calendarError
+      );
+    }
+
     try {
       if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
         await initializeLeadRemainingAmount(savedLead._id);
@@ -846,6 +939,39 @@ export const updateAssignedLead = async (req, res, next) => {
     );
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
 
+    // If lead newly assigned/re-assigned (assigned-leads flow), create immediate Calendar event
+    try {
+      const prevAssigned = leadBefore.assignedUserId ? leadBefore.assignedUserId.toString() : null;
+      const nextAssigned = updatedLead.assignedUserId ? updatedLead.assignedUserId.toString() : null;
+      const assignedChanged =
+        req.body.assignedUserId !== undefined && nextAssigned && nextAssigned !== prevAssigned;
+
+      if (assignedChanged) {
+        const makerForCalendar = await Maker.findById(updatedLead.assignedUserId);
+        if (makerForCalendar?.googleRefreshToken) {
+          const googleEventId = await createCalendarEvent(makerForCalendar, {
+            lead: updatedLead,
+            leadstatus: updatedLead.leadStatus,
+            note: 'A new lead has been assigned to you.',
+            startDate: new Date(),
+            durationMinutes: 5,
+            summaryPrefix: 'New lead assigned'
+          });
+          if (googleEventId) {
+            await Lead.updateOne(
+              { _id: updatedLead._id },
+              { $set: { assignedGoogleEventId: googleEventId } }
+            );
+          }
+        }
+      }
+    } catch (calendarError) {
+      console.error(
+        'Google Calendar assignment event creation failed (updateAssignedLead):',
+        calendarError?.message || calendarError
+      );
+    }
+
     if (req.body.converted === true && !leadBefore.converted && updatedLead.assignedUserId) {
       await Maker.findByIdAndUpdate(updatedLead.assignedUserId, { $inc: { totalConvertedLeads: 1 } });
     }
@@ -877,10 +1003,50 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
       return res.status(400).json({ message: 'assignedUserId is required' });
     }
 
+    // Fetch current assignedUserId to detect changes and avoid duplicate Calendar spam
+    const beforeLeads = await Lead.find({ _id: { $in: leadIds } })
+      .select('_id assignedUserId leadStatus name mobile email leadId')
+      .lean();
+
     const result = await Lead.updateMany(
       { _id: { $in: leadIds } },
       { $set: { assignedUserId, isAssignedLead: true, assignedAt: new Date() } }
     );
+
+    // Create immediate Calendar events for leads that actually changed assignee
+    try {
+      const makerForCalendar = await Maker.findById(assignedUserId);
+      if (makerForCalendar?.googleRefreshToken) {
+        const assignedUserIdStr = assignedUserId.toString();
+        const changed = (beforeLeads || []).filter((l) => {
+          const prev = l.assignedUserId ? l.assignedUserId.toString() : null;
+          return prev !== assignedUserIdStr;
+        });
+
+        // Fire-and-wait sequentially to avoid rate bursts
+        for (const l of changed) {
+          const googleEventId = await createCalendarEvent(makerForCalendar, {
+            lead: l,
+            leadstatus: l.leadStatus,
+            note: 'A new lead has been assigned to you.',
+            startDate: new Date(),
+            durationMinutes: 5,
+            summaryPrefix: 'New lead assigned'
+          });
+          if (googleEventId) {
+            await Lead.updateOne(
+              { _id: l._id },
+              { $set: { assignedGoogleEventId: googleEventId } }
+            );
+          }
+        }
+      }
+    } catch (calendarError) {
+      console.error(
+        'Google Calendar assignment event creation failed (bulkUpdateAssignedUserId):',
+        calendarError?.message || calendarError
+      );
+    }
 
     res.status(200).json({
       message: `Updated assignedUserId for ${result.modifiedCount} lead(s)`,
