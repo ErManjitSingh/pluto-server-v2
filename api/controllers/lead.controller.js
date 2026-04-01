@@ -1216,7 +1216,12 @@ export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
     if (!userId) {
       return res.status(400).json({ message: 'userId is required' });
     }
-    const all = await LeadStatusNotification.find({ userid: userId, seen: false })
+    const excludedLeadStatusesForUserPanel = ['Lost', 'Booked', 'Tour Cancelled', 'Tour Postponed'];
+    const all = await LeadStatusNotification.find({
+      userid: userId,
+      seen: false,
+      leadstatus: { $nin: excludedLeadStatusesForUserPanel }
+    })
       .sort({ createdAt: -1 })
       .lean();
     const notifications = all.filter((n) => shouldShowNotificationByTime(n.timing || ''));
