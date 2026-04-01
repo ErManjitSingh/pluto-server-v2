@@ -1151,6 +1151,7 @@ export const updateLeadStatusNote = async (req, res, next) => {
       { new: true }
     );
 
+    const autoSeenLeadStatuses = ['Lost', 'Booked', 'Tour Cancelled', 'Tour Postponed'];
     await LeadStatusNotification.create({
       leadId: id,
       leadstatus,
@@ -1159,7 +1160,7 @@ export const updateLeadStatusNote = async (req, res, next) => {
       userid: userid || null,
       teamleaderid: teamleaderid || null,
       managerid: managerid || null,
-      seen: false
+      seen: autoSeenLeadStatuses.includes(leadstatus)
     });
 
     // Also create or update a Google Calendar event for the maker/executive, if connected
