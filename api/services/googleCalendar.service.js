@@ -3,9 +3,10 @@ import { oauth2Client } from '../config/googleCalendar.js';
 
 /**
  * Parse timing string like "9/5/2026 5.30pm" (m/d/yyyy, h.mm am/pm) to a JS Date
- * in local time (no manual timezone offset). Returns null if parsing fails.
+ * representing the correct instant in UTC, assuming the input is in IST (Asia/Kolkata).
+ * Returns null if parsing fails.
  */
-function parseTimingToLocalDate(timingStr) {
+function parseTimingToUtcDateAssumingIST(timingStr) {
   if (!timingStr || typeof timingStr !== 'string') return null;
   const s = timingStr.trim();
   const match = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\s+(\d{1,2})\.(\d{2})\s*(am|pm)$/i);
@@ -20,7 +21,9 @@ function parseTimingToLocalDate(timingStr) {
   if (ampm.toLowerCase() === 'pm' && h !== 12) h += 12;
   if (ampm.toLowerCase() === 'am' && h === 12) h = 0;
 
-  const date = new Date(y, month, day, h, mn, 0, 0);
+  // Convert IST wall time -> UTC instant by subtracting 5h30m
+  const utcMs = Date.UTC(y, month, day, h, mn, 0, 0) - (5.5 * 60 * 60 * 1000);
+  const date = new Date(utcMs);
   if (isNaN(date.getTime())) return null;
   return date;
 }
@@ -40,14 +43,18 @@ export const createCalendarEvent = async (user, options) => {
     startDate: startDateOverride,
     durationMinutes,
     googleEventId,
-    summaryPrefix
+    summaryPrefix,
+    transparency
   } = options || {};
 
   if (!user || !user.googleRefreshToken) {
     return null;
   }
 
-  const startDate = startDateOverride instanceof Date ? startDateOverride : parseTimingToLocalDate(timing);
+  // If startDateOverride is provided: treat it as an instant (Date.now()).
+  // If timing is provided: treat it as IST wall time and convert to correct UTC instant.
+  const startDate =
+    startDateOverride instanceof Date ? startDateOverride : parseTimingToUtcDateAssumingIST(timing);
   if (!startDate || isNaN(startDate.getTime())) return null;
 
   // 30-minute default duration (overrideable for assignment "instant" events)
@@ -80,14 +87,10 @@ export const createCalendarEvent = async (user, options) => {
     ]
       .filter(Boolean)
       .join('\n'),
-      start: {
-        dateTime: startDate.toLocaleString('sv-SE').replace(' ', 'T'),
-        timeZone: 'Asia/Kolkata',
-      },
-      end: {
-        dateTime: endDate.toLocaleString('sv-SE').replace(' ', 'T'),
-        timeZone: 'Asia/Kolkata',
-      },
+    // Use absolute instants (RFC3339 with Z) to avoid server timezone issues.
+    start: { dateTime: startDate.toISOString() },
+    end: { dateTime: endDate.toISOString() },
+    ...(transparency ? { transparency } : null),
     reminders: {
       useDefault: false,
       overrides: [
