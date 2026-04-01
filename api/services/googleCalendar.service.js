@@ -28,23 +28,31 @@ function parseTimingToLocalDate(timingStr) {
 /**
  * Create or update a Google Calendar event for a follow-up based on lead status timing.
  * - user: Maker document with googleRefreshToken
- * - options: { lead, leadstatus, note, timing, googleEventId? }
+ * - options: { lead, leadstatus, note, timing, startDate?, durationMinutes?, googleEventId?, summaryPrefix? }
  * Returns Google eventId (string) or null.
  */
 export const createCalendarEvent = async (user, options) => {
-  const { lead, leadstatus, note, timing, googleEventId } = options || {};
+  const {
+    lead,
+    leadstatus,
+    note,
+    timing,
+    startDate: startDateOverride,
+    durationMinutes,
+    googleEventId,
+    summaryPrefix
+  } = options || {};
 
   if (!user || !user.googleRefreshToken) {
     return null;
   }
 
-  const startDate = parseTimingToLocalDate(timing);
-  if (!startDate) {
-    return null;
-  }
+  const startDate = startDateOverride instanceof Date ? startDateOverride : parseTimingToLocalDate(timing);
+  if (!startDate || isNaN(startDate.getTime())) return null;
 
-  // 30-minute default duration
-  const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+  // 30-minute default duration (overrideable for assignment "instant" events)
+  const dur = Number.isFinite(durationMinutes) ? Math.max(1, durationMinutes) : 30;
+  const endDate = new Date(startDate.getTime() + dur * 60 * 1000);
 
   // Ensure access token is fresh (Google will use refresh_token)
   oauth2Client.setCredentials({
@@ -58,6 +66,7 @@ export const createCalendarEvent = async (user, options) => {
   });
 
   const summaryParts = [];
+  if (summaryPrefix) summaryParts.push(summaryPrefix);
   if (lead?.name) summaryParts.push(`Lead: ${lead.name}`);
   if (leadstatus) summaryParts.push(`Status: ${leadstatus}`);
 
@@ -82,7 +91,7 @@ export const createCalendarEvent = async (user, options) => {
     reminders: {
       useDefault: false,
       overrides: [
-        { method: 'popup', minutes: 10 }, // 10-minute reminder
+        { method: 'popup', minutes: timing ? 10 : 0 }, // follow-up: 10 min before; assignment: immediate
       ],
     },
   };
