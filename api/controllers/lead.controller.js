@@ -262,9 +262,10 @@ export const updateLead = async (req, res, next) => {
             lead: updatedLead,
             leadstatus: updatedLead.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(),
-            durationMinutes: 5,
-            summaryPrefix: 'New lead assigned'
+            startDate: new Date(Date.now() + 60 * 1000),
+            durationMinutes: 1,
+            summaryPrefix: 'New lead assigned',
+            transparency: 'transparent'
           });
           if (googleEventId) {
             await Lead.updateOne(
@@ -457,9 +458,10 @@ export const updateLeadPublic = async (req, res, next) => {
             lead: updatedLead,
             leadstatus: updatedLead.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(),
-            durationMinutes: 5,
-            summaryPrefix: 'New lead assigned'
+            startDate: new Date(Date.now() + 60 * 1000),
+            durationMinutes: 1,
+            summaryPrefix: 'New lead assigned',
+            transparency: 'transparent'
           });
           if (googleEventId) {
             await Lead.updateOne(
@@ -886,9 +888,10 @@ export const createAssignedLead = async (req, res, next) => {
           lead: savedLead,
           leadstatus: savedLead.leadStatus,
           note: 'A new lead has been assigned to you.',
-          startDate: new Date(),
-          durationMinutes: 5,
-          summaryPrefix: 'New lead assigned'
+          startDate: new Date(Date.now() + 60 * 1000),
+          durationMinutes: 1,
+          summaryPrefix: 'New lead assigned',
+          transparency: 'transparent'
         });
         if (googleEventId) {
           await Lead.updateOne(
@@ -953,9 +956,10 @@ export const updateAssignedLead = async (req, res, next) => {
             lead: updatedLead,
             leadstatus: updatedLead.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(),
-            durationMinutes: 5,
-            summaryPrefix: 'New lead assigned'
+            startDate: new Date(Date.now() + 60 * 1000),
+            durationMinutes: 1,
+            summaryPrefix: 'New lead assigned',
+            transparency: 'transparent'
           });
           if (googleEventId) {
             await Lead.updateOne(
@@ -1029,9 +1033,10 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
             lead: l,
             leadstatus: l.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(),
-            durationMinutes: 5,
-            summaryPrefix: 'New lead assigned'
+            startDate: new Date(Date.now() + 60 * 1000),
+            durationMinutes: 1,
+            summaryPrefix: 'New lead assigned',
+            transparency: 'transparent'
           });
           if (googleEventId) {
             await Lead.updateOne(
