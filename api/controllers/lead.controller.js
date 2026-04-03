@@ -262,7 +262,9 @@ export const updateLead = async (req, res, next) => {
             lead: updatedLead,
             leadstatus: updatedLead.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(Date.now() + 60 * 1000),
+            // Schedule 12 minutes ahead so popup (10-min-before) fires ~2 minutes after creation.
+            startDate: new Date(Date.now() + 12 * 60 * 1000),
+            timing: 'assignment',
             durationMinutes: 1,
             summaryPrefix: 'New lead assigned',
             transparency: 'transparent'
@@ -458,7 +460,9 @@ export const updateLeadPublic = async (req, res, next) => {
             lead: updatedLead,
             leadstatus: updatedLead.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(Date.now() + 60 * 1000),
+            // Schedule 12 minutes ahead so popup (10-min-before) fires ~2 minutes after creation.
+            startDate: new Date(Date.now() + 12 * 60 * 1000),
+            timing: 'assignment',
             durationMinutes: 1,
             summaryPrefix: 'New lead assigned',
             transparency: 'transparent'
@@ -888,7 +892,9 @@ export const createAssignedLead = async (req, res, next) => {
           lead: savedLead,
           leadstatus: savedLead.leadStatus,
           note: 'A new lead has been assigned to you.',
-          startDate: new Date(Date.now() + 60 * 1000),
+          // Schedule 12 minutes ahead so popup (10-min-before) fires ~2 minutes after creation.
+          startDate: new Date(Date.now() + 12 * 60 * 1000),
+          timing: 'assignment',
           durationMinutes: 1,
           summaryPrefix: 'New lead assigned',
           transparency: 'transparent'
@@ -956,7 +962,9 @@ export const updateAssignedLead = async (req, res, next) => {
             lead: updatedLead,
             leadstatus: updatedLead.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(Date.now() + 60 * 1000),
+            // Schedule 12 minutes ahead so popup (10-min-before) fires ~2 minutes after creation.
+            startDate: new Date(Date.now() + 12 * 60 * 1000),
+            timing: 'assignment',
             durationMinutes: 1,
             summaryPrefix: 'New lead assigned',
             transparency: 'transparent'
@@ -1033,7 +1041,9 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
             lead: l,
             leadstatus: l.leadStatus,
             note: 'A new lead has been assigned to you.',
-            startDate: new Date(Date.now() + 60 * 1000),
+            // Schedule 12 minutes ahead so popup (10-min-before) fires ~2 minutes after creation.
+            startDate: new Date(Date.now() + 12 * 60 * 1000),
+            timing: 'assignment',
             durationMinutes: 1,
             summaryPrefix: 'New lead assigned',
             transparency: 'transparent'
