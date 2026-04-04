@@ -4,6 +4,8 @@ import WhatsappMessage from '../models/whatsappMessage.model.js';
 import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
 import { fetchWhatsappMediaDownloadUrl } from '../utils/whatsappMediaUrl.js';
+import { publicRequestBaseUrl } from '../config/uploads.js';
+import { whatsappUploadSingle } from '../middleware/whatsappMulter.js';
 
 const router = express.Router();
 
@@ -600,6 +602,35 @@ router.post('/send-reply', async (req, res) => {
       message: err.message || 'Internal server error',
     });
   }
+});
+
+/**
+ * POST /upload — Upload a file for WhatsApp send-media (multipart form, field name: file).
+ * Returns a public URL: {BASE}/uploads/{filename} — use as `link` in POST /send-media.
+ * Production: set PUBLIC_BASE_URL=https://yourdomain.com so URLs are correct behind reverse proxy.
+ */
+router.post('/upload', (req, res) => {
+  whatsappUploadSingle.single('file')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Upload failed',
+      });
+    }
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded (use form field name: file)',
+      });
+    }
+    const base = publicRequestBaseUrl(req);
+    const fileUrl = `${base}/uploads/${encodeURIComponent(req.file.filename)}`;
+    res.json({
+      success: true,
+      url: fileUrl,
+      filename: req.file.filename,
+    });
+  });
 });
 
 /**
