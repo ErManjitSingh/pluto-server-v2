@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import WhatsappMessageDemand from '../models/whatsappMessageDemand.model.js';
 import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
+import { fetchWhatsappMediaDownloadUrl } from '../utils/whatsappMediaUrl.js';
 
 const router = express.Router();
 
@@ -53,6 +54,92 @@ function emitWhatsappDemandMessageToViewRooms(messagePayload) {
     const assignedId = messagePayload.assignedTo?._id ?? messagePayload.assignedTo;
     if (assignedId) io.to(D.byAssigned(assignedId)).emit('whatsapp-demand:message:new', messagePayload);
   }
+}
+
+function emitWhatsappDemandMessageUpdatedToViewRooms(messagePayload) {
+  const io = getIO();
+  if (!io) return;
+  io.to(D.root).emit('whatsapp-demand:message:updated', messagePayload);
+  io.to(D.all).emit('whatsapp-demand:message:updated', messagePayload);
+  io.to(D.byPhone(messagePayload.phone)).emit('whatsapp-demand:message:updated', messagePayload);
+  if (!messagePayload.assignedTo) {
+    io.to(D.unassigned).emit('whatsapp-demand:message:updated', messagePayload);
+    io.to(D.unassignedFiltered).emit('whatsapp-demand:message:updated', messagePayload);
+    io.to(D.unassignedFirst).emit('whatsapp-demand:message:updated', messagePayload);
+  } else {
+    const assignedId = messagePayload.assignedTo?._id ?? messagePayload.assignedTo;
+    if (assignedId) io.to(D.byAssigned(assignedId)).emit('whatsapp-demand:message:updated', messagePayload);
+  }
+}
+
+function buildIncomingWhatsappDemandMessageCreatePayload(message) {
+  const type = message?.type || 'unknown';
+
+  if (type === 'text') {
+    return {
+      phone: message.from,
+      message: message.text?.body || '',
+      direction: 'incoming',
+      metaMessageId: message.id || null,
+      messageType: 'text',
+      mediaUrl: null,
+      caption: null,
+      filename: null,
+      metaMediaId: null,
+      mimeType: null,
+    };
+  }
+
+  const mediaKinds = ['image', 'document', 'video', 'audio'];
+  if (mediaKinds.includes(type)) {
+    const block = message[type] || {};
+    const metaMediaId = block.id ? String(block.id) : null;
+    const caption = block.caption != null ? String(block.caption) : null;
+    const filename = type === 'document' && block.filename != null ? String(block.filename) : null;
+    const mimeType = block.mime_type != null ? String(block.mime_type) : null;
+    const labelParts = [`[${type}]`];
+    if (filename) labelParts.push(filename);
+    if (caption) labelParts.push(caption);
+    return {
+      phone: message.from,
+      message: labelParts.join(' ').replace(/\s+/g, ' ').trim(),
+      direction: 'incoming',
+      metaMessageId: message.id || null,
+      messageType: type,
+      mediaUrl: null,
+      caption,
+      filename,
+      metaMediaId,
+      mimeType,
+    };
+  }
+
+  return {
+    phone: message.from,
+    message: `[${type}]`,
+    direction: 'incoming',
+    metaMessageId: message.id || null,
+    messageType: 'text',
+    mediaUrl: null,
+    caption: null,
+    filename: null,
+    metaMediaId: null,
+    mimeType: null,
+  };
+}
+
+function scheduleResolveIncomingWhatsappDemandMediaUrl(docId, metaMediaId) {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN_DEMAND;
+  if (!metaMediaId || !token) return;
+  setImmediate(() => {
+    (async () => {
+      const url = await fetchWhatsappMediaDownloadUrl(metaMediaId, token);
+      if (!url) return;
+      await WhatsappMessageDemand.updateOne({ _id: docId }, { $set: { mediaUrl: url } });
+      const updated = await WhatsappMessageDemand.findById(docId).populate('assignedTo', 'name email').lean();
+      if (updated) emitWhatsappDemandMessageUpdatedToViewRooms(updated);
+    })().catch((e) => console.error('Incoming WhatsApp demand media URL resolve:', e));
+  });
 }
 
 function emitWhatsappDemandMessageDeleted(deletedPayload) {
@@ -113,12 +200,12 @@ router.post('/webhook', async (req, res) => {
   if (value?.messages) {
     const message = value.messages[0];
 
-    const doc = await WhatsappMessageDemand.create({
-      phone: message.from,
-      message: message.text?.body || `[${message.type}]`,
-      direction: 'incoming',
-      metaMessageId: message.id || null,
-    });
+    const createPayload = buildIncomingWhatsappDemandMessageCreatePayload(message);
+    const doc = await WhatsappMessageDemand.create(createPayload);
+
+    if (createPayload.metaMediaId) {
+      scheduleResolveIncomingWhatsappDemandMediaUrl(doc._id, createPayload.metaMediaId);
+    }
 
     const messagePayload = await WhatsappMessageDemand.findById(doc._id)
       .populate('assignedTo', 'name email')
