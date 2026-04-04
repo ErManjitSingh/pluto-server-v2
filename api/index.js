@@ -1,6 +1,7 @@
 import './config/env.js';
 import express from 'express';
 import mongoose from 'mongoose';
+import { UPLOADS_ROOT, ensureUploadsDir } from './config/uploads.js';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
@@ -89,6 +90,9 @@ mongoose
 
 const app = express();
 const server = createServer(app);
+
+ensureUploadsDir();
+app.use('/uploads', express.static(UPLOADS_ROOT));
 
 // Initialize Socket.IO
 initializeSocket(server);
