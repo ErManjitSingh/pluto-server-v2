@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import WhatsappMessage from '../models/whatsappMessage.model.js';
 import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
+import { fetchWhatsappMediaDownloadUrl } from '../utils/whatsappMediaUrl.js';
 
 const router = express.Router();
 
@@ -42,6 +43,93 @@ function emitWhatsappMessageToViewRooms(messagePayload) {
     const assignedId = messagePayload.assignedTo?._id ?? messagePayload.assignedTo;
     if (assignedId) io.to(`whatsapp:by-assigned:${assignedId}`).emit('whatsapp:message:new', messagePayload);
   }
+}
+
+/** After Graph resolves temporary media URL — same rooms as new message */
+function emitWhatsappMessageUpdatedToViewRooms(messagePayload) {
+  const io = getIO();
+  if (!io) return;
+  io.to('whatsapp').emit('whatsapp:message:updated', messagePayload);
+  io.to('whatsapp:all').emit('whatsapp:message:updated', messagePayload);
+  io.to(`whatsapp:by-phone:${messagePayload.phone}`).emit('whatsapp:message:updated', messagePayload);
+  if (!messagePayload.assignedTo) {
+    io.to('whatsapp:unassigned').emit('whatsapp:message:updated', messagePayload);
+    io.to('whatsapp:unassigned:filtered').emit('whatsapp:message:updated', messagePayload);
+    io.to('whatsapp:unassigned:first').emit('whatsapp:message:updated', messagePayload);
+  } else {
+    const assignedId = messagePayload.assignedTo?._id ?? messagePayload.assignedTo;
+    if (assignedId) io.to(`whatsapp:by-assigned:${assignedId}`).emit('whatsapp:message:updated', messagePayload);
+  }
+}
+
+function buildIncomingWhatsappMessageCreatePayload(message) {
+  const type = message?.type || 'unknown';
+
+  if (type === 'text') {
+    return {
+      phone: message.from,
+      message: message.text?.body || '',
+      direction: 'incoming',
+      metaMessageId: message.id || null,
+      messageType: 'text',
+      mediaUrl: null,
+      caption: null,
+      filename: null,
+      metaMediaId: null,
+      mimeType: null,
+    };
+  }
+
+  const mediaKinds = ['image', 'document', 'video', 'audio'];
+  if (mediaKinds.includes(type)) {
+    const block = message[type] || {};
+    const metaMediaId = block.id ? String(block.id) : null;
+    const caption = block.caption != null ? String(block.caption) : null;
+    const filename = type === 'document' && block.filename != null ? String(block.filename) : null;
+    const mimeType = block.mime_type != null ? String(block.mime_type) : null;
+    const labelParts = [`[${type}]`];
+    if (filename) labelParts.push(filename);
+    if (caption) labelParts.push(caption);
+    return {
+      phone: message.from,
+      message: labelParts.join(' ').replace(/\s+/g, ' ').trim(),
+      direction: 'incoming',
+      metaMessageId: message.id || null,
+      messageType: type,
+      mediaUrl: null,
+      caption,
+      filename,
+      metaMediaId,
+      mimeType,
+    };
+  }
+
+  return {
+    phone: message.from,
+    message: `[${type}]`,
+    direction: 'incoming',
+    metaMessageId: message.id || null,
+    messageType: 'text',
+    mediaUrl: null,
+    caption: null,
+    filename: null,
+    metaMediaId: null,
+    mimeType: null,
+  };
+}
+
+function scheduleResolveIncomingWhatsappMediaUrl(docId, metaMediaId) {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!metaMediaId || !token) return;
+  setImmediate(() => {
+    (async () => {
+      const url = await fetchWhatsappMediaDownloadUrl(metaMediaId, token);
+      if (!url) return;
+      await WhatsappMessage.updateOne({ _id: docId }, { $set: { mediaUrl: url } });
+      const updated = await WhatsappMessage.findById(docId).populate('assignedTo', 'name email').lean();
+      if (updated) emitWhatsappMessageUpdatedToViewRooms(updated);
+    })().catch((e) => console.error('Incoming WhatsApp media URL resolve:', e));
+  });
 }
 
 /** Emit message deleted to view rooms so clients can remove it from their list */
@@ -103,12 +191,12 @@ router.post('/webhook', async (req, res) => {
   if (value?.messages) {
     const message = value.messages[0];
 
-    const doc = await WhatsappMessage.create({
-      phone: message.from,
-      message: message.text?.body || `[${message.type}]`,
-      direction: 'incoming',
-      metaMessageId: message.id || null,
-    });
+    const createPayload = buildIncomingWhatsappMessageCreatePayload(message);
+    const doc = await WhatsappMessage.create(createPayload);
+
+    if (createPayload.metaMediaId) {
+      scheduleResolveIncomingWhatsappMediaUrl(doc._id, createPayload.metaMediaId);
+    }
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
       .populate('assignedTo', 'name email')
