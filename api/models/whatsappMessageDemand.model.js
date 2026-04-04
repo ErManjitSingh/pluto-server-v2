@@ -17,6 +17,9 @@ const whatsappMessageDemandSchema = new mongoose.Schema(
     mediaUrl: { type: String, default: null },
     caption: { type: String, default: null },
     filename: { type: String, default: null },
+    /** Incoming media: Meta webhook media id (resolve to mediaUrl via Graph API). */
+    metaMediaId: { type: String, default: null },
+    mimeType: { type: String, default: null },
   },
   { timestamps: true, collection: 'whatsappdemandmessages' }
 );
