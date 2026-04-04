@@ -17,6 +17,19 @@ function normalizePhone(phone) {
   return String(phone).replace(/\D/g, '').slice(-10);
 }
 
+const WHATSAPP_MEDIA_TYPES = ['document', 'image', 'video', 'audio'];
+
+function filenameFromMediaUrl(link) {
+  try {
+    const u = new URL(link);
+    const base = u.pathname.split('/').filter(Boolean).pop();
+    if (base && base.includes('.')) return decodeURIComponent(base);
+  } catch {
+    /* ignore */
+  }
+  return 'attachment';
+}
+
 /** Demand-only Socket.IO rooms (no overlap with main `whatsapp:*` rooms). */
 const D = {
   root: 'whatsapp:demand',
@@ -505,6 +518,121 @@ router.post('/send-reply', async (req, res) => {
     });
   } catch (err) {
     console.error('WhatsApp send-reply error:', err);
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /send-media — Send document / image / video / audio via public HTTPS URL (24h reply window).
+ * Body: { phone, link, type?: 'document'|'image'|'video'|'audio', filename?, caption?, executiveId? }
+ */
+router.post('/send-media', async (req, res) => {
+  try {
+    const { phone, link, type, filename, caption, executiveId } = req.body;
+    const token = process.env.WHATSAPP_ACCESS_TOKEN_DEMAND;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID_DEMAND;
+
+    if (!token || !phoneNumberId) {
+      return res.status(500).json({
+        success: false,
+        message:
+          'WhatsApp demand not configured. Set WHATSAPP_ACCESS_TOKEN_DEMAND and WHATSAPP_PHONE_NUMBER_ID_DEMAND in .env',
+      });
+    }
+    if (!phone || !link) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: phone and link (public HTTPS URL to the file)',
+      });
+    }
+
+    const mediaLink = String(link).trim();
+    if (!mediaLink.toLowerCase().startsWith('https://')) {
+      return res.status(400).json({
+        success: false,
+        message: 'link must be a public HTTPS URL (WhatsApp Cloud API requirement)',
+      });
+    }
+
+    const mediaType = WHATSAPP_MEDIA_TYPES.includes(String(type || '').toLowerCase())
+      ? String(type).toLowerCase()
+      : 'document';
+
+    const mediaObject = { link: mediaLink };
+    if (caption != null && String(caption).trim() !== '') {
+      mediaObject.caption = String(caption).trim().slice(0, 1024);
+    }
+    if (mediaType === 'document') {
+      mediaObject.filename = (filename && String(filename).trim()) || filenameFromMediaUrl(mediaLink);
+    }
+
+    const to = String(phone).replace(/\D/g, '');
+    if (!to.length) {
+      return res.status(400).json({ success: false, message: 'Invalid phone number' });
+    }
+
+    const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: mediaType,
+      [mediaType]: mediaObject,
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('WhatsApp send-media API error:', data);
+      return res.status(response.status).json({
+        success: false,
+        message: data.error?.message || 'Failed to send WhatsApp media',
+        details: data.error || data,
+      });
+    }
+
+    const assigneeId = isValidObjectId(executiveId) ? executiveId : null;
+    const displayName =
+      mediaType === 'document' ? mediaObject.filename || 'document' : mediaType;
+    const summary = `[${mediaType}] ${displayName}${mediaObject.caption ? `: ${mediaObject.caption}` : ''}`;
+
+    const doc = await WhatsappMessageDemand.create({
+      phone: to,
+      message: summary,
+      direction: 'outgoing',
+      assignedTo: assigneeId,
+      metaMessageId: data.messages?.[0]?.id || null,
+      messageType: mediaType,
+      mediaUrl: mediaLink,
+      caption: mediaObject.caption || null,
+      filename: mediaType === 'document' ? mediaObject.filename || null : null,
+    });
+
+    const messagePayload = await WhatsappMessageDemand.findById(doc._id)
+      .populate('assignedTo', 'name email')
+      .lean();
+    emitWhatsappDemandMessageToViewRooms(messagePayload);
+
+    console.log('✅ Outgoing WhatsApp media sent to', to, mediaType);
+    res.json({
+      success: true,
+      message: 'Media sent',
+      messageId: data.messages?.[0]?.id,
+    });
+  } catch (err) {
+    console.error('WhatsApp send-media error:', err);
     res.status(500).json({
       success: false,
       message: err.message || 'Internal server error',
