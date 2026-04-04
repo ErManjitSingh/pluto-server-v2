@@ -5,8 +5,6 @@ import WhatsappMessageDemand from '../models/whatsappMessageDemand.model.js';
 import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
 import { fetchWhatsappMediaDownloadUrl } from '../utils/whatsappMediaUrl.js';
-import { publicRequestBaseUrl } from '../config/uploads.js';
-import { whatsappUploadSingle } from '../middleware/whatsappMulter.js';
 
 const router = express.Router();
 
@@ -612,33 +610,6 @@ router.post('/send-reply', async (req, res) => {
       message: err.message || 'Internal server error',
     });
   }
-});
-
-/**
- * POST /upload — Multipart file upload (field: file). Same storage as main WhatsApp line.
- */
-router.post('/upload', (req, res) => {
-  whatsappUploadSingle.single('file')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({
-        success: false,
-        message: err.message || 'Upload failed',
-      });
-    }
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No file uploaded (use form field name: file)',
-      });
-    }
-    const base = publicRequestBaseUrl(req);
-    const fileUrl = `${base}/uploads/${encodeURIComponent(req.file.filename)}`;
-    res.json({
-      success: true,
-      url: fileUrl,
-      filename: req.file.filename,
-    });
-  });
 });
 
 /**
