@@ -1,9 +1,14 @@
 import express from 'express';
 import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
 import WhatsappMessage from '../models/whatsappMessage.model.js';
+import WhatsappOutboundMedia from '../models/whatsappOutboundMedia.model.js';
 import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
 import { fetchWhatsappMediaDownloadUrl } from '../utils/whatsappMediaUrl.js';
+import { verifyToken } from '../utils/verifyUser.js';
+import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
 
 const router = express.Router();
 
@@ -718,6 +723,96 @@ router.post('/send-media', async (req, res) => {
     });
   }
 });
+
+/**
+ * GET /media/:token — Public HTTPS URL for WhatsApp servers to download an uploaded file (no auth).
+ * After POST /upload-media, pass returned publicUrl as "link" to POST /send-media.
+ * Set PUBLIC_BASE_URL=https://your-domain.com in .env (no trailing slash).
+ */
+router.get('/media/:token', async (req, res) => {
+  try {
+    const token = String(req.params.token || '').replace(/[^a-f0-9]/gi, '');
+    if (token.length !== 64) {
+      return res.status(404).end();
+    }
+    const doc = await WhatsappOutboundMedia.findOne({ token }).lean();
+    if (!doc) {
+      return res.status(404).end();
+    }
+    const filePath = path.join(WHATSAPP_OUTBOUND_DIR, doc.storedFilename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).end();
+    }
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    const name = doc.originalFilename || 'document';
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(name)}`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error('WhatsApp public media GET error:', err);
+    if (!res.headersSent) res.status(500).end();
+  }
+});
+
+/**
+ * POST /upload-media — Store file on server + metadata in MongoDB; returns URL for POST /send-media.
+ * Multipart field name: file. Requires JWT (same as rest of CRM).
+ */
+router.post(
+  '/upload-media',
+  verifyToken,
+  (req, res, next) => {
+    whatsappOutboundUpload.single('file')(req, res, (err) => {
+      if (!err) return next();
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, message: 'File too large (max 100MB)' });
+      }
+      return res.status(400).json({ success: false, message: err.message || 'Upload failed' });
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing multipart field "file"',
+        });
+      }
+      const token = req.whatsappUploadToken;
+      if (!token) {
+        return res.status(500).json({ success: false, message: 'Upload token missing' });
+      }
+      await WhatsappOutboundMedia.create({
+        token,
+        storedFilename: req.file.filename,
+        originalFilename: req.file.originalname || '',
+        mimeType: req.file.mimetype || 'application/octet-stream',
+        size: req.file.size || 0,
+      });
+      const base = (process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_URL || '').replace(/\/+$/, '');
+      const pathPart = `/api/whatsapp/media/${token}`;
+      const publicUrl = base ? `${base}${pathPart}` : null;
+      res.json({
+        success: true,
+        token,
+        publicUrl,
+        relativePath: pathPart,
+        filename: req.file.originalname,
+        mimeType: req.file.mimetype,
+        hint: publicUrl
+          ? 'POST /api/whatsapp/send-media with body { phone, link: publicUrl, type: "document", filename }'
+          : 'Set PUBLIC_BASE_URL in .env to receive a full https URL for WhatsApp',
+      });
+    } catch (err) {
+      console.error('WhatsApp CRM upload-media error:', err);
+      try {
+        if (req.file?.path) fs.unlinkSync(req.file.path);
+      } catch {
+        /* ignore */
+      }
+      res.status(500).json({ success: false, message: err.message || 'Internal server error' });
+    }
+  }
+);
 
 /**
  * POST /send-template — Send a WhatsApp template message (e.g. new_first_message).
