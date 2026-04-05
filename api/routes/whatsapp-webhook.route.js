@@ -4,9 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import WhatsappMessage from '../models/whatsappMessage.model.js';
 import WhatsappOutboundMedia from '../models/whatsappOutboundMedia.model.js';
+import WhatsappInboundMedia from '../models/whatsappInboundMedia.model.js';
 import Lead from '../models/lead.model.js';
 import { getIO } from '../socket/socket.js';
-import { fetchWhatsappMediaDownloadUrl } from '../utils/whatsappMediaUrl.js';
+import { storeIncomingWhatsappMediaFromMeta, WHATSAPP_INBOUND_DIR } from '../utils/whatsappMediaUrl.js';
 import { verifyToken } from '../utils/verifyUser.js';
 import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
 
@@ -123,17 +124,41 @@ function buildIncomingWhatsappMessageCreatePayload(message) {
   };
 }
 
-function scheduleResolveIncomingWhatsappMediaUrl(docId, metaMediaId) {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!metaMediaId || !token) return;
+function publicApiBaseUrl() {
+  return (process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_URL || '').replace(/\/+$/, '');
+}
+
+/** Download from Meta with token, save to disk + MongoDB, set mediaUrl to our public link (opens in browser). */
+function scheduleFetchAndStoreIncomingWhatsappMedia(docId, createPayload) {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const metaMediaId = createPayload.metaMediaId;
+  if (!metaMediaId || !accessToken) return;
   setImmediate(() => {
     (async () => {
-      const url = await fetchWhatsappMediaDownloadUrl(metaMediaId, token);
-      if (!url) return;
-      await WhatsappMessage.updateOne({ _id: docId }, { $set: { mediaUrl: url } });
+      const stored = await storeIncomingWhatsappMediaFromMeta(metaMediaId, accessToken, {
+        hintMime: createPayload.mimeType,
+        hintFilename: createPayload.filename,
+      });
+      if (!stored) return;
+      await WhatsappInboundMedia.create({
+        token: stored.token,
+        storedFilename: stored.storedFilename,
+        originalFilename: stored.originalFilename,
+        mimeType: stored.mimeType,
+        size: stored.size,
+        whatsappMessageId: docId,
+      });
+      const base = publicApiBaseUrl();
+      const pathPart = `/api/whatsapp/inbound-received/${stored.token}`;
+      const mediaUrl = base ? `${base}${pathPart}` : pathPart;
+      const setFields = { mediaUrl };
+      if (!createPayload.filename) {
+        setFields.filename = stored.originalFilename;
+      }
+      await WhatsappMessage.updateOne({ _id: docId }, { $set: setFields });
       const updated = await WhatsappMessage.findById(docId).populate('assignedTo', 'name email').lean();
       if (updated) emitWhatsappMessageUpdatedToViewRooms(updated);
-    })().catch((e) => console.error('Incoming WhatsApp media URL resolve:', e));
+    })().catch((e) => console.error('Incoming WhatsApp media store:', e));
   });
 }
 
@@ -200,7 +225,7 @@ router.post('/webhook', async (req, res) => {
     const doc = await WhatsappMessage.create(createPayload);
 
     if (createPayload.metaMediaId) {
-      scheduleResolveIncomingWhatsappMediaUrl(doc._id, createPayload.metaMediaId);
+      scheduleFetchAndStoreIncomingWhatsappMedia(doc._id, createPayload);
     }
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
@@ -721,6 +746,33 @@ router.post('/send-media', async (req, res) => {
       success: false,
       message: err.message || 'Internal server error',
     });
+  }
+});
+
+/**
+ * GET /inbound-received/:token — Customer-sent image/document stored on this server (no auth; unguessable token).
+ */
+router.get('/inbound-received/:token', async (req, res) => {
+  try {
+    const token = String(req.params.token || '').replace(/[^a-f0-9]/gi, '');
+    if (token.length !== 64) {
+      return res.status(404).end();
+    }
+    const doc = await WhatsappInboundMedia.findOne({ token }).lean();
+    if (!doc) {
+      return res.status(404).end();
+    }
+    const filePath = path.join(WHATSAPP_INBOUND_DIR, doc.storedFilename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).end();
+    }
+    res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+    const name = doc.originalFilename || 'file';
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(name)}`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error('WhatsApp inbound-received GET error:', err);
+    if (!res.headersSent) res.status(500).end();
   }
 });
 
