@@ -114,7 +114,37 @@ async function findLatestLeadByPhoneDigits(mobile) {
   })
     .sort({ createdAt: -1 })
     .limit(80)
-    .select('mobile createdAt')
+    .select('mobile createdAt publish')
+    .lean();
+
+  for (const doc of candidates) {
+    if (phoneMatchKey(doc.mobile) === key) return doc;
+  }
+  return null;
+}
+
+function normalizePublish(publish) {
+  if (publish == null) return '';
+  return String(publish).trim().toLowerCase();
+}
+
+/**
+ * Find most recent lead for same phone digits AND same publish.
+ */
+async function findLatestLeadByPhoneDigitsAndPublish(mobile, publish) {
+  const key = phoneMatchKey(mobile);
+  if (!key) return null;
+  const publishKey = normalizePublish(publish);
+  if (!publishKey) return null;
+
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const candidates = await Lead.find({
+    publish: publishKey,
+    $or: [{ mobile: mobile }, { mobile: new RegExp(`${escaped}$`) }]
+  })
+    .sort({ createdAt: -1 })
+    .limit(80)
+    .select('mobile createdAt publish')
     .lean();
 
   for (const doc of candidates) {
@@ -138,6 +168,22 @@ async function shouldSkipByMobile(mobile, metaLeadCreatedTime) {
 
   const lastCreated = new Date(latestByMobile.createdAt).getTime();
   // Same Meta lead submitted twice: created_time may be seconds apart from our DB time — use abs so we never miss duplicates
+  return Math.abs(metaTime - lastCreated) < TEN_DAYS_MS;
+}
+
+/**
+ * Skip duplicates by mobile+publish within 10 days.
+ * Returns true = skip (do not create this publish type), false = allow create.
+ */
+async function shouldSkipByMobileAndPublish(mobile, publish, metaLeadCreatedTime) {
+  const publishKey = normalizePublish(publish);
+  if (!publishKey) return false;
+
+  const metaTime = metaLeadCreatedTime ? new Date(metaLeadCreatedTime).getTime() : Date.now();
+  const latestByMobileAndPublish = await findLatestLeadByPhoneDigitsAndPublish(mobile, publishKey);
+  if (!latestByMobileAndPublish) return false;
+
+  const lastCreated = new Date(latestByMobileAndPublish.createdAt).getTime();
   return Math.abs(metaTime - lastCreated) < TEN_DAYS_MS;
 }
 
@@ -218,59 +264,60 @@ export async function syncMetaLeads() {
 
         const payload = transformMetaLeadToPayload(metaLead, formId);
 
-        // Skip if same mobile already submitted within 10 days (do not post duplicate)
-        if (await shouldSkipByMobile(payload.mobile, metaLead.created_time)) {
-          continue;
-        }
-
         // 1) PTW lead: create if lead_meta_id "{metaId}_ptw" does not exist
         const existingPtw = await Lead.findOne({ lead_meta_id: `${metaId}_ptw` });
         if (!existingPtw) {
-          const { leadId, publish } = await getNextLeadIdAndPublish();
-          const leadData = {
-            ...payload,
-            lead_meta_id: `${metaId}_ptw`,
-            leadId,
-            publish,
-            isAssignedLead: true,
-            isCommonLead: true,
-            createdBy: fixedUserId
-          };
-          const newLead = new Lead(leadData);
-          const savedLead = await newLead.save();
-          try {
-            if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
-              await initializeLeadRemainingAmount(savedLead._id);
+          // Skip only PTW if same mobile+ptw exists within 10 days
+          if (!(await shouldSkipByMobileAndPublish(payload.mobile, 'ptw', metaLead.created_time))) {
+            const { leadId } = await getNextLeadIdAndPublish();
+            const leadData = {
+              ...payload,
+              lead_meta_id: `${metaId}_ptw`,
+              leadId,
+              publish: 'ptw',
+              isAssignedLead: true,
+              isCommonLead: true,
+              createdBy: fixedUserId
+            };
+            const newLead = new Lead(leadData);
+            const savedLead = await newLead.save();
+            try {
+              if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
+                await initializeLeadRemainingAmount(savedLead._id);
+              }
+            } catch (err) {
+              console.error('Error initializing remaining amount for meta lead (ptw):', err.message);
             }
-          } catch (err) {
-            console.error('Error initializing remaining amount for meta lead (ptw):', err.message);
+            created++;
           }
-          created++;
         }
 
         // 2) Demand lead: create if lead_meta_id "{metaId}_demand" does not exist
         const existingDemand = await Lead.findOne({ lead_meta_id: `${metaId}_demand` });
         if (!existingDemand) {
-          const { leadId, publish } = await getNextLeadIdAndPublish();
-          const leadData = {
-            ...payload,
-            lead_meta_id: `${metaId}_demand`,
-            leadId,
-            publish,
-            isAssignedLead: true,
-            isCommonLead: true,
-            createdBy: fixedUserId
-          };
-          const newLead = new Lead(leadData);
-          const savedLead = await newLead.save();
-          try {
-            if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
-              await initializeLeadRemainingAmount(savedLead._id);
+          // Skip only Demand if same mobile+demand exists within 10 days
+          if (!(await shouldSkipByMobileAndPublish(payload.mobile, 'demand', metaLead.created_time))) {
+            const { leadId } = await getNextLeadIdAndPublish();
+            const leadData = {
+              ...payload,
+              lead_meta_id: `${metaId}_demand`,
+              leadId,
+              publish: 'demand',
+              isAssignedLead: true,
+              isCommonLead: true,
+              createdBy: fixedUserId
+            };
+            const newLead = new Lead(leadData);
+            const savedLead = await newLead.save();
+            try {
+              if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
+                await initializeLeadRemainingAmount(savedLead._id);
+              }
+            } catch (err) {
+              console.error('Error initializing remaining amount for meta lead (demand):', err.message);
             }
-          } catch (err) {
-            console.error('Error initializing remaining amount for meta lead (demand):', err.message);
+            created++;
           }
-          created++;
         }
       }
     }
