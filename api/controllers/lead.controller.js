@@ -9,6 +9,15 @@ import { getNextLeadIdAndPublish, getNextLeadIdAndPublishPrefer } from '../servi
 import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
 
+function normalizeMobileForLeadCheck(mobile) {
+  if (mobile == null) return null;
+  const digits = String(mobile).replace(/\D/g, '');
+  if (!digits) return null;
+  // Normalize to last 10 digits (handles: 078xxxxxxxx, +91xxxxxxxxxx, 91xxxxxxxxxx, xxxxxxxxxx)
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
 /**
  * Parse timing string like "9/5/2026 5.30pm", "2/20/2026 6.30pm", or "2/26.2026 5.50pm" (m/d/yyyy or m/d.yyyy, h.mm am/pm) to Date.
  * Assumes timing is in IST (India Standard Time, UTC+5:30) since server often runs in UTC.
@@ -51,6 +60,34 @@ function shouldShowNotificationByTime(timingStr) {
 export const createLead = async (req, res, next) => {
   try {
     let leadData;
+
+    // Manual lead create: prevent duplicates by mobile within last 10 days.
+    // If same mobile exists and createdAt > 10 days ago, create lead but mark isrepeated: true.
+    const normalizedMobile = normalizeMobileForLeadCheck(req.body?.mobile);
+    if (normalizedMobile) {
+      const mobileRegex = new RegExp(`${normalizedMobile}$`);
+      const existingLeadByMobile = await Lead.findOne({
+        mobile: { $regex: mobileRegex }
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (existingLeadByMobile?.createdAt) {
+        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+        const ageMs = Date.now() - new Date(existingLeadByMobile.createdAt).getTime();
+
+        if (ageMs < tenDaysMs) {
+          return res.status(200).json({
+            message: 'Lead already created',
+            lead: existingLeadByMobile,
+            created: false
+          });
+        }
+
+        // Mark repeated lead only when previous lead is older than 10 days.
+        req.body = { ...req.body, isrepeated: true };
+      }
+    }
     
     if (req.isSimpleToken) {
       // For simple token, use a fixed user ID and mark as common lead
