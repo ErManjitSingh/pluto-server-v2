@@ -147,6 +147,33 @@ export const crmCreateLead = async (req, res, next) => {
       }
     }
 
+    // Prevent duplicates by mobile within last 10 days (CRM flow too).
+    // If mobile exists and createdAt > 10 days ago, still create but mark isrepeated: true.
+    const normalizedMobile = normalizeMobileForLeadCheck(req.body?.mobile);
+    if (normalizedMobile) {
+      const mobileRegex = new RegExp(`${normalizedMobile}$`);
+      const existingLeadByMobile = await Lead.findOne({
+        mobile: { $regex: mobileRegex }
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (existingLeadByMobile?.createdAt) {
+        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+        const ageMs = Date.now() - new Date(existingLeadByMobile.createdAt).getTime();
+
+        if (ageMs < tenDaysMs) {
+          return res.status(200).json({
+            message: 'Lead already created',
+            lead: existingLeadByMobile,
+            created: false
+          });
+        }
+
+        req.body = { ...req.body, isrepeated: true };
+      }
+    }
+
     let leadData;
     if (req.isSimpleToken) {
       leadData = {
@@ -911,6 +938,34 @@ export const createAssignedLead = async (req, res, next) => {
     if (!req.user || !req.user.id) {
       return next(errorHandler(401, 'User not authenticated'));
     }
+
+    // Prevent duplicates by mobile within last 10 days (assigned-leads manual create too).
+    // If mobile exists and createdAt > 10 days ago, still create but mark isrepeated: true.
+    const normalizedMobile = normalizeMobileForLeadCheck(req.body?.mobile);
+    if (normalizedMobile) {
+      const mobileRegex = new RegExp(`${normalizedMobile}$`);
+      const existingLeadByMobile = await Lead.findOne({
+        mobile: { $regex: mobileRegex }
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (existingLeadByMobile?.createdAt) {
+        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+        const ageMs = Date.now() - new Date(existingLeadByMobile.createdAt).getTime();
+
+        if (ageMs < tenDaysMs) {
+          return res.status(200).json({
+            message: 'Lead already created',
+            lead: existingLeadByMobile,
+            created: false
+          });
+        }
+
+        req.body = { ...req.body, isrepeated: true };
+      }
+    }
+
     const leadData = {
       ...req.body,
       createdBy: req.user.id,
