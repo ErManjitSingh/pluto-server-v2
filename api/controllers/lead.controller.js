@@ -18,6 +18,24 @@ function normalizeMobileForLeadCheck(mobile) {
   return digits;
 }
 
+function normalizePublishForLeadCheck(publish) {
+  if (publish == null) return null;
+  const p = String(publish).trim().toLowerCase();
+  if (!p) return null;
+  return p;
+}
+
+async function findLatestLeadByMobileDigits(mobile, publishOrNull = null) {
+  const normalizedMobile = normalizeMobileForLeadCheck(mobile);
+  if (!normalizedMobile) return null;
+  const mobileRegex = new RegExp(`${normalizedMobile}$`);
+  const q = {
+    mobile: { $regex: mobileRegex }
+  };
+  if (publishOrNull) q.publish = publishOrNull;
+  return await Lead.findOne(q).sort({ createdAt: -1 }).lean();
+}
+
 /**
  * Parse timing string like "9/5/2026 5.30pm", "2/20/2026 6.30pm", or "2/26.2026 5.50pm" (m/d/yyyy or m/d.yyyy, h.mm am/pm) to Date.
  * Assumes timing is in IST (India Standard Time, UTC+5:30) since server often runs in UTC.
@@ -61,32 +79,24 @@ export const createLead = async (req, res, next) => {
   try {
     let leadData;
 
-    // Manual lead create: prevent duplicates by mobile within last 10 days.
-    // If same mobile exists and createdAt > 10 days ago, create lead but mark isrepeated: true.
-    const normalizedMobile = normalizeMobileForLeadCheck(req.body?.mobile);
-    if (normalizedMobile) {
-      const mobileRegex = new RegExp(`${normalizedMobile}$`);
-      const existingLeadByMobile = await Lead.findOne({
-        mobile: { $regex: mobileRegex }
-      })
-        .sort({ createdAt: -1 })
-        .lean();
+    // Manual lead create: prevent duplicates by mobile+publish within last 10 days.
+    // Allow same mobile to exist once in PTW and once in Demand.
+    // If same mobile+publish exists and is older than 10 days, create but mark isrepeated: true.
+    const publishKey = normalizePublishForLeadCheck(req.body?.publish);
+    const latestSameMobileSamePublish = await findLatestLeadByMobileDigits(req.body?.mobile, publishKey);
+    if (latestSameMobileSamePublish?.createdAt) {
+      const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+      const ageMs = Date.now() - new Date(latestSameMobileSamePublish.createdAt).getTime();
 
-      if (existingLeadByMobile?.createdAt) {
-        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
-        const ageMs = Date.now() - new Date(existingLeadByMobile.createdAt).getTime();
-
-        if (ageMs < tenDaysMs) {
-          return res.status(200).json({
-            message: 'Lead already created',
-            lead: existingLeadByMobile,
-            created: false
-          });
-        }
-
-        // Mark repeated lead only when previous lead is older than 10 days.
-        req.body = { ...req.body, isrepeated: true };
+      if (ageMs < tenDaysMs) {
+        return res.status(200).json({
+          message: 'Lead already created',
+          lead: latestSameMobileSamePublish,
+          created: false
+        });
       }
+
+      req.body = { ...req.body, isrepeated: true };
     }
     
     if (req.isSimpleToken) {
@@ -147,31 +157,24 @@ export const crmCreateLead = async (req, res, next) => {
       }
     }
 
-    // Prevent duplicates by mobile within last 10 days (CRM flow too).
-    // If mobile exists and createdAt > 10 days ago, still create but mark isrepeated: true.
-    const normalizedMobile = normalizeMobileForLeadCheck(req.body?.mobile);
-    if (normalizedMobile) {
-      const mobileRegex = new RegExp(`${normalizedMobile}$`);
-      const existingLeadByMobile = await Lead.findOne({
-        mobile: { $regex: mobileRegex }
-      })
-        .sort({ createdAt: -1 })
-        .lean();
+    // Prevent duplicates by mobile+publish within last 10 days (CRM flow too).
+    // Allow same mobile to exist once in PTW and once in Demand.
+    // If same mobile+publish exists and createdAt > 10 days ago, still create but mark isrepeated: true.
+    const publishKey = normalizePublishForLeadCheck(req.body?.publish);
+    const latestSameMobileSamePublish = await findLatestLeadByMobileDigits(req.body?.mobile, publishKey);
+    if (latestSameMobileSamePublish?.createdAt) {
+      const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+      const ageMs = Date.now() - new Date(latestSameMobileSamePublish.createdAt).getTime();
 
-      if (existingLeadByMobile?.createdAt) {
-        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
-        const ageMs = Date.now() - new Date(existingLeadByMobile.createdAt).getTime();
-
-        if (ageMs < tenDaysMs) {
-          return res.status(200).json({
-            message: 'Lead already created',
-            lead: existingLeadByMobile,
-            created: false
-          });
-        }
-
-        req.body = { ...req.body, isrepeated: true };
+      if (ageMs < tenDaysMs) {
+        return res.status(200).json({
+          message: 'Lead already created',
+          lead: latestSameMobileSamePublish,
+          created: false
+        });
       }
+
+      req.body = { ...req.body, isrepeated: true };
     }
 
     let leadData;
@@ -939,31 +942,22 @@ export const createAssignedLead = async (req, res, next) => {
       return next(errorHandler(401, 'User not authenticated'));
     }
 
-    // Prevent duplicates by mobile within last 10 days (assigned-leads manual create too).
-    // If mobile exists and createdAt > 10 days ago, still create but mark isrepeated: true.
-    const normalizedMobile = normalizeMobileForLeadCheck(req.body?.mobile);
-    if (normalizedMobile) {
-      const mobileRegex = new RegExp(`${normalizedMobile}$`);
-      const existingLeadByMobile = await Lead.findOne({
-        mobile: { $regex: mobileRegex }
-      })
-        .sort({ createdAt: -1 })
-        .lean();
+    // Prevent duplicates by mobile+publish within last 10 days (assigned-leads manual create too).
+    const publishKey = normalizePublishForLeadCheck(req.body?.publish);
+    const latestSameMobileSamePublish = await findLatestLeadByMobileDigits(req.body?.mobile, publishKey);
+    if (latestSameMobileSamePublish?.createdAt) {
+      const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+      const ageMs = Date.now() - new Date(latestSameMobileSamePublish.createdAt).getTime();
 
-      if (existingLeadByMobile?.createdAt) {
-        const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
-        const ageMs = Date.now() - new Date(existingLeadByMobile.createdAt).getTime();
-
-        if (ageMs < tenDaysMs) {
-          return res.status(200).json({
-            message: 'Lead already created',
-            lead: existingLeadByMobile,
-            created: false
-          });
-        }
-
-        req.body = { ...req.body, isrepeated: true };
+      if (ageMs < tenDaysMs) {
+        return res.status(200).json({
+          message: 'Lead already created',
+          lead: latestSameMobileSamePublish,
+          created: false
+        });
       }
+
+      req.body = { ...req.body, isrepeated: true };
     }
 
     const leadData = {
