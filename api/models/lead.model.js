@@ -54,6 +54,10 @@ const leadSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  isrepeated: {
+    type: Boolean,
+    default: false
+  },
   adults: String,
   kids: String,
   EP: String,
