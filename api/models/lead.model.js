@@ -25,6 +25,14 @@ const leadSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
+     ageGroup: {
+    type: String,
+    required: false,
+  },
+  profession: {
+    type: String,
+    required: false,
+  },
      executiveName: {
       type: String,
       required: false
