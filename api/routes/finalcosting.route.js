@@ -1,5 +1,5 @@
 import express from 'express';
-import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,getConvertedOperationsWithoutTransferByLead,getConvertedOperationsWithoutHotelsByLead,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
@@ -15,6 +15,8 @@ router.put('/updates/:id', updateOperationFields);
 router.put('/update-notedata/:operationId', updateNotedata);
 router.get('/get-converted-without-transfer', getConvertedOperationsWithoutTransfer);
 router.get('/get-converted-without-hotels', getConvertedOperationsWithoutHotels);
+router.get('/get-converted-without-transfer-by-lead', getConvertedOperationsWithoutTransferByLead);
+router.get('/get-converted-without-hotels-by-lead', getConvertedOperationsWithoutHotelsByLead);
 router.get('/get-converted', getConvertedOperations);
 router.get('/get-converted-all-data/:id', getConvertedOperationByIdAllData);
 router.get('/get-converted-details', getConvertedOperationsWithDetails);
