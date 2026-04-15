@@ -87,6 +87,15 @@ function normalizePropertyName(name) {
   return name.trim().toLowerCase();
 }
 
+function buildFlexibleNameRegex(name) {
+  if (!name || typeof name !== 'string') return null;
+  const normalized = name.trim().replace(/\s+/g, ' ');
+  if (!normalized) return null;
+  const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const flexiblePattern = escaped.replace(/\s+/g, '\\s+');
+  return new RegExp(flexiblePattern, 'i');
+}
+
 // Helper function to update numberOfNightsBooked in packagemaker from converted operations
 async function updatePropertyNightsBooked() {
   try {
@@ -1080,6 +1089,104 @@ export const getConvertedOperationsWithoutHotels = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const query = { converted: true };
+    const projection = {
+      hotels: 0,
+      'transfer.itineraryDays.selectedHotel': 0
+    };
+
+    const [operations, total] = await Promise.all([
+      Operation.find(query, projection)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean({ getters: true }),
+      Operation.countDocuments(query)
+    ]);
+
+    res.status(200).json({
+      operations,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getConvertedOperationsWithoutTransferByLead = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 30;
+    const skip = (page - 1) * limit;
+
+    const { name, travelDate } = req.query;
+    const query = { converted: true };
+
+    const nameRegex = buildFlexibleNameRegex(name);
+    if (nameRegex) {
+      query['transfer.selectedLead.name'] = nameRegex;
+    }
+
+    if (travelDate) {
+      const start = new Date(travelDate);
+      if (!Number.isNaN(start.getTime())) {
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        query['transfer.selectedLead.travelDate'] = { $gte: start, $lt: end };
+      }
+    }
+
+    const [operations, total] = await Promise.all([
+      Operation.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select({ transfer: 0 })
+        .lean(),
+      Operation.countDocuments(query)
+    ]);
+
+    res.status(200).json({
+      operations,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getConvertedOperationsWithoutHotelsByLead = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const skip = (page - 1) * limit;
+
+    const { name, travelDate } = req.query;
+    const query = { converted: true };
+
+    const nameRegex = buildFlexibleNameRegex(name);
+    if (nameRegex) {
+      query['transfer.selectedLead.name'] = nameRegex;
+    }
+
+    if (travelDate) {
+      const start = new Date(travelDate);
+      if (!Number.isNaN(start.getTime())) {
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        query['transfer.selectedLead.travelDate'] = { $gte: start, $lt: end };
+      }
+    }
+
     const projection = {
       hotels: 0,
       'transfer.itineraryDays.selectedHotel': 0
