@@ -139,6 +139,10 @@ cabPayment: {
     leadTotalAmount: {
       type: Number,
     },
+    isExpense:{
+      type: Boolean,
+      default: false
+    },
     leadRemainingAmount: {
       type: Number,
     },
