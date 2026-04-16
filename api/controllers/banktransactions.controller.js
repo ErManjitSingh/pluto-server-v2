@@ -300,6 +300,7 @@ operationId,
       hotelPayment,    // ADD THIS
   cabPayment, 
       accept,
+      isExpense,
     } = req.body;
 
     const resolvedBankId = bank?.id || bank?._id || bank || bankId;
@@ -395,6 +396,7 @@ operationId,
       accept: accept === true || accept === 'true' ? true : accept === false || accept === 'false' ? false : undefined,
       leadTotalAmount,
       leadRemainingAmount,
+      isExpense,
     });
 
     const saved = await tx.save();
@@ -1001,6 +1003,27 @@ export const getAutomaticCabTransactions = async (req, res, next) => {
     next(error);
   }
 };
+
+// Get bank transactions flagged as expenses
+export const getExpenseTransactions = async (req, res, next) => {
+  try {
+    const { accept, paymentMode } = req.query;
+    const filter = { isExpense: true };
+
+    if (accept !== undefined) filter.accept = accept === 'true' || accept === true;
+    if (paymentMode) filter.paymentMode = paymentMode;
+
+    const transactions = await BankTransaction.find(filter)
+      .sort({ createdAt: -1 })
+      .populate('bank')
+      .populate('toBank');
+
+    return res.status(200).json({ success: true, data: transactions, count: transactions.length });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get transactions by toBankName (accepted dual bank transactions only)
 export const getTransactionsByToBankName = async (req, res, next) => {
   try {
