@@ -12,6 +12,7 @@ import {
   getCabUserBankTransactions,
   getAutomaticHotelTransactions,
   getAutomaticCabTransactions,
+  getExpenseTransactions,
   getTransactionsByToBankName,
   getAutomaticPaymentByToBankName,
   updateTransaction,
@@ -35,6 +36,7 @@ router.get('/dual-bank', getDualBankTransactions);
 router.get('/cabuser-bank', getCabUserBankTransactions);
 router.get('/automatic-hotel', getAutomaticHotelTransactions);
 router.get('/automatic-cab', getAutomaticCabTransactions);
+router.get('/expense', getExpenseTransactions);
 router.get('/automatic-payment/:toBankName', getAutomaticPaymentByToBankName);
 router.get('/to-bank-name/:toBankName', getTransactionsByToBankName);
 
