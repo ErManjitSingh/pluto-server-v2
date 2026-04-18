@@ -143,6 +143,13 @@ cabPayment: {
       type: Boolean,
       default: false
     },
+    isExpenseTransaction: {
+      type: Boolean,
+      default: false,
+    },
+    expenseDate: {
+      type: Date,
+    },
     leadRemainingAmount: {
       type: Number,
     },
