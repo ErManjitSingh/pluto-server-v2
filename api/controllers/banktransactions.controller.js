@@ -1021,8 +1021,20 @@ export const getAutomaticCabTransactions = async (req, res, next) => {
 // Get bank transactions flagged as expense transactions
 export const getExpenseTransactions = async (req, res, next) => {
   try {
+    const transactions = await BankTransaction.find({ isExpenseTransaction: true })
+      .sort({ createdAt: -1 })
+      .populate('bank')
+      .populate('toBank');
+
+    return res.status(200).json({ success: true, data: transactions, count: transactions.length });
+  } catch (error) {
+    next(error);
+  }
+};
+export const getExpenseForTransactions = async (req, res, next) => {
+  try {
     const { accept, paymentMode } = req.query;
-    const filter = { isExpenseTransaction: true };
+    const filter = { isExpense: true };
 
     if (accept !== undefined) filter.accept = accept === 'true' || accept === true;
     if (paymentMode) filter.paymentMode = paymentMode;
@@ -1037,7 +1049,6 @@ export const getExpenseTransactions = async (req, res, next) => {
     next(error);
   }
 };
-
 // Get transactions by toBankName (accepted dual bank transactions only)
 export const getTransactionsByToBankName = async (req, res, next) => {
   try {
