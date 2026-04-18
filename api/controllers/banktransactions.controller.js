@@ -301,6 +301,8 @@ operationId,
   cabPayment, 
       accept,
       isExpense,
+      isExpenseTransaction,
+      expenseDate,
     } = req.body;
 
     const resolvedBankId = bank?.id || bank?._id || bank || bankId;
@@ -397,6 +399,9 @@ operationId,
       leadTotalAmount,
       leadRemainingAmount,
       isExpense,
+      isExpenseTransaction:
+        isExpenseTransaction === true || isExpenseTransaction === 'true',
+      expenseDate: expenseDate ? new Date(expenseDate) : undefined,
     });
 
     const saved = await tx.save();
@@ -727,6 +732,8 @@ export const updateTransaction = async (req, res, next) => {
       hotelPayment,
       cabPayment,
       accept,
+      isExpenseTransaction,
+      expenseDate,
     } = req.body;
 
     const tx = await BankTransaction.findById(id);
@@ -831,6 +838,13 @@ export const updateTransaction = async (req, res, next) => {
     if (travelDate !== undefined) tx.travelDate = travelDate;
     if (duration !== undefined) tx.duration = duration;
     if (destination !== undefined) tx.destination = destination;
+    if (isExpenseTransaction !== undefined) {
+      tx.isExpenseTransaction =
+        isExpenseTransaction === true || isExpenseTransaction === 'true';
+    }
+    if (expenseDate !== undefined) {
+      tx.expenseDate = expenseDate ? new Date(expenseDate) : undefined;
+    }
     // Fetch and update lead amounts if leadId is provided
     if (leadId !== undefined) {
       try {
@@ -1004,11 +1018,11 @@ export const getAutomaticCabTransactions = async (req, res, next) => {
   }
 };
 
-// Get bank transactions flagged as expenses
+// Get bank transactions flagged as expense transactions
 export const getExpenseTransactions = async (req, res, next) => {
   try {
     const { accept, paymentMode } = req.query;
-    const filter = { isExpense: true };
+    const filter = { isExpenseTransaction: true };
 
     if (accept !== undefined) filter.accept = accept === 'true' || accept === true;
     if (paymentMode) filter.paymentMode = paymentMode;
