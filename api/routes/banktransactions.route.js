@@ -13,6 +13,7 @@ import {
   getAutomaticHotelTransactions,
   getAutomaticCabTransactions,
   getExpenseTransactions,
+  getExpenseForTransactions,
   getTransactionsByToBankName,
   getAutomaticPaymentByToBankName,
   updateTransaction,
@@ -36,7 +37,8 @@ router.get('/dual-bank', getDualBankTransactions);
 router.get('/cabuser-bank', getCabUserBankTransactions);
 router.get('/automatic-hotel', getAutomaticHotelTransactions);
 router.get('/automatic-cab', getAutomaticCabTransactions);
-router.get('/expense', getExpenseTransactions);
+router.get('/expense-automatic', getExpenseTransactions);
+router.get('/expense', getExpenseForTransactions);
 router.get('/automatic-payment/:toBankName', getAutomaticPaymentByToBankName);
 router.get('/to-bank-name/:toBankName', getTransactionsByToBankName);
 
@@ -47,4 +49,5 @@ router.patch('/update/:id', updateTransaction);
 router.delete('/delete/:id', deleteTransaction);
 
 export default router;
+
 
