@@ -59,6 +59,7 @@ import whatsappWebhookRouter from './routes/whatsapp-webhook.route.js';
 import whatsappWebhookDemandRouter from './routes/whatsapp_webhook_demand.route.js';
 import privacyPolicyRouter from './routes/privacy-policy.route.js';
 import googleRouter from './routes/google.route.js';
+import stateExpenseListsRouter from './routes/stateexpenselists.route.js';
 
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
@@ -180,6 +181,7 @@ app.use("/api/activityuser", activityUserRouter);
 app.use("/api/gmail", gmailRouter);
 app.use("/api/customerdata", customerRouter);
 app.use("/api/paymentpolicy", paymentPolicyRouter);
+app.use("/api/state-expense-lists", stateExpenseListsRouter);
 
 
 // -------------------------------------------------------------
