@@ -276,9 +276,31 @@ router.post('/webhook', async (req, res) => {
     console.log("✅ Incoming message saved");
   }
 
-  // Handle Status Updates (ignore)
+  // Handle Status Updates
   if (value?.statuses) {
-    console.log("📦 Status update received");
+    const status = value.statuses[0];
+    const metaMessageId = status?.id ? String(status.id) : null;
+    const statusType = String(status?.status || '').toLowerCase();
+    if (metaMessageId && ['sent', 'delivered', 'read', 'failed'].includes(statusType)) {
+      console.log("📩 Status:", statusType, "for", metaMessageId);
+      await WhatsappMessage.findOneAndUpdate(
+        { metaMessageId, direction: 'outgoing' },
+        {
+          $set: {
+            status: statusType,
+            statusTimestamp: status.timestamp ? String(status.timestamp) : null,
+          },
+        }
+      );
+
+      const updated = await WhatsappMessage.findOne({ metaMessageId, direction: 'outgoing' })
+        .populate('assignedTo', 'name email')
+        .lean();
+
+      if (updated) {
+        emitWhatsappMessageUpdatedToViewRooms(updated);
+      }
+    }
   }
 
   res.sendStatus(200);
@@ -610,6 +632,7 @@ router.post('/send-reply', async (req, res) => {
       direction: 'outgoing',
       assignedTo: assigneeId,
       metaMessageId: data.messages?.[0]?.id || null,
+      status: 'sent',
     });
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
@@ -727,6 +750,7 @@ router.post('/send-media', async (req, res) => {
       mediaUrl: mediaLink,
       caption: mediaObject.caption || null,
       filename: mediaType === 'document' ? mediaObject.filename || null : null,
+      status: 'sent',
     });
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
@@ -943,6 +967,7 @@ router.post('/send-template', async (req, res) => {
       direction: 'outgoing',
       assignedTo: null,
       metaMessageId: data.messages?.[0]?.id || null,
+      status: 'sent',
     });
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
