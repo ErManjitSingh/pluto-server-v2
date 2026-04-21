@@ -17,6 +17,12 @@ const whatsappMessageSchema = new mongoose.Schema(
     filename: { type: String, default: null },
     metaMediaId: { type: String, default: null },
     mimeType: { type: String, default: null },
+    status: {
+      type: String,
+      enum: ['sent', 'delivered', 'read', 'failed'],
+      default: 'sent',
+    },
+    statusTimestamp: { type: String, default: null },
   },
   { timestamps: true }
 );
