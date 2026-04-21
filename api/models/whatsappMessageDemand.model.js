@@ -20,7 +20,6 @@ const whatsappMessageDemandSchema = new mongoose.Schema(
     /** Incoming media: Meta webhook media id (resolve to mediaUrl via Graph API). */
     metaMediaId: { type: String, default: null },
     mimeType: { type: String, default: null },
-    status: { type: String, enum: ['sent', 'delivered', 'read', 'failed'], default: null },
   },
   { timestamps: true, collection: 'whatsappdemandmessages' }
 );
