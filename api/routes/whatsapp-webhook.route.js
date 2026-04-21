@@ -124,6 +124,23 @@ function buildIncomingWhatsappMessageCreatePayload(message) {
   };
 }
 
+function mapMetaDeliveryStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'sent') {
+    return { deliveryStatus: 'sent', deliveryTick: 'single' };
+  }
+  if (normalized === 'delivered') {
+    return { deliveryStatus: 'delivered', deliveryTick: 'double-grey' };
+  }
+  if (normalized === 'read') {
+    return { deliveryStatus: 'read', deliveryTick: 'double-blue' };
+  }
+  if (normalized === 'failed') {
+    return { deliveryStatus: 'failed', deliveryTick: 'single' };
+  }
+  return null;
+}
+
 function publicApiBaseUrl() {
   return (process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_URL || '').replace(/\/+$/, '');
 }
@@ -276,9 +293,33 @@ router.post('/webhook', async (req, res) => {
     console.log("✅ Incoming message saved");
   }
 
-  // Handle Status Updates (ignore)
+  // Handle Status Updates (sent / delivered / read)
   if (value?.statuses) {
-    console.log("📦 Status update received");
+    for (const statusEntry of value.statuses) {
+      const mapped = mapMetaDeliveryStatus(statusEntry?.status);
+      const metaMessageId = statusEntry?.id ? String(statusEntry.id) : null;
+      if (!mapped || !metaMessageId) continue;
+
+      try {
+        const updated = await WhatsappMessage.findOneAndUpdate(
+          { metaMessageId, direction: 'outgoing' },
+          {
+            $set: {
+              deliveryStatus: mapped.deliveryStatus,
+              deliveryTick: mapped.deliveryTick,
+              statusUpdatedAt: new Date(),
+            },
+          },
+          { new: true }
+        )
+          .populate('assignedTo', 'name email')
+          .lean();
+
+        if (updated) emitWhatsappMessageUpdatedToViewRooms(updated);
+      } catch (statusErr) {
+        console.error('WhatsApp status update error:', statusErr);
+      }
+    }
   }
 
   res.sendStatus(200);
@@ -610,6 +651,9 @@ router.post('/send-reply', async (req, res) => {
       direction: 'outgoing',
       assignedTo: assigneeId,
       metaMessageId: data.messages?.[0]?.id || null,
+      deliveryStatus: 'sent',
+      deliveryTick: 'single',
+      statusUpdatedAt: new Date(),
     });
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
@@ -727,6 +771,9 @@ router.post('/send-media', async (req, res) => {
       mediaUrl: mediaLink,
       caption: mediaObject.caption || null,
       filename: mediaType === 'document' ? mediaObject.filename || null : null,
+      deliveryStatus: 'sent',
+      deliveryTick: 'single',
+      statusUpdatedAt: new Date(),
     });
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
@@ -943,6 +990,9 @@ router.post('/send-template', async (req, res) => {
       direction: 'outgoing',
       assignedTo: null,
       metaMessageId: data.messages?.[0]?.id || null,
+      deliveryStatus: 'sent',
+      deliveryTick: 'single',
+      statusUpdatedAt: new Date(),
     });
 
     const messagePayload = await WhatsappMessage.findById(doc._id)
