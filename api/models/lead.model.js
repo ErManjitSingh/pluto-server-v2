@@ -138,6 +138,32 @@ const leadSchema = new mongoose.Schema({
     ref: 'User',
     required: false
   },
+  assignmentHistory: [
+    {
+      assignedTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: false
+      },
+      assignedAt: {
+        type: Date,
+        default: Date.now
+      },
+      unassignedAt: {
+        type: Date,
+        default: null
+      }
+    }
+  ],
+  reactivationCount: {
+    type: Number,
+    default: 0
+  },
+  reassignCount: {
+    type: Number,
+    default: 0
+  },
+ 
   isseen: {
     type: Boolean,
     default: false
