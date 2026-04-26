@@ -24,6 +24,19 @@ function normalizePhone(phone) {
   return String(phone).replace(/\D/g, '').slice(-10);
 }
 
+/** Meta `value.statuses[].errors` when delivery fails — persist for CRM / debugging. */
+function metaStatusErrorsForStorage(status) {
+  const raw = status?.errors;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  return raw.map((e) => ({
+    code: e.code != null ? e.code : null,
+    title: e.title != null ? String(e.title) : null,
+    message: e.message != null ? String(e.message) : null,
+    errorData: e.error_data != null ? e.error_data : null,
+    href: e.href != null ? String(e.href) : null,
+  }));
+}
+
 const WHATSAPP_MEDIA_TYPES = ['document', 'image', 'video', 'audio'];
 
 function filenameFromMediaUrl(link) {
@@ -290,13 +303,24 @@ router.post('/webhook', async (req, res) => {
     const metaMessageId = status?.id ? String(status.id) : null;
     const statusType = String(status?.status || '').toLowerCase();
     if (metaMessageId && ['sent', 'delivered', 'read', 'failed'].includes(statusType)) {
-      console.log("📩 Demand status:", statusType, "for", metaMessageId);
+      const statusErrors =
+        statusType === 'failed' ? metaStatusErrorsForStorage(status) : null;
+      if (statusType === 'failed') {
+        console.log(
+          '📩 Demand status: failed for',
+          metaMessageId,
+          statusErrors || status?.errors || '(no errors array)'
+        );
+      } else {
+        console.log('📩 Demand status:', statusType, 'for', metaMessageId);
+      }
       await WhatsappMessageDemand.findOneAndUpdate(
         { metaMessageId, direction: 'outgoing' },
         {
           $set: {
             status: statusType,
             statusTimestamp: status.timestamp ? String(status.timestamp) : null,
+            statusErrors,
           },
         }
       );
