@@ -26,6 +26,8 @@ const whatsappMessageDemandSchema = new mongoose.Schema(
       default: 'sent',
     },
     statusTimestamp: { type: String, default: null },
+    /** When Meta reports `failed`, webhook includes `errors` (code, title, message, error_data). */
+    statusErrors: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true, collection: 'whatsappdemandmessages' }
 );
