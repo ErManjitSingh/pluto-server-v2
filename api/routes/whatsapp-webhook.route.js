@@ -139,8 +139,14 @@ function buildIncomingWhatsappMessageCreatePayload(message) {
 
 async function latestAssignedExecutiveForPhone(phone) {
   if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  if (!digits) return null;
+  const last10 = digits.slice(-10);
+  const phoneCandidates = Array.from(
+    new Set([digits, last10, `91${last10}`, `910${last10}`, `0${last10}`])
+  );
   const latestOutgoing = await WhatsappMessage.findOne({
-    phone: String(phone),
+    phone: { $in: phoneCandidates },
     direction: 'outgoing',
     assignedTo: { $ne: null },
   })
