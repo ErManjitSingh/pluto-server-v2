@@ -7,8 +7,10 @@ import WhatsappMessageDemand from '../models/whatsappMessageDemand.model.js';
 import WhatsappOutboundMedia from '../models/whatsappOutboundMedia.model.js';
 import WhatsappInboundMedia from '../models/whatsappInboundMedia.model.js';
 import Lead from '../models/lead.model.js';
+import Maker from '../models/maker.model.js';
 import { getIO } from '../socket/socket.js';
 import { storeIncomingWhatsappMediaFromMeta, WHATSAPP_INBOUND_DIR } from '../utils/whatsappMediaUrl.js';
+import { createCalendarEvent } from '../services/googleCalendar.service.js';
 import { verifyToken } from '../utils/verifyUser.js';
 import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
 
@@ -166,6 +168,33 @@ async function latestAssignedExecutiveForPhone(phone) {
   return latestOutgoing?.assignedTo || null;
 }
 
+async function notifyIncomingWhatsappOnGoogleCalendar(messagePayload) {
+  const assignedId = messagePayload?.assignedTo?._id ?? messagePayload?.assignedTo;
+  if (!assignedId) return;
+  try {
+    const makerForCalendar = await Maker.findById(String(assignedId)).select('googleRefreshToken');
+    if (!makerForCalendar?.googleRefreshToken) return;
+    await createCalendarEvent(makerForCalendar, {
+      lead: {
+        name: `WhatsApp Demand ${messagePayload.phone || ''}`.trim(),
+        mobile: messagePayload.phone || null,
+      },
+      leadstatus: 'Incoming WhatsApp Demand',
+      note: messagePayload.message || 'New incoming WhatsApp message',
+      startDate: new Date(Date.now() + 12 * 60 * 1000),
+      timing: 'assignment',
+      durationMinutes: 1,
+      summaryPrefix: 'WhatsApp incoming message',
+      transparency: 'transparent',
+    });
+  } catch (calendarError) {
+    console.error(
+      'Google Calendar WhatsApp demand notification failed:',
+      calendarError?.message || calendarError
+    );
+  }
+}
+
 function publicApiBaseUrl() {
   return (process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_URL || '').replace(/\/+$/, '');
 }
@@ -272,6 +301,7 @@ router.post('/webhook', async (req, res) => {
     const messagePayload = await WhatsappMessageDemand.findById(doc._id)
       .populate('assignedTo', 'name email')
       .lean();
+    await notifyIncomingWhatsappOnGoogleCalendar(messagePayload);
     emitWhatsappDemandMessageToViewRooms(messagePayload);
 
     // Real-time for filtered unassigned: emit only if this message would appear in GET /message/unassigned
