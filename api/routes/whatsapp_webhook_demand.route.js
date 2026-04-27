@@ -147,6 +147,19 @@ function buildIncomingWhatsappDemandMessageCreatePayload(message) {
   };
 }
 
+async function latestAssignedExecutiveForPhone(phone) {
+  if (!phone) return null;
+  const latestOutgoing = await WhatsappMessageDemand.findOne({
+    phone: String(phone),
+    direction: 'outgoing',
+    assignedTo: { $ne: null },
+  })
+    .sort({ createdAt: -1 })
+    .select('assignedTo')
+    .lean();
+  return latestOutgoing?.assignedTo || null;
+}
+
 function publicApiBaseUrl() {
   return (process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_URL || '').replace(/\/+$/, '');
 }
@@ -243,6 +256,7 @@ router.post('/webhook', async (req, res) => {
     const message = value.messages[0];
 
     const createPayload = buildIncomingWhatsappDemandMessageCreatePayload(message);
+    createPayload.assignedTo = await latestAssignedExecutiveForPhone(createPayload.phone);
     const doc = await WhatsappMessageDemand.create(createPayload);
 
     if (createPayload.metaMediaId) {
@@ -607,7 +621,7 @@ router.put('/messages/assign/bulk', async (req, res) => {
  */
 router.post('/send-reply', async (req, res) => {
   try {
-    const { phone, message, executiveId } = req.body;
+    const { phone, message, executiveId, assignedTo } = req.body;
     const token = process.env.WHATSAPP_ACCESS_TOKEN_DEMAND;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID_DEMAND;
 
@@ -658,7 +672,8 @@ router.post('/send-reply', async (req, res) => {
     }
 
     // Save outgoing message to MongoDB for CRM history (only set assignedTo if valid ObjectId)
-    const assigneeId = isValidObjectId(executiveId) ? executiveId : null;
+    const assigneeInput = executiveId ?? assignedTo;
+    const assigneeId = isValidObjectId(String(assigneeInput || '')) ? String(assigneeInput) : null;
     const doc = await WhatsappMessageDemand.create({
       phone: to,
       message: String(message),
@@ -694,7 +709,7 @@ router.post('/send-reply', async (req, res) => {
  */
 router.post('/send-media', async (req, res) => {
   try {
-    const { phone, link, type, filename, caption, executiveId } = req.body;
+    const { phone, link, type, filename, caption, executiveId, assignedTo } = req.body;
     const token = process.env.WHATSAPP_ACCESS_TOKEN_DEMAND;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID_DEMAND;
 
@@ -766,7 +781,8 @@ router.post('/send-media', async (req, res) => {
       });
     }
 
-    const assigneeId = isValidObjectId(executiveId) ? executiveId : null;
+    const assigneeInput = executiveId ?? assignedTo;
+    const assigneeId = isValidObjectId(String(assigneeInput || '')) ? String(assigneeInput) : null;
     const displayName =
       mediaType === 'document' ? mediaObject.filename || 'document' : mediaType;
     const summary = `[${mediaType}] ${displayName}${mediaObject.caption ? `: ${mediaObject.caption}` : ''}`;
@@ -928,7 +944,7 @@ router.post(
  */
 router.post('/send-template', async (req, res) => {
   try {
-    const { phone, templateName, language = 'en', components } = req.body;
+    const { phone, templateName, language = 'en', components, executiveId, assignedTo } = req.body;
     const token = process.env.WHATSAPP_ACCESS_TOKEN_DEMAND;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID_DEMAND;
 
@@ -992,12 +1008,15 @@ router.post('/send-template', async (req, res) => {
       });
     }
 
+    const assigneeInput = executiveId ?? assignedTo;
+    const assigneeId = isValidObjectId(String(assigneeInput || '')) ? String(assigneeInput) : null;
+
     // Save outgoing template as a message in CRM for history
     const doc = await WhatsappMessageDemand.create({
       phone: to,
       message: `[Template: ${templateName}]`,
       direction: 'outgoing',
-      assignedTo: null,
+      assignedTo: assigneeId,
       metaMessageId: data.messages?.[0]?.id || null,
       status: 'sent',
     });
