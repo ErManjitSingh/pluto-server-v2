@@ -6,7 +6,7 @@ const whatsappMessageDemandSchema = new mongoose.Schema(
     phone: { type: String, required: true },
     message: { type: String, required: true },
     direction: { type: String, enum: ['incoming', 'outgoing'], default: 'incoming' },
-    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Maker', default: null },
     metaMessageId: { type: String, default: null },
     /** Outgoing media (Meta Cloud API uses a public HTTPS link). */
     messageType: {
