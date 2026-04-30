@@ -348,6 +348,24 @@ export const deletePackageMaker = async (req, res) => {
   }
 };
 
+export const deleteAllPackageMakerPhotosAndVideos = async (req, res) => {
+  try {
+    const result = await Property.clearAllPhotosAndVideos();
+
+    res.status(200).json({
+      success: true,
+      message: "photosAndVideos removed from all PackageMaker records",
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const loginPackageMaker = async (req, res) => {
   try {
     const { mobile, password } = req.body;
