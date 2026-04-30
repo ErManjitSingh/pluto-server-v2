@@ -379,6 +379,10 @@ const PropertySchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
+PropertySchema.statics.clearAllPhotosAndVideos = function () {
+  return this.updateMany({}, { $unset: { photosAndVideos: 1 } });
+};
+
 // Middleware to update the `updatedAt` field automatically
 PropertySchema.pre("save", function (next) {
   this.updatedAt = Date.now();
