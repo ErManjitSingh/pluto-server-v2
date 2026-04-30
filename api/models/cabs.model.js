@@ -22,6 +22,10 @@ const cabSchema = new mongoose.Schema({
         required: false,
     }
   });
+
+cabSchema.statics.clearAllCabImages = function () {
+  return this.updateMany({}, { $unset: { cabImages: 1 } });
+};
   
   const Cabs = mongoose.model("Cabs", cabSchema);
 
