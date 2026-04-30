@@ -113,6 +113,21 @@ export const deleteCab = async (req, res) => {
   }
 };
 
+export const deleteAllCabImages = async (req, res) => {
+  try {
+    const result = await Cabs.clearAllCabImages();
+
+    res.status(200).json({
+      status: "success",
+      message: "cabImages removed from all cabs",
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    res.status(500).json({ status: "error", message: "Internal Server Error" });
+  }
+};
+
 export const getAllCabs = async (req, res) => {
   try {
     // Fetch all cabs from the database
