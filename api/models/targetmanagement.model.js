@@ -21,6 +21,12 @@ const targetManagementSchema = new mongoose.Schema(
           required: true,
           min: 0,
         },
+        companyName: {
+          type: String,
+          required: false,
+          trim: true,
+          default: null,
+        },
         userId: {
           type: mongoose.Schema.Types.Mixed,
           required: true,
@@ -40,6 +46,13 @@ const targetManagementSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Indexes for faster month and nested-target lookups
+targetManagementSchema.index({ month: 1 });
+targetManagementSchema.index({ 'targets.userId': 1, createdAt: -1 });
+targetManagementSchema.index({ 'targets.teamLeaderId': 1, createdAt: -1 });
+targetManagementSchema.index({ 'targets.managerId': 1, createdAt: -1 });
+targetManagementSchema.index({ 'targets.companyName': 1, createdAt: -1 });
 
 const TargetManagement = mongoose.model('TargetManagement', targetManagementSchema);
 
