@@ -7,6 +7,8 @@ import {
   getTargetManagementsByTeamLeaderId,
   getTargetManagementsByManagerId,
   updateTargetManagement,
+  updateSpecificTarget,
+  deleteSpecificTarget,
   deleteTargetManagement,
 } from '../controllers/targetmanagement.controller.js';
 
@@ -19,6 +21,8 @@ router.get('/get-by-teamleader/:teamLeaderId', getTargetManagementsByTeamLeaderI
 router.get('/get-by-manager/:managerId', getTargetManagementsByManagerId);
 router.get('/get/:id', getTargetManagement);
 router.put('/update/:id', updateTargetManagement);
+router.put('/update-target/:targetId', updateSpecificTarget);
+router.delete('/delete-target/:targetId', deleteSpecificTarget);
 router.delete('/delete/:id', deleteTargetManagement);
 
 export default router;
