@@ -2149,6 +2149,37 @@ export const updateConvertedOperationByCustomerLeadId = async (req, res, next) =
   }
 };
 
+// Get converted operations by userId with limited fields only
+export const getConvertedOperationsByUserIdLite = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+
+    const operations = await Operation.find({
+      converted: true,
+      userId: String(userId)
+    })
+      .select({
+        userId: 1,
+        finalTotal: 1,
+        marginPercentage: 1,
+        discountPercentage: 1,
+        totals: 1,
+        createdAt: 1,
+        updatedAt: 1
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json(operations);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getOperationSpecificFields = async (req, res, next) => {
   try {
     const { id } = req.params;
