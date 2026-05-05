@@ -6,6 +6,7 @@ import {
   getTargetManagementsByUserId,
   getTargetManagementsByTeamLeaderId,
   getTargetManagementsByManagerId,
+  getTargetManagementsByCompanyName,
   updateTargetManagement,
   updateSpecificTarget,
   deleteSpecificTarget,
@@ -19,6 +20,7 @@ router.get('/get-all', getTargetManagements);
 router.get('/get-by-user/:userId', getTargetManagementsByUserId);
 router.get('/get-by-teamleader/:teamLeaderId', getTargetManagementsByTeamLeaderId);
 router.get('/get-by-manager/:managerId', getTargetManagementsByManagerId);
+router.get('/get-by-company/:companyName', getTargetManagementsByCompanyName);
 router.get('/get/:id', getTargetManagement);
 router.put('/update/:id', updateTargetManagement);
 router.put('/update-target/:targetId', updateSpecificTarget);
