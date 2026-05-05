@@ -147,6 +147,59 @@ export const updateTargetManagement = async (req, res, next) => {
   }
 };
 
+// Update a specific target item inside targets[] by target _id
+export const updateSpecificTarget = async (req, res, next) => {
+  try {
+    const { targetId } = req.params;
+    const { targetData, numberOfLeads, userId, teamLeaderId, managerId } = req.body;
+
+    const doc = await TargetManagement.findOne({ 'targets._id': targetId });
+    if (!doc) {
+      return res.status(404).json({ message: 'Target item not found' });
+    }
+
+    const targetItem = doc.targets.id(targetId);
+    if (!targetItem) {
+      return res.status(404).json({ message: 'Target item not found' });
+    }
+
+    if (targetData !== undefined) targetItem.targetData = targetData;
+    if (numberOfLeads !== undefined) targetItem.numberOfLeads = numberOfLeads;
+    if (userId !== undefined) targetItem.userId = userId;
+    if (teamLeaderId !== undefined) targetItem.teamLeaderId = teamLeaderId;
+    if (managerId !== undefined) targetItem.managerId = managerId;
+
+    await doc.save();
+    return res.status(200).json(doc);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Delete a specific target item inside targets[] by target _id
+export const deleteSpecificTarget = async (req, res, next) => {
+  try {
+    const { targetId } = req.params;
+
+    const updatedDoc = await TargetManagement.findOneAndUpdate(
+      { 'targets._id': targetId },
+      { $pull: { targets: { _id: targetId } } },
+      { new: true }
+    );
+
+    if (!updatedDoc) {
+      return res.status(404).json({ message: 'Target item not found' });
+    }
+
+    return res.status(200).json({
+      message: 'Target item deleted successfully',
+      data: updatedDoc,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteTargetManagement = async (req, res, next) => {
   try {
     const deletedTarget = await TargetManagement.findByIdAndDelete(req.params.id);
