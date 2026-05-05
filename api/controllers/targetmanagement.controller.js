@@ -6,6 +6,7 @@ const toTargetsArray = (payload) => {
   if (
     payload.targetData !== undefined ||
     payload.numberOfLeads !== undefined ||
+    payload.companyName !== undefined ||
     payload.userId !== undefined ||
     payload.teamLeaderId !== undefined ||
     payload.managerId !== undefined
@@ -14,6 +15,7 @@ const toTargetsArray = (payload) => {
       {
         targetData: payload.targetData,
         numberOfLeads: payload.numberOfLeads,
+        companyName: payload.companyName ?? null,
         userId: payload.userId,
         teamLeaderId: payload.teamLeaderId ?? null,
         managerId: payload.managerId ?? null,
@@ -22,6 +24,10 @@ const toTargetsArray = (payload) => {
   }
 
   return [];
+};
+
+const runListQuery = async (filters) => {
+  return TargetManagement.find(filters).sort({ createdAt: -1 }).lean().maxTimeMS(15000);
 };
 
 export const createTargetManagement = async (req, res, next) => {
@@ -36,15 +42,23 @@ export const createTargetManagement = async (req, res, next) => {
       return res.status(400).json({ message: 'targets array (or target fields) is required' });
     }
 
-    const existingMonth = await TargetManagement.findOne({ month });
-    if (existingMonth) {
-      existingMonth.targets.push(...targets);
-      await existingMonth.save();
-      return res.status(200).json(existingMonth);
-    }
+    // Atomic upsert to avoid read-modify-write overhead and race conditions
+    const updatedDoc = await TargetManagement.findOneAndUpdate(
+      { month },
+      {
+        $setOnInsert: { month },
+        $push: { targets: { $each: targets } },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
 
-    const createdTarget = await TargetManagement.create({ month, targets });
-    return res.status(201).json(createdTarget);
+    const statusCode = updatedDoc.createdAt && updatedDoc.updatedAt && updatedDoc.createdAt.getTime() === updatedDoc.updatedAt.getTime() ? 201 : 200;
+    return res.status(statusCode).json(updatedDoc);
   } catch (error) {
     next(error);
   }
@@ -58,8 +72,9 @@ export const getTargetManagements = async (req, res, next) => {
     if (req.query.userId) filters['targets.userId'] = req.query.userId;
     if (req.query.teamLeaderId) filters['targets.teamLeaderId'] = req.query.teamLeaderId;
     if (req.query.managerId) filters['targets.managerId'] = req.query.managerId;
+    if (req.query.companyName) filters['targets.companyName'] = req.query.companyName;
 
-    const targets = await TargetManagement.find(filters).sort({ createdAt: -1 });
+    const targets = await runListQuery(filters);
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
@@ -68,7 +83,7 @@ export const getTargetManagements = async (req, res, next) => {
 
 export const getTargetManagement = async (req, res, next) => {
   try {
-    const target = await TargetManagement.findById(req.params.id);
+    const target = await TargetManagement.findById(req.params.id).lean().maxTimeMS(15000);
 
     if (!target) {
       return res.status(404).json({ message: 'Target management not found' });
@@ -83,7 +98,7 @@ export const getTargetManagement = async (req, res, next) => {
 export const getTargetManagementsByUserId = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const targets = await TargetManagement.find({ 'targets.userId': userId }).sort({ createdAt: -1 });
+    const targets = await runListQuery({ 'targets.userId': userId });
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
@@ -93,7 +108,7 @@ export const getTargetManagementsByUserId = async (req, res, next) => {
 export const getTargetManagementsByTeamLeaderId = async (req, res, next) => {
   try {
     const { teamLeaderId } = req.params;
-    const targets = await TargetManagement.find({ 'targets.teamLeaderId': teamLeaderId }).sort({ createdAt: -1 });
+    const targets = await runListQuery({ 'targets.teamLeaderId': teamLeaderId });
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
@@ -103,7 +118,17 @@ export const getTargetManagementsByTeamLeaderId = async (req, res, next) => {
 export const getTargetManagementsByManagerId = async (req, res, next) => {
   try {
     const { managerId } = req.params;
-    const targets = await TargetManagement.find({ 'targets.managerId': managerId }).sort({ createdAt: -1 });
+    const targets = await runListQuery({ 'targets.managerId': managerId });
+    return res.status(200).json(targets);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTargetManagementsByCompanyName = async (req, res, next) => {
+  try {
+    const { companyName } = req.params;
+    const targets = await runListQuery({ 'targets.companyName': companyName });
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
@@ -127,6 +152,7 @@ export const updateTargetManagement = async (req, res, next) => {
 
     delete payload.targetData;
     delete payload.numberOfLeads;
+    delete payload.companyName;
     delete payload.userId;
     delete payload.teamLeaderId;
     delete payload.managerId;
@@ -151,26 +177,30 @@ export const updateTargetManagement = async (req, res, next) => {
 export const updateSpecificTarget = async (req, res, next) => {
   try {
     const { targetId } = req.params;
-    const { targetData, numberOfLeads, userId, teamLeaderId, managerId } = req.body;
+    const { targetData, numberOfLeads, companyName, userId, teamLeaderId, managerId } = req.body;
+    const setPayload = {};
+    if (targetData !== undefined) setPayload['targets.$.targetData'] = targetData;
+    if (numberOfLeads !== undefined) setPayload['targets.$.numberOfLeads'] = numberOfLeads;
+    if (companyName !== undefined) setPayload['targets.$.companyName'] = companyName;
+    if (userId !== undefined) setPayload['targets.$.userId'] = userId;
+    if (teamLeaderId !== undefined) setPayload['targets.$.teamLeaderId'] = teamLeaderId;
+    if (managerId !== undefined) setPayload['targets.$.managerId'] = managerId;
 
-    const doc = await TargetManagement.findOne({ 'targets._id': targetId });
-    if (!doc) {
+    if (Object.keys(setPayload).length === 0) {
+      return res.status(400).json({ message: 'At least one field is required for update' });
+    }
+
+    const updatedDoc = await TargetManagement.findOneAndUpdate(
+      { 'targets._id': targetId },
+      { $set: setPayload },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedDoc) {
       return res.status(404).json({ message: 'Target item not found' });
     }
 
-    const targetItem = doc.targets.id(targetId);
-    if (!targetItem) {
-      return res.status(404).json({ message: 'Target item not found' });
-    }
-
-    if (targetData !== undefined) targetItem.targetData = targetData;
-    if (numberOfLeads !== undefined) targetItem.numberOfLeads = numberOfLeads;
-    if (userId !== undefined) targetItem.userId = userId;
-    if (teamLeaderId !== undefined) targetItem.teamLeaderId = teamLeaderId;
-    if (managerId !== undefined) targetItem.managerId = managerId;
-
-    await doc.save();
-    return res.status(200).json(doc);
+    return res.status(200).json(updatedDoc);
   } catch (error) {
     next(error);
   }
