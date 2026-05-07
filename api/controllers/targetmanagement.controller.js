@@ -98,8 +98,28 @@ export const getTargetManagement = async (req, res, next) => {
 export const getTargetManagementsByUserId = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const targets = await runListQuery({ 'targets.userId': userId });
-    return res.status(200).json(targets);
+    const userIdStr = String(userId);
+
+    const docs = await TargetManagement.aggregate([
+      { $match: { 'targets.userId': userId } },
+      { $sort: { createdAt: -1 } },
+      {
+        $project: {
+          month: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          targets: {
+            $filter: {
+              input: '$targets',
+              as: 't',
+              cond: { $eq: [{ $toString: '$$t.userId' }, userIdStr] },
+            },
+          },
+        },
+      },
+    ]).option({ maxTimeMS: 15000 });
+
+    return res.status(200).json(docs);
   } catch (error) {
     next(error);
   }
