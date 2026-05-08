@@ -2165,8 +2165,6 @@ export const getConvertedOperationsByUserIdLite = async (req, res, next) => {
       .select({
         userId: 1,
         customerLeadId: 1,
-        hotels: 1,
-        'transfer.selectedLead': 1,
         finalTotal: 1,
         marginPercentage: 1,
         discountPercentage: 1,
@@ -2177,27 +2175,7 @@ export const getConvertedOperationsByUserIdLite = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const transformed = operations.map((op) => {
-      const selectedHotelId = op?.hotels?.[0]?._id ?? null;
-
-      if (op?.transfer?.selectedLead && typeof op.transfer.selectedLead === 'object') {
-        return {
-          ...op,
-          selectedHotelId,
-          transfer: {
-            ...op.transfer,
-            selectedLead: {
-              ...op.transfer.selectedLead,
-              hotelId: selectedHotelId,
-            },
-          },
-        };
-      }
-
-      return { ...op, selectedHotelId };
-    });
-
-    return res.status(200).json(transformed);
+    return res.status(200).json(operations);
   } catch (error) {
     next(error);
   }
