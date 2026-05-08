@@ -79,7 +79,11 @@ export const getMakers = async (req, res, next) => {
 
 export const getMakerById = async (req, res, next) => {
   try {
-    const maker = await Maker.findById(req.params.id);
+    const maker = await Maker.findByIdAndUpdate(
+      req.params.id,
+      { $set: { lastFetch: new Date() } },
+      { new: true }
+    );
     if (!maker) {
       return next(errorHandler(404, 'Maker not found'));
     }
@@ -105,9 +109,17 @@ export const updateMaker = async (req, res, next) => {
     const { id } = req.params;
     const updateData = { ...req.body };
     
-    // If password is being updated, hash it
-    if (updateData.password) {
-      updateData.password = bcryptjs.hashSync(updateData.password, 10);
+    // Never change password unless an explicit new password is provided
+    // (prevents accidental overwrites from empty string / hashed password coming from frontend)
+    if (typeof updateData.password === 'string') {
+      const nextPassword = updateData.password.trim();
+      if (nextPassword.length > 0) {
+        updateData.password = bcryptjs.hashSync(nextPassword, 10);
+      } else {
+        delete updateData.password;
+      }
+    } else {
+      delete updateData.password;
     }
     
     // Remove _id from update data if present
