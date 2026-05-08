@@ -77,6 +77,10 @@ const makerSchema = new mongoose.Schema({
     default: 0
     // Total leads (assigned to this maker) with converted: true
   },
+  lastFetch: {
+    type: Date,
+    default: null,
+  },
 }, { timestamps: true });
 
 const Maker = mongoose.model('Maker', makerSchema);
