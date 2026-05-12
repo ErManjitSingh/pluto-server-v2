@@ -4,23 +4,26 @@ const emailActivitySchema = new mongoose.Schema({
   leadId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Lead',
-    required: true,
+    required: false,
     index: true
+    // Optional: unassigned inbound emails still show up in the inbox
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Maker',
-    required: true
+    required: true,
+    index: true
   },
   gmailMessageId: {
     type: String,
     required: true
-    // Unique per user (compound index below)
+    // RFC 5322 Message-ID for cPanel/IMAP emails (kept name for backward compat)
   },
   gmailThreadId: {
     type: String,
     required: true,
     index: true
+    // Our internal thread id (Message-ID of the root email of the conversation)
   },
   direction: {
     type: String,
@@ -35,6 +38,8 @@ const emailActivitySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  cc: { type: String, default: '' },
+  bcc: { type: String, default: '' },
   subject: {
     type: String,
     default: ''
@@ -51,8 +56,12 @@ const emailActivitySchema = new mongoose.Schema({
     filename: String,
     mimeType: String,
     size: Number,
-    attachmentId: String
+    attachmentId: String,
+    storagePath: String
+    // storagePath: relative disk path under uploads/email-attachments/...
   }],
+  imapUid: { type: Number, default: null },
+  // Original IMAP UID on the mailbox (used for delete/move on server)
   isRead: {
     type: Boolean,
     default: false
