@@ -13,8 +13,9 @@ const mailAccountSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Maker',
       required: true,
-      unique: true,
       index: true,
+      // Admin who created the row. For shared mailbox = admin id.
+      // For per-user mailbox = that maker id.
     },
     emailAddress: {
       type: String,
@@ -22,6 +23,21 @@ const mailAccountSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+    },
+    isShared: {
+      type: Boolean,
+      default: false,
+      index: true,
+      // true = mailbox shared by all makers of one company
+      // false = personal mailbox owned only by `userId` (legacy mode)
+    },
+    companyName: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+      // Which company this mailbox belongs to. Must match Maker.companyName
+      // for makers of this company to send/receive through it.
     },
     displayName: {
       type: String,
@@ -60,6 +76,11 @@ const mailAccountSchema = new mongoose.Schema(
 );
 
 mailAccountSchema.index({ isActive: 1 });
+// Allow only ONE shared mailbox per company (e.g. one for PTW, one for Demand Setu)
+mailAccountSchema.index(
+  { isShared: 1, companyName: 1 },
+  { unique: true, partialFilterExpression: { isShared: true } }
+);
 
 const MailAccount = mongoose.model('MailAccount', mailAccountSchema);
 export default MailAccount;
