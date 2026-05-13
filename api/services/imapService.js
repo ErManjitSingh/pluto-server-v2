@@ -82,9 +82,11 @@ const extractEmailFromHeader = (headerText) => {
 };
 
 /**
- * Find an existing thread id by walking In-Reply-To / References.
+ * Find an existing thread by walking In-Reply-To / References.
+ * If a companyName is provided, restrict to threads in the SAME company so
+ * brand-A reply chains never auto-route into brand-B inboxes.
  */
-const resolveThread = async (userId, parsed) => {
+const resolveThread = async (parsed, companyName) => {
   const refs = [];
   if (parsed.inReplyTo) refs.push(parsed.inReplyTo);
   if (parsed.references) {
@@ -93,21 +95,65 @@ const resolveThread = async (userId, parsed) => {
   }
   if (refs.length === 0) return null;
 
-  const existing = await EmailActivity.findOne({
-    userId,
-    gmailMessageId: { $in: refs },
-  }).select('gmailThreadId leadId');
+  const query = { gmailMessageId: { $in: refs } };
+  if (companyName) query.companyName = companyName;
+
+  const existing = await EmailActivity.findOne(query)
+    .sort({ createdAt: -1 })
+    .select('gmailThreadId leadId userId');
 
   return existing || null;
 };
 
 /**
- * Find a lead by sender email address (fallback when no thread match).
+ * Find a lead by sender email address (optionally scoped to a company).
  */
 const findLeadByEmail = async (emailAddr) => {
   if (!emailAddr) return null;
   const clean = emailAddr.toLowerCase().trim();
-  return Lead.findOne({ email: new RegExp(`^${clean}$`, 'i') }).select('_id');
+  return Lead.findOne({ email: new RegExp(`^${clean}$`, 'i') }).select('_id assignedUserId');
+};
+
+/**
+ * 3-rule routing engine. Scoped per company so brands stay isolated.
+ *   1. If reply (In-Reply-To matches in SAME company), inherit owner + leadId + threadId.
+ *   2. Else if sender email matches a Lead AND that lead's assigned maker is in this company, inherit.
+ *   3. Else userId/leadId = null → goes to Shared / Unassigned inbox (of this company).
+ */
+const resolveOwnerAndLead = async ({ parsed, fromEmail, messageId, companyName }) => {
+  const thread = await resolveThread(parsed, companyName);
+  if (thread) {
+    return {
+      userId: thread.userId || null,
+      leadId: thread.leadId || null,
+      threadId: thread.gmailThreadId || messageId,
+      isReply: true,
+    };
+  }
+
+  const lead = await findLeadByEmail(fromEmail);
+  if (lead) {
+    // If we know the company, verify the lead's assigned maker is in the same company.
+    let assignedUserId = lead.assignedUserId || null;
+    if (companyName && assignedUserId) {
+      try {
+        const assignedMaker = await (await import('../models/maker.model.js')).default
+          .findById(assignedUserId)
+          .select('companyName');
+        if (!assignedMaker || assignedMaker.companyName !== companyName) {
+          assignedUserId = null; // maker is in a different company — leave unassigned
+        }
+      } catch (_) {}
+    }
+    return {
+      userId: assignedUserId,
+      leadId: lead._id,
+      threadId: messageId,
+      isReply: false,
+    };
+  }
+
+  return { userId: null, leadId: null, threadId: messageId, isReply: false };
 };
 
 /**
@@ -226,17 +272,12 @@ export const syncMailAccount = async (account) => {
 
       const messageId = (parsed.messageId || `<imap-${uid}-${Date.now()}@${full.imapHost}>`).trim();
 
-      // Skip if already saved
-      const exists = await EmailActivity.findOne({
-        userId: full.userId,
-        gmailMessageId: messageId,
-      }).select('_id');
+      // Dedup — same messageId already exists in DB (any user)
+      const exists = await EmailActivity.findOne({ gmailMessageId: messageId }).select('_id');
       if (exists) {
         if (uid > maxUid) maxUid = uid;
         continue;
       }
-
-      const thread = await resolveThread(full.userId, parsed);
 
       const fromText = addrText(parsed.from);
       const toText = addrText(parsed.to);
@@ -244,24 +285,32 @@ export const syncMailAccount = async (account) => {
       const bccText = addrText(parsed.bcc);
       const fromEmail = extractEmailFromHeader(fromText);
 
-      // Direction
       const direction =
         fromEmail === full.emailAddress.toLowerCase() ? 'OUTBOUND' : 'INBOUND';
 
-      // Lead linking
-      let leadId = thread ? thread.leadId : null;
-      if (!leadId) {
-        const lead = await findLeadByEmail(direction === 'INBOUND' ? fromEmail : extractEmailFromHeader(toText));
-        if (lead) leadId = lead._id;
-      }
+      // 3-rule routing engine (scoped per company)
+      const route = await resolveOwnerAndLead({
+        parsed,
+        fromEmail: direction === 'INBOUND' ? fromEmail : extractEmailFromHeader(toText),
+        messageId,
+        companyName: full.companyName || '',
+      });
 
-      const attachments = await persistAttachments(full.userId, messageId, parsed.attachments || []);
+      // For legacy per-user mailbox accounts, force owner = mailbox owner if router didn't resolve
+      const finalUserId =
+        route.userId || (full.isShared ? null : full.userId);
+
+      const attachments = await persistAttachments(
+        finalUserId || 'shared',
+        messageId,
+        parsed.attachments || []
+      );
 
       const doc = await EmailActivity.create({
-        leadId: leadId || undefined,
-        userId: full.userId,
+        leadId: route.leadId || undefined,
+        userId: finalUserId || undefined,
         gmailMessageId: messageId,
-        gmailThreadId: thread ? thread.gmailThreadId : messageId,
+        gmailThreadId: route.threadId,
         direction,
         from: fromText || full.emailAddress,
         to: toText || full.emailAddress,
@@ -272,29 +321,48 @@ export const syncMailAccount = async (account) => {
         htmlBody: parsed.html || '',
         attachments,
         imapUid: uid,
+        companyName: full.companyName || '',
         isRead: direction === 'OUTBOUND',
       });
 
-      // Update lead.lastEmailAt + (set gmailThreadId if missing)
-      if (leadId) {
+      if (route.leadId) {
         try {
           await Lead.findOneAndUpdate(
-            { _id: leadId, gmailThreadId: { $exists: false } },
+            { _id: route.leadId, gmailThreadId: { $exists: false } },
             { gmailThreadId: doc.gmailThreadId }
           );
-          await Lead.findByIdAndUpdate(leadId, { lastEmailAt: new Date() });
+          await Lead.findByIdAndUpdate(route.leadId, { lastEmailAt: new Date() });
         } catch (_) {}
       }
 
-      emitNewEmail(String(full.userId), {
-        _id: doc._id,
-        from: doc.from,
-        subject: doc.subject,
-        direction: doc.direction,
-        leadId: doc.leadId,
-        threadId: doc.gmailThreadId,
-        createdAt: doc.createdAt,
-      });
+      // Push real-time notification: to owner if known, else to shared room
+      if (finalUserId) {
+        emitNewEmail(String(finalUserId), {
+          _id: doc._id,
+          from: doc.from,
+          subject: doc.subject,
+          direction: doc.direction,
+          leadId: doc.leadId,
+          threadId: doc.gmailThreadId,
+          createdAt: doc.createdAt,
+        });
+      } else {
+        try {
+          const io = getIO();
+          if (io) {
+            const room = full.companyName
+              ? `webmail:shared:${full.companyName}`
+              : 'webmail:shared';
+            io.to(room).emit('webmail:shared:new', {
+              _id: doc._id,
+              from: doc.from,
+              subject: doc.subject,
+              companyName: full.companyName || '',
+              createdAt: doc.createdAt,
+            });
+          }
+        } catch (_) {}
+      }
 
       savedCount++;
       if (uid > maxUid) maxUid = uid;
