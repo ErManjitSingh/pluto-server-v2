@@ -18,7 +18,7 @@ const ADMIN_TYPES = new Set([
   'manager',
   'Manager',
   'TL',
-  'executive',
+  'Executive',
   'TeamLeader',
   'teamleader',
 ]);
