@@ -34,6 +34,29 @@ const sanitize = (acc) => {
 };
 
 /**
+ * Resolve the MailAccount that the logged-in maker should use.
+ * Same rule used by smtpService.sendMailForMaker() so every endpoint stays in sync.
+ *
+ * Priority:
+ *   1. Shared mailbox for this maker's companyName (multi-company setup)
+ *   2. Legacy per-user mailbox where userId = the logged-in maker
+ *
+ * Returns the matching MailAccount or null.
+ */
+const resolveMailAccountForUser = async (userId) => {
+  const maker = await Maker.findById(userId).select('companyName');
+  if (maker?.companyName) {
+    const shared = await MailAccount.findOne({
+      isShared: true,
+      isActive: true,
+      companyName: maker.companyName,
+    });
+    if (shared) return shared;
+  }
+  return MailAccount.findOne({ userId, isActive: true });
+};
+
+/**
  * Save (or update) a webmail account for the logged-in maker.
  * Verifies IMAP and SMTP before storing encrypted password.
  *
@@ -150,12 +173,15 @@ export const connectWebmail = async (req, res, next) => {
 
 /**
  * GET /api/webmail/status
+ * Returns "connected: true" for every maker whose company has a shared mailbox configured.
+ * (Previously only the user who saved the row saw connected: true — caused executives/TLs
+ *  to see a broken "Connect mail" form even though the company mail was active.)
  */
 export const getWebmailStatus = async (req, res, next) => {
   try {
     const userId = requireAuth(req, next);
     if (!userId) return;
-    const account = await MailAccount.findOne({ userId });
+    const account = await resolveMailAccountForUser(userId);
     if (!account) return res.json({ success: true, connected: false });
     res.json({ success: true, connected: account.isActive, data: sanitize(account) });
   } catch (err) {
@@ -165,14 +191,52 @@ export const getWebmailStatus = async (req, res, next) => {
 
 /**
  * DELETE /api/webmail/disconnect
+ *
+ * Rules:
+ *  - Per-user (legacy) mailbox  → owner can delete their own row.
+ *  - Shared company mailbox     → ANY admin/manager/TL of that company can delete the row.
+ *                                  Regular executives cannot disconnect the company mailbox
+ *                                  (would break it for the entire team).
  */
 export const disconnectWebmail = async (req, res, next) => {
   try {
     const userId = requireAuth(req, next);
     if (!userId) return;
-    const deleted = await MailAccount.findOneAndDelete({ userId });
-    if (!deleted) return next(errorHandler(404, 'No webmail connected'));
-    res.json({ success: true, message: 'Webmail disconnected' });
+
+    const account = await resolveMailAccountForUser(userId);
+    if (!account) return next(errorHandler(404, 'No webmail connected'));
+
+    if (account.isShared) {
+      const ADMIN_TYPES = new Set([
+        'admin',
+        'Admin',
+        'manager',
+        'Manager',
+        'TL',
+        'Executive',
+        'executive',
+        'TeamLeader',
+        'Team Leader',
+        'teamleader',
+      ]);
+      const maker = await Maker.findById(userId).select('userType companyName');
+      if (!maker || !ADMIN_TYPES.has(maker.userType)) {
+        return next(
+          errorHandler(
+            403,
+            'Only an admin/manager/team-leader can disconnect the company shared mailbox.'
+          )
+        );
+      }
+      if (maker.companyName !== account.companyName) {
+        return next(errorHandler(403, 'You cannot disconnect another company\'s mailbox.'));
+      }
+    } else if (String(account.userId) !== String(userId)) {
+      return next(errorHandler(403, 'You can only disconnect your own mailbox.'));
+    }
+
+    await MailAccount.findByIdAndDelete(account._id);
+    res.json({ success: true, message: 'Webmail disconnected', data: { id: account._id } });
   } catch (err) {
     next(err);
   }
@@ -344,7 +408,7 @@ export const syncNow = async (req, res, next) => {
   try {
     const userId = requireAuth(req, next);
     if (!userId) return;
-    const acc = await MailAccount.findOne({ userId, isActive: true });
+    const acc = await resolveMailAccountForUser(userId);
     if (!acc) return next(errorHandler(404, 'Webmail not connected'));
     const result = await syncMailAccount(acc);
     res.json({ success: true, data: result });
