@@ -3,10 +3,12 @@ import fs from 'fs';
 import MailAccount from '../models/mailAccount.model.js';
 import EmailActivity from '../models/emailActivity.model.js';
 import Maker from '../models/maker.model.js';
+import Lead from '../models/lead.model.js';
 import { errorHandler } from '../utils/error.js';
 import { encryptSecret } from '../utils/mailCrypto.js';
 import { testImapConnection, syncMailAccount } from '../services/imapService.js';
 import { testSmtpConnection, sendMailForMaker } from '../services/smtpService.js';
+import { getIO } from '../socket/socket.js';
 
 const DEFAULTS = {
   imapPort: 993,
@@ -54,6 +56,8 @@ export const connectWebmail = async (req, res, next) => {
       smtpPort,
       smtpSecure,
       signature,
+      isShared = false,
+      companyName,
     } = req.body;
 
     if (!emailAddress || !password) {
@@ -62,6 +66,17 @@ export const connectWebmail = async (req, res, next) => {
 
     const maker = await Maker.findById(userId);
     if (!maker) return next(errorHandler(404, 'Maker not found'));
+
+    // Resolve company name: prefer explicit body value, else fall back to admin's own company
+    const resolvedCompany = (companyName || maker.companyName || '').trim();
+    if (!resolvedCompany) {
+      return next(
+        errorHandler(
+          400,
+          'companyName is required (e.g. "PTW Holidays" or "Demand Setu Tours")'
+        )
+      );
+    }
 
     const domain = emailAddress.split('@')[1];
     if (!domain) return next(errorHandler(400, 'emailAddress is invalid'));
@@ -89,23 +104,22 @@ export const connectWebmail = async (req, res, next) => {
       return next(errorHandler(400, `SMTP login failed: ${err.message}`));
     }
 
-    // Make sure no other maker owns this mailbox
-    const collision = await MailAccount.findOne({
-      emailAddress: cfg.emailAddress,
-      userId: { $ne: userId },
-    });
-    if (collision) {
-      return next(errorHandler(409, `Mailbox ${cfg.emailAddress} is already linked to another user`));
-    }
-
     const encryptedPassword = encryptSecret(password);
 
+    // For shared mailbox: there can be only ONE per company.
+    // For per-user mailbox: one row per maker.
+    const filter = isShared
+      ? { isShared: true, companyName: resolvedCompany }
+      : { userId, isShared: { $ne: true } };
+
     const saved = await MailAccount.findOneAndUpdate(
-      { userId },
+      filter,
       {
         userId,
         emailAddress: cfg.emailAddress,
-        displayName: displayName || `${maker.firstName} ${maker.lastName}`.trim(),
+        displayName:
+          displayName ||
+          (isShared ? `${resolvedCompany} Sales` : `${maker.firstName} ${maker.lastName}`.trim()),
         encryptedPassword,
         imapHost: cfg.imapHost,
         imapPort: cfg.imapPort,
@@ -114,6 +128,8 @@ export const connectWebmail = async (req, res, next) => {
         smtpPort: cfg.smtpPort,
         smtpSecure: cfg.smtpSecure,
         signature: signature || '',
+        isShared: !!isShared,
+        companyName: resolvedCompany,
         isActive: true,
         consecutiveFailures: 0,
         syncError: '',
@@ -332,6 +348,323 @@ export const syncNow = async (req, res, next) => {
     if (!acc) return next(errorHandler(404, 'Webmail not connected'));
     const result = await syncMailAccount(acc);
     res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Helper: remove an attachment folder from disk for a given email.
+ * Folder = uploads/email-attachments/<userId|shared>/<safeMessageId>/
+ */
+const deleteAttachmentsOnDisk = async (email) => {
+  if (!email?.attachments || email.attachments.length === 0) return;
+  for (const att of email.attachments) {
+    if (!att.storagePath) continue;
+    try {
+      const abs = path.join(process.cwd(), att.storagePath);
+      await fs.promises.unlink(abs);
+    } catch (_) {
+      // file already missing or permission error — ignore
+    }
+  }
+  // Try removing the per-message folder (only succeeds if empty)
+  try {
+    const first = email.attachments.find((a) => a.storagePath);
+    if (first) {
+      const folder = path.dirname(path.join(process.cwd(), first.storagePath));
+      await fs.promises.rmdir(folder);
+    }
+  } catch (_) {}
+};
+
+/**
+ * DELETE /api/webmail/:id
+ * Delete ONE email from the CRM (only if it belongs to the logged-in maker).
+ * Also wipes attachment files from disk.
+ *
+ * Note: this does NOT delete from the cPanel mailbox on the server — only from the CRM DB.
+ */
+export const deleteEmail = async (req, res, next) => {
+  try {
+    const userId = requireAuth(req, next);
+    if (!userId) return;
+
+    const email = await EmailActivity.findOne({ _id: req.params.id, userId });
+    if (!email) {
+      return next(errorHandler(404, 'Email not found or not owned by you'));
+    }
+
+    await deleteAttachmentsOnDisk(email);
+    await EmailActivity.deleteOne({ _id: email._id });
+
+    res.json({ success: true, message: 'Email deleted', data: { id: email._id } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/webmail/thread/:threadId
+ * Delete an ENTIRE conversation for the logged-in maker.
+ */
+export const deleteThread = async (req, res, next) => {
+  try {
+    const userId = requireAuth(req, next);
+    if (!userId) return;
+
+    const emails = await EmailActivity.find({ gmailThreadId: req.params.threadId, userId });
+    if (emails.length === 0) {
+      return next(errorHandler(404, 'No emails found in this thread for you'));
+    }
+
+    for (const email of emails) {
+      await deleteAttachmentsOnDisk(email);
+    }
+    const result = await EmailActivity.deleteMany({
+      gmailThreadId: req.params.threadId,
+      userId,
+    });
+
+    res.json({
+      success: true,
+      message: `Thread deleted (${result.deletedCount} email${result.deletedCount === 1 ? '' : 's'})`,
+      data: { deletedCount: result.deletedCount, threadId: req.params.threadId },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/webmail/bulk-delete
+ * Body: { ids: [emailId, emailId, ...] }
+ * Bulk delete multiple emails owned by the logged-in maker.
+ */
+export const bulkDelete = async (req, res, next) => {
+  try {
+    const userId = requireAuth(req, next);
+    if (!userId) return;
+
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return next(errorHandler(400, 'ids[] is required'));
+    }
+
+    const emails = await EmailActivity.find({ _id: { $in: ids }, userId });
+    for (const email of emails) {
+      await deleteAttachmentsOnDisk(email);
+    }
+    const result = await EmailActivity.deleteMany({ _id: { $in: ids }, userId });
+
+    res.json({
+      success: true,
+      message: `${result.deletedCount} email(s) deleted`,
+      data: { requested: ids.length, deletedCount: result.deletedCount },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/webmail/admin/:id
+ * Admin override — delete ANY email (assigned, unassigned, anyone's).
+ * Use for cleaning the Shared Inbox or removing spam/phishing.
+ */
+export const adminDeleteEmail = async (req, res, next) => {
+  try {
+    const email = await EmailActivity.findById(req.params.id);
+    if (!email) return next(errorHandler(404, 'Email not found'));
+
+    await deleteAttachmentsOnDisk(email);
+    await EmailActivity.deleteOne({ _id: email._id });
+
+    res.json({ success: true, message: 'Email deleted (admin)', data: { id: email._id } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/webmail/admin/thread/:threadId
+ * Admin override — delete an entire conversation regardless of owner.
+ */
+export const adminDeleteThread = async (req, res, next) => {
+  try {
+    const emails = await EmailActivity.find({ gmailThreadId: req.params.threadId });
+    if (emails.length === 0) return next(errorHandler(404, 'Thread not found'));
+
+    for (const email of emails) {
+      await deleteAttachmentsOnDisk(email);
+    }
+    const result = await EmailActivity.deleteMany({ gmailThreadId: req.params.threadId });
+
+    res.json({
+      success: true,
+      message: `Thread deleted (${result.deletedCount} email${result.deletedCount === 1 ? '' : 's'})`,
+      data: { deletedCount: result.deletedCount, threadId: req.params.threadId },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/webmail/admin/shared-inbox?page=1&limit=20&q=&companyName=
+ * Returns unassigned emails (userId = null). Admin only.
+ * By default scoped to the admin's own company; pass ?companyName=All for cross-company view.
+ */
+export const getSharedInbox = async (req, res, next) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const filter = { userId: { $in: [null, undefined] }, direction: 'INBOUND' };
+
+    // Scope by company (default = admin's own company)
+    const company =
+      req.query.companyName !== undefined
+        ? req.query.companyName
+        : req.adminUser?.companyName;
+    if (company && company !== 'All') filter.companyName = company;
+
+    if (req.query.q) {
+      const rx = new RegExp(req.query.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ subject: rx }, { from: rx }, { to: rx }, { body: rx }];
+    }
+
+    const [items, total] = await Promise.all([
+      EmailActivity.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      EmailActivity.countDocuments(filter),
+    ]);
+
+    res.json({
+      success: true,
+      data: { items, page, limit, total, totalPages: Math.ceil(total / limit), companyName: company || 'All' },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/webmail/admin/assign/:emailId
+ * Body: { makerId, createLead?: boolean (default true), leadName? }
+ * Assigns an unassigned email to a maker. Optionally creates a Lead and links it.
+ * Admin only.
+ */
+export const assignEmailToMaker = async (req, res, next) => {
+  try {
+    const { emailId } = req.params;
+    const { makerId, createLead = true, leadName } = req.body;
+
+    if (!makerId) return next(errorHandler(400, 'makerId is required'));
+
+    const email = await EmailActivity.findById(emailId);
+    if (!email) return next(errorHandler(404, 'Email not found'));
+
+    const maker = await Maker.findById(makerId).select('firstName lastName email');
+    if (!maker) return next(errorHandler(404, 'Maker not found'));
+
+    // Auto-create Lead from sender info if requested and not already linked
+    let leadId = email.leadId;
+    if (createLead && !leadId) {
+      const senderEmail = (email.from.match(/<([^>]+)>/)?.[1] || email.from).trim().toLowerCase();
+      let lead = await Lead.findOne({ email: new RegExp(`^${senderEmail}$`, 'i') });
+      if (!lead) {
+        lead = await Lead.create({
+          name: leadName || senderEmail.split('@')[0],
+          email: senderEmail,
+          source: 'Email Inquiry',
+          assignedUserId: makerId,
+          isAssignedLead: true,
+          assignedAt: new Date(),
+          gmailThreadId: email.gmailThreadId,
+          lastEmailAt: new Date(),
+        });
+      } else if (!lead.assignedUserId) {
+        await Lead.findByIdAndUpdate(lead._id, {
+          assignedUserId: makerId,
+          isAssignedLead: true,
+          assignedAt: new Date(),
+        });
+      }
+      leadId = lead._id;
+    }
+
+    // Update this email + the entire thread (so all past + future replies belong to this maker)
+    await EmailActivity.updateMany(
+      { gmailThreadId: email.gmailThreadId },
+      { userId: makerId, ...(leadId ? { leadId } : {}) }
+    );
+
+    // Push socket notification to the assigned maker
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(`user:${makerId}`).emit('webmail:new', {
+          _id: email._id,
+          from: email.from,
+          subject: email.subject,
+          direction: email.direction,
+          leadId,
+          threadId: email.gmailThreadId,
+          createdAt: email.createdAt,
+          assigned: true,
+        });
+      }
+    } catch (_) {}
+
+    res.json({
+      success: true,
+      message: `Email assigned to ${maker.firstName} ${maker.lastName}`,
+      data: { emailId, makerId, leadId },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/webmail/admin/inbox/:makerId
+ * Returns the specified maker's inbox. Admin only.
+ * Same query params as the regular inbox endpoint.
+ */
+export const getMakerInbox = async (req, res, next) => {
+  try {
+    const { makerId } = req.params;
+    if (!makerId) return next(errorHandler(400, 'makerId is required'));
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const filter = { userId: makerId };
+    if (req.query.direction) filter.direction = req.query.direction;
+    if (req.query.leadId) filter.leadId = req.query.leadId;
+    if (req.query.unreadOnly === 'true') filter.isRead = false;
+    if (req.query.q) {
+      const rx = new RegExp(req.query.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ subject: rx }, { from: rx }, { to: rx }, { body: rx }];
+    }
+
+    const [items, total, unread] = await Promise.all([
+      EmailActivity.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('leadId', 'name email mobile leadId')
+        .lean(),
+      EmailActivity.countDocuments(filter),
+      EmailActivity.countDocuments({ userId: makerId, isRead: false, direction: 'INBOUND' }),
+    ]);
+
+    res.json({
+      success: true,
+      data: { items, page, limit, total, unread, totalPages: Math.ceil(total / limit) },
+    });
   } catch (err) {
     next(err);
   }
