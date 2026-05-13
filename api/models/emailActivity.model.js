@@ -11,8 +11,10 @@ const emailActivitySchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Maker',
-    required: true,
+    required: false,
     index: true
+    // Optional: shared-mailbox emails that haven't been assigned yet have userId: null
+    // and live in the Shared/Unassigned Inbox until an admin assigns them.
   },
   gmailMessageId: {
     type: String,
@@ -62,6 +64,13 @@ const emailActivitySchema = new mongoose.Schema({
   }],
   imapUid: { type: Number, default: null },
   // Original IMAP UID on the mailbox (used for delete/move on server)
+  companyName: {
+    type: String,
+    default: '',
+    index: true
+    // Which company this email belongs to (= MailAccount.companyName).
+    // Lets us filter inbox/shared-inbox per brand in multi-company setups.
+  },
   isRead: {
     type: Boolean,
     default: false
@@ -72,11 +81,13 @@ const emailActivitySchema = new mongoose.Schema({
 emailActivitySchema.index({ leadId: 1, createdAt: -1 });
 emailActivitySchema.index({ gmailThreadId: 1 });
 
-// Compound unique index: gmailMessageId per user (prevents cross-user conflicts)
+// Compound unique index: gmailMessageId per user — partial so null userIds don't collide
 emailActivitySchema.index(
   { gmailMessageId: 1, userId: 1 },
-  { unique: true }
+  { unique: true, partialFilterExpression: { userId: { $exists: true, $type: 'objectId' } } }
 );
+// Plain index for messageId lookups (thread resolution, dedup)
+emailActivitySchema.index({ gmailMessageId: 1 });
 
 const EmailActivity = mongoose.model('EmailActivity', emailActivitySchema);
 
