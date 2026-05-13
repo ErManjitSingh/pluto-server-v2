@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import MailAccount from '../models/mailAccount.model.js';
 import EmailActivity from '../models/emailActivity.model.js';
 import Lead from '../models/lead.model.js';
+import Maker from '../models/maker.model.js';
 import { decryptSecret, generateMessageId } from '../utils/mailCrypto.js';
 
 const buildTransport = (account, password) => {
@@ -56,9 +57,33 @@ export const testSmtpConnection = async ({
  * }
  */
 export const sendMailForMaker = async (userId, payload) => {
-  const account = await MailAccount.findOne({ userId, isActive: true }).select('+encryptedPassword');
+  // Look up the maker to know which company they belong to.
+  const maker = await Maker.findById(userId).select('firstName lastName companyName');
+  if (!maker) {
+    const err = new Error('Maker not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!maker.companyName) {
+    const err = new Error('Maker has no companyName set. Contact admin.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Prefer shared mailbox of THIS maker's company; fall back to legacy per-user mailbox.
+  let account = await MailAccount.findOne({
+    isShared: true,
+    isActive: true,
+    companyName: maker.companyName,
+  }).select('+encryptedPassword');
+
   if (!account) {
-    const err = new Error('Webmail not connected for this user');
+    account = await MailAccount.findOne({ userId, isActive: true }).select('+encryptedPassword');
+  }
+  if (!account) {
+    const err = new Error(
+      `No mailbox configured for company "${maker.companyName}". Ask admin to connect it.`
+    );
     err.statusCode = 404;
     throw err;
   }
@@ -66,8 +91,12 @@ export const sendMailForMaker = async (userId, payload) => {
   const password = decryptSecret(account.encryptedPassword);
   const transporter = buildTransport(account, password);
 
-  const fromHeader = account.displayName
-    ? `"${account.displayName}" <${account.emailAddress}>`
+  // Build From header — use the logged-in maker's name so customer sees the rep's name
+  // even though the address is the shared mailbox.
+  const fullName = `${maker.firstName || ''} ${maker.lastName || ''}`.trim();
+  const senderName = fullName || account.displayName || '';
+  const fromHeader = senderName
+    ? `"${senderName}" <${account.emailAddress}>`
     : account.emailAddress;
 
   const domain = account.emailAddress.split('@')[1] || 'crm.local';
@@ -143,6 +172,7 @@ export const sendMailForMaker = async (userId, payload) => {
     body: payload.text || '',
     htmlBody: payload.html || '',
     attachments: attMeta,
+    companyName: account.companyName,
     isRead: true,
   });
 
