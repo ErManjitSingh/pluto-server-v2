@@ -1536,8 +1536,12 @@ export const getConvertedOperationsWithDetails = async (req, res, next) => {
       // Transform hotels to include only day, cityName, propertyName, verified, and remark
       if (transformedOperation.hotels && Array.isArray(transformedOperation.hotels)) {
         transformedOperation.hotels = transformedOperation.hotels.map(hotel => ({
-          day: hotel.day,
+        day: hotel.day,
           cityName: hotel.cityName,
+          cost: hotel.cost,
+          extraAdultRate: hotel.extraAdultRate,
+          extrabedcount: hotel.extrabedcount,
+          roomcount: hotel.roomcount,
           propertyName: hotel.propertyName,
           verified: hotel?.verified,
           remark: hotel?.remark || null
