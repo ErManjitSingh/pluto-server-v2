@@ -45,7 +45,7 @@ const leadSchema = new mongoose.Schema({
       type: String,
       required: false
     },
-   FlightTrainTicket:{
+   flightTrainTicketBooked:{
       type: String,
       required: false
     },
