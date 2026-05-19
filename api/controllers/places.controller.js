@@ -1,14 +1,20 @@
-import Place from "../models/places.model.js";
+import Place, { DEFAULT_OPERATING_DAYS } from "../models/places.model.js";
 import https from "https";
 
+const withOperatingDays = (place) => {
+  const doc = place.toObject ? place.toObject() : { ...place };
+  doc.operatingDays = { ...DEFAULT_OPERATING_DAYS, ...doc.operatingDays };
+  return doc;
+};
+
+const withOperatingDaysList = (places) => places.map(withOperatingDays);
 
 // Get all places for a city
 export const getPlaces = async (req, res) => {
     try {
       const { country, state, city } = req.params;
       const places = await Place.find({ country, stateName: state, city: city });
-      console.log(places)
-      res.json(places);
+      res.json(withOperatingDaysList(places));
     } catch (error) {
       console.error("Error fetching places:", error);
       res.status(500).json({ error: "Internal Server Error" });
@@ -21,7 +27,7 @@ export const getPlaces = async (req, res) => {
       const { country, state, city } = req.params;
       const newPlaceData = { ...req.body, country, stateName: state, city };
       const newPlace = await Place.create(newPlaceData);
-      res.json(newPlace);
+      res.json(withOperatingDays(newPlace));
     } catch (error) {
       console.error("Error adding place:", error);
       res.status(500).json({ error: "Internal Server Error" });
@@ -37,7 +43,7 @@ export const getPlaces = async (req, res) => {
         req.body,
         { new: true }
       );
-      res.json(updatedPlace);
+      res.json(withOperatingDays(updatedPlace));
     } catch (error) {
       console.error("Error editing place:", error);
       res.status(500).json({ error: "Internal Server Error" });
@@ -60,8 +66,7 @@ export const getPlaces = async (req, res) => {
     try {
       const { country, city } = req.params;
       const places = await Place.find({ country, city: city });
-      console.log(places)
-      res.json(places);
+      res.json(withOperatingDaysList(places));
     } catch (error) {
       console.error("Error fetching places:", error);
       res.status(500).json({ error: "Internal Server Error" });
@@ -81,7 +86,7 @@ export const getPlaces = async (req, res) => {
       };
   
       const places = await Place.find(searchCriteria);
-      res.json(places);
+      res.json(withOperatingDaysList(places));
     } catch (error) {
       console.error("Error fetching places:", error);
       res.status(500).json({ error: "Internal Server Error" });
@@ -91,7 +96,7 @@ export const getPlaces = async (req, res) => {
 export const fetchAllPlaces = async (req, res) => {
   try {
     const places = await Place.find({});
-    res.json(places);
+    res.json(withOperatingDaysList(places));
   } catch (error) {
     console.error("Error fetching all places:", error);
     res.status(500).json({ error: "Internal Server Error" });
