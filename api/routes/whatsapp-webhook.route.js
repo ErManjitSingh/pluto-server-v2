@@ -441,7 +441,7 @@ router.get('/messages/unassigned', async (req, res) => {
  */
 router.get('/messages/unassigned/first', async (req, res) => {
   try {
-    const messages = await WhatsappMessage.find({ assignedTo: null })
+ const messages = await WhatsappMessage.find({ assignedTo: null, direction: 'incoming' })
       .sort({ createdAt: 1 })
       .populate('assignedTo', 'name email')
       .lean();
