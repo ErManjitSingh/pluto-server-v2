@@ -9,6 +9,25 @@ import { getNextLeadIdAndPublish, getNextLeadIdAndPublishPrefer } from '../servi
 import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
 
+// --------------------------------------
+// SUPER FAST IN-MEMORY CACHE (read APIs)
+// --------------------------------------
+const cache = new Map();
+const TTL = 5 * 60 * 1000;
+
+const cacheGet = (key) => {
+  const item = cache.get(key);
+  if (!item || item.expire < Date.now()) return null;
+  return item.data;
+};
+
+const cacheSet = (key, data) =>
+  cache.set(key, { data, expire: Date.now() + TTL });
+
+const cacheClear = () => cache.clear();
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 function normalizeMobileForLeadCheck(mobile) {
   if (mobile == null) return null;
   const digits = String(mobile).replace(/\D/g, '');
@@ -121,13 +140,14 @@ export const createLead = async (req, res, next) => {
 
     const newLead = new Lead(leadData);
     const savedLead = await newLead.save();
+    cacheClear();
     
     // Initialize remainingAmount for the new lead
     try {
       if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
         await initializeLeadRemainingAmount(savedLead._id);
         // Fetch the lead with initialized remainingAmount
-        const finalLead = await Lead.findById(savedLead._id);
+        const finalLead = await Lead.findById(savedLead._id).lean();
         return res.status(201).json(finalLead);
       }
     } catch (error) {
@@ -135,7 +155,7 @@ export const createLead = async (req, res, next) => {
       // Return the lead even if initialization fails
     }
     
-    res.status(201).json(savedLead);
+    res.status(201).json(savedLead.toObject ? savedLead.toObject() : savedLead);
   } catch (error) {
     console.error("❌ Lead creation error:", error); // Add this for logs
     next(error);
@@ -147,7 +167,7 @@ export const crmCreateLead = async (req, res, next) => {
   try {
     const { lead_meta_id } = req.body;
     if (lead_meta_id) {
-      const existing = await Lead.findOne({ lead_meta_id });
+      const existing = await Lead.findOne({ lead_meta_id }).lean();
       if (existing) {
         return res.status(200).json({
           message: 'Lead already exists with this lead_meta_id',
@@ -215,12 +235,13 @@ export const crmCreateLead = async (req, res, next) => {
 
     const newLead = new Lead(leadData);
     const savedLead = await newLead.save();
+    cacheClear();
 
     try {
       if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
         await initializeLeadRemainingAmount(savedLead._id);
-        const finalLead = await Lead.findById(savedLead._id);
-        return res.status(201).json({ ...finalLead.toObject(), created: true });
+        const finalLead = await Lead.findById(savedLead._id).lean();
+        return res.status(201).json({ ...finalLead, created: true });
       }
     } catch (error) {
       console.error("Error initializing remaining amount:", error);
@@ -236,11 +257,18 @@ export const crmCreateLead = async (req, res, next) => {
 // For executive/team leader: also includes leads where isAssignedLead true and assignedUserId = their id
 export const getLeads = async (req, res, next) => {
   try {
+    const cacheKey =
+      req.isCommonToken || req.isSimpleToken
+        ? 'leads_common'
+        : `leads_user_${req.user.id}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     let leads;
     
     if (req.isCommonToken || req.isSimpleToken) {
       // If using common token or simple token, get all leads created with these tokens
-      leads = await Lead.find({ isCommonLead: true });
+      leads = await Lead.find({ isCommonLead: true }).lean();
     } else {
       // If using individual token: user's own leads OR leads assigned to them
       leads = await Lead.find({
@@ -248,9 +276,10 @@ export const getLeads = async (req, res, next) => {
           { createdBy: req.user.id, isCommonLead: { $ne: true } },
           { isAssignedLead: true, assignedUserId: req.user.id }
         ]
-      });
+      }).lean();
     }
-    
+
+    cacheSet(cacheKey, leads);
     res.status(200).json(leads);
   } catch (error) {
     next(error);
@@ -261,26 +290,39 @@ export const getLeads = async (req, res, next) => {
 // For executive/team leader: also allows access if lead is assigned to them
 export const getLead = async (req, res, next) => {
   try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const cacheKey =
+      req.isCommonToken || req.isSimpleToken
+        ? `lead_common_${id}`
+        : `lead_user_${req.user.id}_${id}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     let lead;
     
     if (req.isCommonToken || req.isSimpleToken) {
       // If using common token or simple token, find lead that was created with these tokens
       lead = await Lead.findOne({
-        _id: req.params.id,
+        _id: id,
         isCommonLead: true
-      });
+      }).lean();
     } else {
       // If using individual token: user's lead OR lead assigned to them
       lead = await Lead.findOne({
-        _id: req.params.id,
+        _id: id,
         $or: [
           { createdBy: req.user.id, isCommonLead: { $ne: true } },
           { isAssignedLead: true, assignedUserId: req.user.id }
         ]
-      });
+      }).lean();
     }
     
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
+    cacheSet(cacheKey, lead);
     res.status(200).json(lead);
   } catch (error) {
     next(error);
@@ -290,13 +332,17 @@ export const getLead = async (req, res, next) => {
 // Update lead (owner or assignee can update)
 export const updateLead = async (req, res, next) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
     const leadBefore = await Lead.findOne({
       _id: req.params.id,
       $or: [
         { createdBy: req.user.id },
         { isAssignedLead: true, assignedUserId: req.user.id }
       ]
-    });
+    }).lean();
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
     const setPayload = { ...req.body };
@@ -311,9 +357,11 @@ export const updateLead = async (req, res, next) => {
         ]
       },
       { $set: setPayload },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    cacheClear();
 
     // If lead newly assigned/re-assigned, create an immediate Google Calendar "New lead assigned" event
     try {
@@ -360,7 +408,7 @@ export const updateLead = async (req, res, next) => {
       try {
         await recalculateLeadRemainingAmount(updatedLead._id);
         // Fetch the updated lead with recalculated remainingAmount
-        const finalLead = await Lead.findById(updatedLead._id);
+        const finalLead = await Lead.findById(updatedLead._id).lean();
         return res.status(200).json(finalLead);
       } catch (error) {
         console.error("Error recalculating remaining amount:", error);
@@ -378,17 +426,21 @@ export const updateLead = async (req, res, next) => {
 // Delete lead (modified to handle all token types)
 export const deleteLead = async (req, res, next) => {
   try {
-    let deletedLead;
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    let result;
     
     if (req.isCommonToken || req.isSimpleToken) {
       // If using common token or simple token, delete from common leads
-      deletedLead = await Lead.findOneAndDelete({
+      result = await Lead.deleteOne({
         _id: req.params.id,
         isCommonLead: true
       });
     } else {
       // If using individual token: user's leads OR leads assigned to them
-      deletedLead = await Lead.findOneAndDelete({
+      result = await Lead.deleteOne({
         _id: req.params.id,
         $or: [
           { createdBy: req.user.id, isCommonLead: { $ne: true } },
@@ -397,7 +449,8 @@ export const deleteLead = async (req, res, next) => {
       });
     }
     
-    if (!deletedLead) return res.status(404).json({ message: 'Lead not found' });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Lead not found' });
+    cacheClear();
     res.status(200).json({ message: 'Lead deleted successfully' });
   } catch (error) {
     next(error);
@@ -413,18 +466,23 @@ export const deleteMultipleLeads = async (req, res, next) => {
       return res.status(400).json({ message: 'Please provide an array of lead IDs' });
     }
 
+    const validIds = ids.filter((id) => isValidObjectId(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ message: 'No valid lead IDs provided' });
+    }
+
     let result;
     
     if (req.isCommonToken || req.isSimpleToken) {
       // If using common token or simple token, delete from common leads
       result = await Lead.deleteMany({ 
-        _id: { $in: ids },
+        _id: { $in: validIds },
         isCommonLead: true
       });
     } else {
       // If using individual token, delete from user's leads
       result = await Lead.deleteMany({ 
-        _id: { $in: ids },
+        _id: { $in: validIds },
         createdBy: req.user.id,
         isCommonLead: { $ne: true }
       });
@@ -433,6 +491,8 @@ export const deleteMultipleLeads = async (req, res, next) => {
     if (result.deletedCount === 0) {
       return res.status(404).json({ message: 'No leads found to delete' });
     }
+
+    cacheClear();
 
     res.status(200).json({ 
       message: `Successfully deleted ${result.deletedCount} leads`,
@@ -451,6 +511,10 @@ export const getLeadsPublic = async (req, res, next) => {
     const sortBy = req.query.sortBy || 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
     
+    const cacheKey = `leads_public_${page}_${limit}_${sortBy}_${sortOrder}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
     
@@ -458,17 +522,18 @@ export const getLeadsPublic = async (req, res, next) => {
     const sort = {};
     sort[sortBy] = sortOrder;
     
-    // Get total count for pagination info
-    const totalLeads = await Lead.countDocuments({});
+    const [totalLeads, leads] = await Promise.all([
+      Lead.countDocuments({}),
+      Lead.find({})
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
     const totalPages = Math.ceil(totalLeads / limit);
     
-    // Get leads with pagination and sorting
-    const leads = await Lead.find({})
-      .sort(sort)
-      .skip(skip)
-      .limit(limit);
-    
-    res.status(200).json({
+    const data = {
       leads,
       pagination: {
         currentPage: page,
@@ -478,7 +543,10 @@ export const getLeadsPublic = async (req, res, next) => {
         hasPrevPage: page > 1,
         limit
       }
-    });
+    };
+
+    cacheSet(cacheKey, data);
+    res.status(200).json(data);
   } catch (error) {
     next(error);
   }
@@ -487,9 +555,19 @@ export const getLeadsPublic = async (req, res, next) => {
 // Get single lead without token (public API)
 export const getLeadPublic = async (req, res, next) => {
   try {
-    const lead = await Lead.findById(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const cacheKey = `lead_public_${id}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const lead = await Lead.findById(id).lean();
     
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
+    cacheSet(cacheKey, lead);
     res.status(200).json(lead);
   } catch (error) {
     next(error);
@@ -499,7 +577,11 @@ export const getLeadPublic = async (req, res, next) => {
 // Update lead without token (public API)
 export const updateLeadPublic = async (req, res, next) => {
   try {
-    const leadBefore = await Lead.findById(req.params.id);
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const leadBefore = await Lead.findById(req.params.id).lean();
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
     const setPayload = { ...req.body };
@@ -508,10 +590,12 @@ export const updateLeadPublic = async (req, res, next) => {
     const updatedLead = await Lead.findByIdAndUpdate(
       req.params.id,
       { $set: setPayload },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
     
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    cacheClear();
 
     // If lead newly assigned/re-assigned (public), create an immediate Google Calendar "New lead assigned" event
     try {
@@ -558,7 +642,7 @@ export const updateLeadPublic = async (req, res, next) => {
       try {
         await recalculateLeadRemainingAmount(updatedLead._id);
         // Fetch the updated lead with recalculated remainingAmount
-        const finalLead = await Lead.findById(updatedLead._id);
+        const finalLead = await Lead.findById(updatedLead._id).lean();
         return res.status(200).json(finalLead);
       } catch (error) {
         console.error("Error recalculating remaining amount:", error);
@@ -576,9 +660,14 @@ export const updateLeadPublic = async (req, res, next) => {
 // Delete lead without token (public API)
 export const deleteLeadPublic = async (req, res, next) => {
   try {
-    const deletedLead = await Lead.findByIdAndDelete(req.params.id);
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const result = await Lead.deleteOne({ _id: req.params.id });
     
-    if (!deletedLead) return res.status(404).json({ message: 'Lead not found' });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Lead not found' });
+    cacheClear();
     res.status(200).json({ message: 'Lead deleted successfully' });
   } catch (error) {
     next(error);
@@ -594,11 +683,18 @@ export const deleteMultipleLeadsPublic = async (req, res, next) => {
       return res.status(400).json({ message: 'Please provide an array of lead IDs' });
     }
 
-    const result = await Lead.deleteMany({ _id: { $in: ids } });
+    const validIds = ids.filter((id) => isValidObjectId(id));
+    if (validIds.length === 0) {
+      return res.status(400).json({ message: 'No valid lead IDs provided' });
+    }
+
+    const result = await Lead.deleteMany({ _id: { $in: validIds } });
     
     if (result.deletedCount === 0) {
       return res.status(404).json({ message: 'No leads found to delete' });
     }
+
+    cacheClear();
 
     res.status(200).json({ 
       message: `Successfully deleted ${result.deletedCount} leads`,
@@ -613,6 +709,7 @@ export const deleteMultipleLeadsPublic = async (req, res, next) => {
 export const deleteAllLeadsPublic = async (req, res, next) => {
   try {
     const result = await Lead.deleteMany({});
+    cacheClear();
     res.status(200).json({
       message: `Successfully deleted ${result.deletedCount} leads`,
       deletedCount: result.deletedCount
@@ -649,8 +746,10 @@ export const transferLeadToUser = async (req, res, next) => {
         createdBy: userId,
         isCommonLead: false
       },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
+
+    cacheClear();
 
     res.status(200).json({
       message: 'Lead transferred successfully',
@@ -689,6 +788,8 @@ export const transferMultipleLeadsToUser = async (req, res, next) => {
     if (result.modifiedCount === 0) {
       return res.status(404).json({ message: 'No leads found to transfer' });
     }
+
+    cacheClear();
 
     res.status(200).json({
       message: `Successfully transferred ${result.modifiedCount} leads`,
@@ -754,11 +855,17 @@ export const getLeadsByExecutivePhone = async (req, res, next) => {
     if (!executivePhone) {
       return res.status(400).json({ message: 'Executive phone number is required' });
     }
+
+    const cacheKey = `leads_exec_phone_${String(executivePhone).toLowerCase()}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
     
     // Find leads by executivePhone (case-insensitive search)
     const leads = await Lead.find({
       executivePhone: { $regex: executivePhone, $options: 'i' }
-    }).sort({ createdAt: -1 });
+    })
+      .sort({ createdAt: -1 })
+      .lean();
     
     if (leads.length === 0) {
       return res.status(200).json({
@@ -767,12 +874,15 @@ export const getLeadsByExecutivePhone = async (req, res, next) => {
         count: 0
       });
     }
-    
-    res.status(200).json({
+
+    const data = {
       message: 'Leads retrieved successfully',
       leads,
       count: leads.length
-    });
+    };
+    cacheSet(cacheKey, data);
+    
+    res.status(200).json(data);
   } catch (error) {
     next(error);
   }
@@ -792,15 +902,26 @@ export const getLeadsByAssignedUserId = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
     const oid = new mongoose.Types.ObjectId(assignedUserId);
+
+    const cacheKey = `leads_assigned_user_${assignedUserId}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     const leads = await Lead.find({
       assignedUserId: oid,
       isAssignedLead: true
-    }).sort({ createdAt: -1 });
-    res.status(200).json({
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const data = {
       message: 'Leads retrieved successfully',
       leads,
       count: leads.length
-    });
+    };
+    cacheSet(cacheKey, data);
+
+    res.status(200).json(data);
   } catch (error) {
     next(error);
   }
@@ -820,6 +941,11 @@ export const getLeadsByAssignedUserIdBasic = async (req, res, next) => {
       return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
     const oid = new mongoose.Types.ObjectId(assignedUserId);
+
+    const cacheKey = `leads_assigned_user_basic_${assignedUserId}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     const leads = await Lead.find({
       assignedUserId: oid,
       isAssignedLead: true,
@@ -828,6 +954,8 @@ export const getLeadsByAssignedUserIdBasic = async (req, res, next) => {
       .select('name email mobile isseen')
       .sort({ createdAt: -1 })
       .lean();
+
+    cacheSet(cacheKey, leads);
     return res.status(200).json(leads);
   } catch (error) {
     next(error);
@@ -841,19 +969,31 @@ export const getLeadEmails = async (req, res, next) => {
   try {
     const { leadId } = req.params;
 
+    if (!isValidObjectId(leadId)) {
+      return next(errorHandler(400, 'Invalid lead id'));
+    }
+
+    const cacheKey = `lead_emails_${leadId}_${req.isCommonToken || req.isSimpleToken ? 'common' : req.user.id}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
     // Verify lead exists and user has access
     let lead;
     if (req.isCommonToken || req.isSimpleToken) {
       lead = await Lead.findOne({
         _id: leadId,
         isCommonLead: true
-      });
+      })
+        .select('_id')
+        .lean();
     } else {
       lead = await Lead.findOne({
         _id: leadId,
         createdBy: req.user.id,
         isCommonLead: { $ne: true }
-      });
+      })
+        .select('_id')
+        .lean();
     }
 
     if (!lead) {
@@ -868,14 +1008,17 @@ export const getLeadEmails = async (req, res, next) => {
       .populate('userId', 'firstName lastName email')
       .lean();
 
-    res.status(200).json({
+    const data = {
       success: true,
       data: {
         leadId: leadId,
         emails: emails,
         count: emails.length
       }
-    });
+    };
+
+    cacheSet(cacheKey, data);
+    res.status(200).json(data);
   } catch (error) {
     next(error);
   }
@@ -896,6 +1039,7 @@ export const getHelloHarshit = async (req, res, next) => {
 export const syncMetaLeadsController = async (req, res, next) => {
   try {
     const result = await syncMetaLeads();
+    cacheClear();
     res.status(200).json(result);
   } catch (error) {
     console.error('Sync meta leads error:', error);
@@ -908,7 +1052,12 @@ export const syncMetaLeadsController = async (req, res, next) => {
 // GET assigned leads – only leads where isAssignedLead true, for current user (assignedUserId = req.user.id)
 export const getAssignedLeads = async (req, res, next) => {
   try {
-    const leads = await Lead.find({ isAssignedLead: true });
+    const cacheKey = 'assigned_leads_all';
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const leads = await Lead.find({ isAssignedLead: true }).lean();
+    cacheSet(cacheKey, leads);
     res.status(200).json(leads);
   } catch (error) {
     next(error);
@@ -918,7 +1067,12 @@ export const getAssignedLeads = async (req, res, next) => {
 // GET assigned leads where isAssignedLead true and publish "ptw"
 export const getAssignedLeadsPtw = async (req, res, next) => {
   try {
-    const leads = await Lead.find({ isAssignedLead: true, publish: 'ptw' });
+    const cacheKey = 'assigned_leads_ptw';
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const leads = await Lead.find({ isAssignedLead: true, publish: 'ptw' }).lean();
+    cacheSet(cacheKey, leads);
     res.status(200).json(leads);
   } catch (error) {
     next(error);
@@ -928,7 +1082,12 @@ export const getAssignedLeadsPtw = async (req, res, next) => {
 // GET assigned leads where isAssignedLead true and publish "demand"
 export const getAssignedLeadsDemand = async (req, res, next) => {
   try {
-    const leads = await Lead.find({ isAssignedLead: true, publish: 'demand' });
+    const cacheKey = 'assigned_leads_demand';
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const leads = await Lead.find({ isAssignedLead: true, publish: 'demand' }).lean();
+    cacheSet(cacheKey, leads);
     res.status(200).json(leads);
   } catch (error) {
     next(error);
@@ -969,6 +1128,7 @@ export const createAssignedLead = async (req, res, next) => {
     };
     const newLead = new Lead(leadData);
     const savedLead = await newLead.save();
+    cacheClear();
 
     // Create an immediate Google Calendar "New lead assigned" event for the assigned executive (if connected)
     try {
@@ -1002,13 +1162,13 @@ export const createAssignedLead = async (req, res, next) => {
     try {
       if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
         await initializeLeadRemainingAmount(savedLead._id);
-        const finalLead = await Lead.findById(savedLead._id);
+        const finalLead = await Lead.findById(savedLead._id).lean();
         return res.status(201).json(finalLead);
       }
     } catch (error) {
       console.error('Error initializing remaining amount:', error);
     }
-    res.status(201).json(savedLead);
+    res.status(201).json(savedLead.toObject ? savedLead.toObject() : savedLead);
   } catch (error) {
     console.error('Assigned lead creation error:', error);
     next(error);
@@ -1018,7 +1178,11 @@ export const createAssignedLead = async (req, res, next) => {
 // PUT update assigned lead – only if lead is assigned to current user
 export const updateAssignedLead = async (req, res, next) => {
   try {
-    const leadBefore = await Lead.findOne({ _id: req.params.id, isAssignedLead: true });
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const leadBefore = await Lead.findOne({ _id: req.params.id, isAssignedLead: true }).lean();
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
     const setPayload = { ...req.body };
@@ -1030,9 +1194,11 @@ export const updateAssignedLead = async (req, res, next) => {
         isAssignedLead: true
       },
       { $set: setPayload },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    cacheClear();
 
     // If lead newly assigned/re-assigned (assigned-leads flow), create immediate Calendar event
     try {
@@ -1076,7 +1242,7 @@ export const updateAssignedLead = async (req, res, next) => {
     if (req.body.totalAmount !== undefined) {
       try {
         await recalculateLeadRemainingAmount(updatedLead._id);
-        const finalLead = await Lead.findById(updatedLead._id);
+        const finalLead = await Lead.findById(updatedLead._id).lean();
         return res.status(200).json(finalLead);
       } catch (error) {
         console.error('Error recalculating remaining amount:', error);
@@ -1149,6 +1315,8 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
       );
     }
 
+    cacheClear();
+
     res.status(200).json({
       message: `Updated assignedUserId for ${result.modifiedCount} lead(s)`,
       modifiedCount: result.modifiedCount,
@@ -1179,6 +1347,8 @@ export const bulkUpdateIsAssignedLeadPublic = async (req, res, next) => {
 
     const result = await Lead.updateMany({ _id: { $in: ids } }, update);
 
+    cacheClear();
+
     res.status(200).json({
       message: `Updated isAssignedLead for ${result.modifiedCount} lead(s)`,
       modifiedCount: result.modifiedCount,
@@ -1194,12 +1364,17 @@ export const deleteAssignedLead = async (req, res, next) => {
     if (!req.user || !req.user.id) {
       return next(errorHandler(401, 'User not authenticated'));
     }
-    const deletedLead = await Lead.findOneAndDelete({
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const result = await Lead.deleteOne({
       _id: req.params.id,
       isAssignedLead: true,
       assignedUserId: req.user.id
     });
-    if (!deletedLead) return res.status(404).json({ message: 'Lead not found' });
+    if (result.deletedCount === 0) return res.status(404).json({ message: 'Lead not found' });
+    cacheClear();
     res.status(200).json({ message: 'Lead deleted successfully' });
   } catch (error) {
     next(error);
@@ -1235,7 +1410,7 @@ export const updateLeadStatusNote = async (req, res, next) => {
       // googleEventId will be filled after successful Calendar call
     };
 
-    const lead = await Lead.findById(id);
+    const lead = await Lead.findById(id).lean();
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
     const updatedLead = await Lead.findByIdAndUpdate(
@@ -1244,8 +1419,8 @@ export const updateLeadStatusNote = async (req, res, next) => {
         $push: { leadstatusnote: noteEntry },
         $set: { leadStatus: leadstatus }
       },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
 
     const autoSeenLeadStatuses = ['Lost', 'Booked', 'Tour Cancelled', 'Tour Postponed'];
     await LeadStatusNotification.create({
@@ -1295,6 +1470,7 @@ export const updateLeadStatusNote = async (req, res, next) => {
       // Do not block normal notification flow on calendar errors
     }
 
+    cacheClear();
     res.status(200).json(updatedLead);
   } catch (error) {
     next(error);
@@ -1313,6 +1489,7 @@ export const getLeadStatusNotificationsByUserId = async (req, res, next) => {
     if (!userId) {
       return res.status(400).json({ message: 'userId is required' });
     }
+
     const excludedLeadStatusesForUserPanel = ['Lost', 'Booked', 'Tour Cancelled', 'Tour Postponed'];
     const all = await LeadStatusNotification.find({
       userid: userId,
@@ -1338,6 +1515,7 @@ export const getLeadStatusNotificationsByTeamLeaderId = async (req, res, next) =
     if (!teamLeaderId) {
       return res.status(400).json({ message: 'teamLeaderId is required' });
     }
+
     const all = await LeadStatusNotification.find({
       teamleaderid: teamLeaderId
     })
@@ -1361,9 +1539,10 @@ export const markLeadStatusNoteSeen = async (req, res, next) => {
     const updated = await Lead.findOneAndUpdate(
       { _id: leadId, 'leadstatusnote._id': noteId },
       { $set: { 'leadstatusnote.$.seen': true } },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
     if (!updated) return res.status(404).json({ message: 'Lead or lead status note not found' });
+    cacheClear();
     res.status(200).json(updated);
   } catch (error) {
     next(error);
@@ -1387,15 +1566,17 @@ export const markLeadStatusNotificationSeen = async (req, res, next) => {
       { new: true }
     );
     if (leadUpdated) {
+      cacheClear();
       return res.status(200).json({ success: true, message: 'Marked as seen' });
     }
     // Fallback: update LeadStatusNotification
     const updated = await LeadStatusNotification.findByIdAndUpdate(
       id,
       { $set: { seen: true } },
-      { new: true }
-    );
+      { new: true, runValidators: false }
+    ).lean();
     if (!updated) return res.status(404).json({ message: 'Lead status notification not found' });
+    cacheClear();
     res.status(200).json(updated);
   } catch (error) {
     next(error);
@@ -1412,6 +1593,7 @@ export const getLeadStatusNotificationsByManagerId = async (req, res, next) => {
     if (!managerId) {
       return res.status(400).json({ message: 'managerId is required' });
     }
+
     const all = await LeadStatusNotification.find({
       managerid: managerId
     })
@@ -1427,8 +1609,9 @@ export const getLeadStatusNotificationsByManagerId = async (req, res, next) => {
 export const deleteLeadStatusNotification = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const deleted = await LeadStatusNotification.findByIdAndDelete(id);
+    const deleted = await LeadStatusNotification.findByIdAndDelete(id).lean();
     if (!deleted) return res.status(404).json({ message: 'Lead status notification not found' });
+    cacheClear();
     res.status(200).json({ message: 'Lead status note deleted successfully', deleted });
   } catch (error) {
     next(error);
