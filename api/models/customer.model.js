@@ -93,5 +93,6 @@ customerSchema.index({ managername: 1, createdAt: -1 }); // For manager name que
 customerSchema.index({ isSeen: 1, createdAt: -1 }); // For notification queries
 customerSchema.index({ userid: 1, isSeen: 1, createdAt: -1 }); // For user notification queries
 customerSchema.index({ createdAt: -1 }); // For general sorting
+customerSchema.index({ "leadata.publish": 1, createdAt: -1 }); // Filter by lead publish (ptw / demand)
 
 export default mongoose.model("CustomerData", customerSchema);
