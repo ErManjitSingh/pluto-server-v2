@@ -70,6 +70,23 @@ const addSchema = new mongoose.Schema({
 // Add indexes for better query performance
 addSchema.index({ createdAt: -1 }); // Index for sorting by creation date
 addSchema.index({ updatedAt: -1 }); // Index for sorting by update date
+addSchema.index({ "package.duration": 1 }); // Fast duration filtering
+addSchema.index({ "package.duration": 1, "package.state": 1 }); // Fast exact match combo
+addSchema.index(
+  {
+    "package.packageName": "text",
+    "package.state": "text",
+    "package.duration": "text",
+  },
+  {
+    weights: {
+      "package.packageName": 10,
+      "package.state": 5,
+      "package.duration": 3,
+    },
+    name: "package_search_text",
+  }
+);
 
 const Add = mongoose.model('Add', addSchema);
 export default Add;
