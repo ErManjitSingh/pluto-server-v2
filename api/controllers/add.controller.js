@@ -1,11 +1,17 @@
+import mongoose from "mongoose";
 import Add from "../models/add.model.js";
 import { errorHandler } from "../utils/error.js";
 
 // --------------------------------------
-// SUPER FAST IN-MEMORY CACHE
+// SUPER FAST IN-MEMORY CACHE + HELPERS
 // --------------------------------------
 const cache = new Map();
 const TTL = 5 * 60 * 1000; // 5 min
+const MAX_LIMIT = 500;
+const DEFAULT_LIMIT = 400;
+
+let cachedTotal = null;
+let cachedTotalExpire = 0;
 
 const cacheGet = (key) => {
   const item = cache.get(key);
@@ -16,7 +22,99 @@ const cacheGet = (key) => {
 const cacheSet = (key, data) =>
   cache.set(key, { data, expire: Date.now() + TTL });
 
-const cacheClear = () => cache.clear();
+const cacheClear = () => {
+  cache.clear();
+  cachedTotal = null;
+  cachedTotalExpire = 0;
+};
+
+const parsePagination = (query) => {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(
+    MAX_LIMIT,
+    Math.max(1, parseInt(query.limit, 10) || DEFAULT_LIMIT)
+  );
+  return { page, limit, skip: (page - 1) * limit };
+};
+
+const getEstimatedTotal = async () => {
+  if (cachedTotal !== null && cachedTotalExpire > Date.now()) {
+    return cachedTotal;
+  }
+  cachedTotal = await Add.estimatedDocumentCount();
+  cachedTotalExpire = Date.now() + TTL;
+  return cachedTotal;
+};
+
+const buildPagination = (page, limit, total) => {
+  const totalPages = Math.ceil(total / limit) || 0;
+  return {
+    currentPage: page,
+    totalPages,
+    totalItems: total,
+    itemsPerPage: limit,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+};
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const SEARCH_MAX_LIMIT = 50;
+const SEARCH_DEFAULT_LIMIT = 20;
+const SEARCH_MIN_CHARS = 2;
+
+const escapeRegex = (value) =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeSearchText = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+const buildWildcardTextSearch = (value) => {
+  const words = normalizeSearchText(value)
+    .split(" ")
+    .map((w) => w.replace(/[^\w]/gi, ""))
+    .filter((w) => w.length >= SEARCH_MIN_CHARS);
+
+  if (words.length === 0) return "";
+  return words.map((w) => `${w}*`).join(" ");
+};
+
+const stripTextScore = (rows) =>
+  rows.map(({ score: _score, ...rest }) => rest);
+
+const packageProjection = {
+  "package.packageType": 1,
+  "package.packageCategory": 1,
+  "package.packageName": 1,
+  "package.packageImages": 1,
+  "package.state": 1,
+  "package.priceTag": 1,
+  "package.duration": 1,
+  "package.status": 1,
+  "package.displayOrder": 1,
+  "package.hotelCategory": 1,
+  "package.pickupLocation": 1,
+  "package.pickupTransfer": 1,
+  "package.dropLocation": 1,
+  "package.validTill": 1,
+  "package.tourBy": 1,
+  "package.agentPackage": 1,
+  "package.customizablePackage": 1,
+  "package.packagePlaces": 1,
+  "package.themes": 1,
+  "package.tags": 1,
+  metaTitle: 1,
+  metaKeywords: 1,
+  metaDescription: 1,
+  enablePageSchema: 1,
+  focusKeyword: 1,
+  schemaType: 1,
+  images: 1,
+  canonicalTag: 1,
+};
 
 // --------------------------------------
 // CREATE ADD
@@ -24,8 +122,8 @@ const cacheClear = () => cache.clear();
 export const createAdd = async (req, res, next) => {
   try {
     const add = await Add.create(req.body);
-    cacheClear(); // clear for fresh data
-    return res.status(201).json(add);
+    cacheClear();
+    return res.status(201).json(add.toObject ? add.toObject() : add);
   } catch (error) {
     next(error);
   }
@@ -36,38 +134,28 @@ export const createAdd = async (req, res, next) => {
 // --------------------------------------
 export const getAdds = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 400;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(req.query);
 
     const cacheKey = `adds_${page}_${limit}`;
     const cached = cacheGet(cacheKey);
-    if (cached) return res.json(cached);
+    if (cached) return res.status(200).json(cached);
 
     const [adds, total] = await Promise.all([
       Add.find()
-        .sort({ createdAt: -1 })   // FAST because of index
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .lean(),                    // FASTEST output + reduces memory
-      Add.estimatedDocumentCount()  // 100x faster than countDocuments()
+        .lean(),
+      getEstimatedTotal(),
     ]);
 
     const data = {
-      adds, // 🔥 FULL PACKAGE OBJECT INCLUDED (NOT REDUCED)
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPrevPage: page > 1,
-      }
+      adds,
+      pagination: buildPagination(page, limit, total),
     };
 
     cacheSet(cacheKey, data);
     return res.status(200).json(data);
-
   } catch (error) {
     next(error);
   }
@@ -78,11 +166,16 @@ export const getAdds = async (req, res, next) => {
 // --------------------------------------
 export const getAdd = async (req, res, next) => {
   try {
-    const cacheKey = `add_${req.params.id}`;
-    const cached = cacheGet(cacheKey);
-    if (cached) return res.json(cached);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return next(errorHandler(400, "Invalid package id"));
+    }
 
-    const add = await Add.findById(req.params.id).lean();
+    const cacheKey = `add_${id}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const add = await Add.findById(id).lean();
     if (!add) return next(errorHandler(404, "Add not found!"));
 
     cacheSet(cacheKey, add);
@@ -97,8 +190,14 @@ export const getAdd = async (req, res, next) => {
 // --------------------------------------
 export const updateAdd = async (req, res, next) => {
   try {
-    const add = await Add.findByIdAndUpdate(req.params.id, req.body, {
-      new: true
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return next(errorHandler(400, "Invalid package id"));
+    }
+
+    const add = await Add.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: false,
     }).lean();
 
     if (!add) return next(errorHandler(404, "Add not found!"));
@@ -246,10 +345,14 @@ export const updateAddMediaAndCanonical = async (req, res, next) => {
       );
     }
 
+    if (!isValidObjectId(req.params.id)) {
+      return next(errorHandler(400, "Invalid package id"));
+    }
+
     const add = await Add.findByIdAndUpdate(
       req.params.id,
       { $set: updateDoc },
-      { new: true, runValidators: true }
+      { new: true, runValidators: false }
     ).lean();
 
     if (!add) return next(errorHandler(404, "Add not found!"));
@@ -266,8 +369,15 @@ export const updateAddMediaAndCanonical = async (req, res, next) => {
 // --------------------------------------
 export const deleteAdd = async (req, res, next) => {
   try {
-    const add = await Add.findByIdAndDelete(req.params.id).lean();
-    if (!add) return next(errorHandler(404, "Add not found!"));
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return next(errorHandler(400, "Invalid package id"));
+    }
+
+    const result = await Add.deleteOne({ _id: id });
+    if (result.deletedCount === 0) {
+      return next(errorHandler(404, "Add not found!"));
+    }
 
     cacheClear();
     return res.status(200).json("Add has been deleted!");
@@ -283,11 +393,16 @@ export const deleteMultipleAdds = async (req, res, next) => {
   try {
     const { ids } = req.body;
 
-    if (!Array.isArray(ids)) {
-      return next(errorHandler(400, "ids should be an array"));
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return next(errorHandler(400, "ids should be a non-empty array"));
     }
 
-    const result = await Add.deleteMany({ _id: { $in: ids } });
+    const validIds = ids.filter((id) => isValidObjectId(id));
+    if (validIds.length === 0) {
+      return next(errorHandler(400, "No valid ids provided"));
+    }
+
+    const result = await Add.deleteMany({ _id: { $in: validIds } });
 
     if (result.deletedCount === 0) {
       return next(errorHandler(404, "No adds found to delete!"));
@@ -308,63 +423,190 @@ export const deleteMultipleAdds = async (req, res, next) => {
 // --------------------------------------
 export const getPackageOnly = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 400;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(req.query);
 
     const cacheKey = `packageOnly_${page}_${limit}`;
     const cached = cacheGet(cacheKey);
-    if (cached) return res.json(cached);
+    if (cached) return res.status(200).json(cached);
 
-    const adds = await Add.find(
-      {},
-      {
-        "package.packageType": 1,
-        "package.packageCategory": 1,
-        "package.packageName": 1,
-        "package.packageImages": 1,
-        "package.state": 1,
-        "package.priceTag": 1,
-        "package.duration": 1,
-        "package.status": 1,
-        "package.displayOrder": 1,
-        "package.hotelCategory": 1,
-        "package.pickupLocation": 1,
-        "package.pickupTransfer": 1,
-        "package.dropLocation": 1,
-        "package.validTill": 1,
-        "package.tourBy": 1,
-        "package.agentPackage": 1,
-        "package.customizablePackage": 1,
-        "package.packagePlaces": 1,
-        "package.themes": 1,
-        "package.tags": 1,
-        metaTitle: 1,
-        metaKeywords: 1,
-        metaDescription: 1,
-        enablePageSchema: 1,
-        focusKeyword: 1,
-        schemaType: 1,
-        images: 1,
-        canonicalTag: 1,
-      }
-    )
-      .skip(skip)
-      .limit(limit)
-      .lean(); // FASTEST
-
-    const total = await Add.countDocuments();
+    const [packages, total] = await Promise.all([
+      Add.find({}, packageProjection)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      getEstimatedTotal(),
+    ]);
 
     const data = {
-      packages: adds,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalItems: total,
-        itemsPerPage: limit,
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPrevPage: page > 1
+      packages,
+      pagination: buildPagination(page, limit, total),
+    };
+
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --------------------------------------
+// GET PACKAGES BY DURATION + STATE (FAST + TYPO FRIENDLY)
+// --------------------------------------
+export const getPackagesByDurationAndState = async (req, res, next) => {
+  try {
+    const state = (req.query.state || "").trim().replace(/\s+/g, " ");
+    const duration = (req.query.duration || "").trim().toUpperCase();
+
+    if (!state || !duration) {
+      return next(
+        errorHandler(400, "Both query params are required: state and duration")
+      );
+    }
+
+    const cacheKey = `package_filter_${duration}_${state.toLowerCase()}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const rows = await Add.find(
+      {
+        "package.duration": duration,
+        $text: { $search: state },
+      },
+      { score: { $meta: "textScore" } }
+    )
+      .sort({ score: { $meta: "textScore" }, createdAt: -1 })
+      .lean();
+
+    const packages = stripTextScore(rows);
+
+    const data = { packages };
+    cacheSet(cacheKey, data);
+
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --------------------------------------
+// SEARCH PACKAGES (INSTAGRAM-STYLE: FAST + PARTIAL + TYPO FRIENDLY)
+// --------------------------------------
+export const searchPackages = async (req, res, next) => {
+  try {
+    const q = normalizeSearchText(req.query.q || req.query.search);
+    const state = normalizeSearchText(req.query.state);
+    const duration = (req.query.duration || "").trim().toUpperCase();
+    const limit = Math.min(
+      SEARCH_MAX_LIMIT,
+      Math.max(1, parseInt(req.query.limit, 10) || SEARCH_DEFAULT_LIMIT)
+    );
+
+    if (!q && !state && !duration) {
+      return next(
+        errorHandler(400, "Provide at least one of: q, state, or duration")
+      );
+    }
+
+    if (q && q.length < SEARCH_MIN_CHARS && !state && !duration) {
+      return next(
+        errorHandler(
+          400,
+          `Search query must be at least ${SEARCH_MIN_CHARS} characters`
+        )
+      );
+    }
+
+    const cacheKey = `package_search_${q.toLowerCase()}_${state.toLowerCase()}_${duration}_${limit}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const baseFilter = {};
+    if (duration) baseFilter["package.duration"] = duration;
+
+    const collected = [];
+    const seenIds = new Set();
+
+    const appendUnique = (rows) => {
+      for (const row of rows) {
+        const id = String(row._id);
+        if (seenIds.has(id) || collected.length >= limit) continue;
+        seenIds.add(id);
+        collected.push(row);
       }
+    };
+
+    // Duration-only shortcut
+    if (!q && !state && duration) {
+      const rows = await Add.find(baseFilter)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+      const data = { query: { duration }, packages: rows };
+      cacheSet(cacheKey, data);
+      return res.status(200).json(data);
+    }
+
+    // 1) Text index (weighted: packageName > state > duration), prefix wildcard
+    const combinedText = [q, state].filter(Boolean).join(" ");
+    const textSearch = buildWildcardTextSearch(combinedText);
+
+    if (textSearch) {
+      try {
+        const textRows = stripTextScore(
+          await Add.find(
+            { ...baseFilter, $text: { $search: textSearch } },
+            { score: { $meta: "textScore" } }
+          )
+            .sort({ score: { $meta: "textScore" }, createdAt: -1 })
+            .limit(limit)
+            .lean()
+        );
+        appendUnique(textRows);
+      } catch (textErr) {
+        // Bad $text syntax — regex fallback below still runs
+        console.warn("Package text search fallback:", textErr?.message);
+      }
+    }
+
+    // 2) Regex partial match (e.g. "megha" -> "Meghalaya 8days")
+    if (collected.length < limit) {
+      const terms = [];
+      if (q && q.length >= SEARCH_MIN_CHARS) terms.push(q);
+      if (
+        state &&
+        state.length >= SEARCH_MIN_CHARS &&
+        state.toLowerCase() !== q.toLowerCase()
+      ) {
+        terms.push(state);
+      }
+
+      if (terms.length > 0) {
+        const orConditions = terms.flatMap((term) => {
+          const regex = new RegExp(escapeRegex(term), "i");
+          return [
+            { "package.packageName": { $regex: regex } },
+            { "package.state": { $regex: regex } },
+            { "package.duration": { $regex: regex } },
+          ];
+        });
+
+        const regexRows = await Add.find({ ...baseFilter, $or: orConditions })
+          .sort({ createdAt: -1 })
+          .limit(limit)
+          .lean();
+
+        appendUnique(regexRows);
+      }
+    }
+
+    const data = {
+      query: {
+        ...(q && { q }),
+        ...(state && { state }),
+        ...(duration && { duration }),
+      },
+      packages: collected,
     };
 
     cacheSet(cacheKey, data);
