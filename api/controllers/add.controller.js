@@ -615,3 +615,166 @@ export const searchPackages = async (req, res, next) => {
     next(error);
   }
 };
+
+// --------------------------------------
+// GET PACKAGES BY DURATION + STATE (PACKAGE-ONLY FIELDS — FAST)
+// --------------------------------------
+export const getPackagesByDurationAndStateOnly = async (req, res, next) => {
+  try {
+    const state = (req.query.state || "").trim().replace(/\s+/g, " ");
+    const duration = (req.query.duration || "").trim().toUpperCase();
+
+    if (!state || !duration) {
+      return next(
+        errorHandler(400, "Both query params are required: state and duration")
+      );
+    }
+
+    const cacheKey = `package_filter_only_${duration}_${state.toLowerCase()}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const rows = await Add.find(
+      {
+        "package.duration": duration,
+        $text: { $search: state },
+      },
+      { ...packageProjection, score: { $meta: "textScore" } }
+    )
+      .sort({ score: { $meta: "textScore" }, createdAt: -1 })
+      .lean();
+
+    const data = { packages: stripTextScore(rows) };
+    cacheSet(cacheKey, data);
+
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --------------------------------------
+// SEARCH PACKAGES (PACKAGE-ONLY FIELDS — FAST)
+// --------------------------------------
+export const searchPackagesOnly = async (req, res, next) => {
+  try {
+    const q = normalizeSearchText(req.query.q || req.query.search);
+    const state = normalizeSearchText(req.query.state);
+    const duration = (req.query.duration || "").trim().toUpperCase();
+    const limit = Math.min(
+      SEARCH_MAX_LIMIT,
+      Math.max(1, parseInt(req.query.limit, 10) || SEARCH_DEFAULT_LIMIT)
+    );
+
+    if (!q && !state && !duration) {
+      return next(
+        errorHandler(400, "Provide at least one of: q, state, or duration")
+      );
+    }
+
+    if (q && q.length < SEARCH_MIN_CHARS && !state && !duration) {
+      return next(
+        errorHandler(
+          400,
+          `Search query must be at least ${SEARCH_MIN_CHARS} characters`
+        )
+      );
+    }
+
+    const cacheKey = `package_search_only_${q.toLowerCase()}_${state.toLowerCase()}_${duration}_${limit}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const baseFilter = {};
+    if (duration) baseFilter["package.duration"] = duration;
+
+    const collected = [];
+    const seenIds = new Set();
+
+    const appendUnique = (rows) => {
+      for (const row of rows) {
+        const id = String(row._id);
+        if (seenIds.has(id) || collected.length >= limit) continue;
+        seenIds.add(id);
+        collected.push(row);
+      }
+    };
+
+    if (!q && !state && duration) {
+      const rows = await Add.find(baseFilter, packageProjection)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+      const data = { query: { duration }, packages: rows };
+      cacheSet(cacheKey, data);
+      return res.status(200).json(data);
+    }
+
+    const combinedText = [q, state].filter(Boolean).join(" ");
+    const textSearch = buildWildcardTextSearch(combinedText);
+
+    if (textSearch) {
+      try {
+        const textRows = stripTextScore(
+          await Add.find(
+            { ...baseFilter, $text: { $search: textSearch } },
+            { ...packageProjection, score: { $meta: "textScore" } }
+          )
+            .sort({ score: { $meta: "textScore" }, createdAt: -1 })
+            .limit(limit)
+            .lean()
+        );
+        appendUnique(textRows);
+      } catch (textErr) {
+        console.warn("Package text search (only) fallback:", textErr?.message);
+      }
+    }
+
+    if (collected.length < limit) {
+      const terms = [];
+      if (q && q.length >= SEARCH_MIN_CHARS) terms.push(q);
+      if (
+        state &&
+        state.length >= SEARCH_MIN_CHARS &&
+        state.toLowerCase() !== q.toLowerCase()
+      ) {
+        terms.push(state);
+      }
+
+      if (terms.length > 0) {
+        const orConditions = terms.flatMap((term) => {
+          const regex = new RegExp(escapeRegex(term), "i");
+          return [
+            { "package.packageName": { $regex: regex } },
+            { "package.state": { $regex: regex } },
+            { "package.duration": { $regex: regex } },
+          ];
+        });
+
+        const regexRows = await Add.find(
+          { ...baseFilter, $or: orConditions },
+          packageProjection
+        )
+          .sort({ createdAt: -1 })
+          .limit(limit)
+          .lean();
+
+        appendUnique(regexRows);
+      }
+    }
+
+    const data = {
+      query: {
+        ...(q && { q }),
+        ...(state && { state }),
+        ...(duration && { duration }),
+      },
+      packages: collected,
+    };
+
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
