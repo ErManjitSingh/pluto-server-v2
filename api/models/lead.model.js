@@ -196,6 +196,16 @@ const leadSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+// Indexes for fast lead queries (same filters as controller)
+leadSchema.index({ createdAt: -1 });
+leadSchema.index({ isCommonLead: 1, createdAt: -1 });
+leadSchema.index({ createdBy: 1, isCommonLead: 1, createdAt: -1 });
+leadSchema.index({ isAssignedLead: 1, assignedUserId: 1, createdAt: -1 });
+leadSchema.index({ isAssignedLead: 1, assignedUserId: 1, isseen: 1, createdAt: -1 });
+leadSchema.index({ isAssignedLead: 1, publish: 1, createdAt: -1 });
+leadSchema.index({ mobile: 1, publish: 1, createdAt: -1 });
+leadSchema.index({ executivePhone: 1, createdAt: -1 });
+
 const Lead = mongoose.model('Lead', leadSchema);
 
 export default Lead;
