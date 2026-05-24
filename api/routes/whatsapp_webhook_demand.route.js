@@ -26,6 +26,29 @@ function normalizePhone(phone) {
   return String(phone).replace(/\D/g, '').slice(-10);
 }
 
+const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
+
+/** Latest lead createdAt per normalized mobile (last 10 digits). */
+function buildLatestLeadCreatedAtByPhone(leads) {
+  const map = new Map();
+  for (const lead of leads) {
+    const norm = normalizePhone(lead.mobile);
+    if (!norm) continue;
+    const createdAtMs = new Date(lead.createdAt).getTime();
+    if (Number.isNaN(createdAtMs)) continue;
+    const prev = map.get(norm);
+    if (prev == null || createdAtMs > prev) map.set(norm, createdAtMs);
+  }
+  return map;
+}
+
+/** Skip when a lead exists for this phone and that lead is older than 10 days. */
+function shouldSkipPhoneForUnassignedFirst(normPhone, latestLeadByPhone, now = Date.now()) {
+  const latestLeadCreatedAt = latestLeadByPhone.get(normPhone);
+  if (latestLeadCreatedAt == null) return false;
+  return now - latestLeadCreatedAt >= TEN_DAYS_MS;
+}
+
 /** Meta `value.statuses[].errors` when delivery fails — persist for CRM / debugging. */
 function metaStatusErrorsForStorage(status) {
   const raw = status?.errors;
@@ -449,11 +472,18 @@ router.get('/messages/unassigned', async (req, res) => {
 
 /**
  * GET /messages/unassigned/first — Get first message (earliest) per phone where assignedTo is null.
- * No lead check; purely deduplicates by phone and keeps only the first message from each number.
+ * - Deduplicates by phone (normalized last 10 digits: +91, 0780, 091… all match).
+ * - Skip phone if Lead.mobile exists AND latest lead for that phone is older than 10 days.
+ * - Include if no lead OR lead created within last 10 days.
  */
 router.get('/messages/unassigned/first', async (req, res) => {
   try {
-   const messages = await WhatsappMessageDemand.find({ assignedTo: null, direction: 'incoming' })
+    const leads = await Lead.find({ mobile: { $exists: true, $ne: null } })
+      .select('mobile createdAt')
+      .lean();
+    const latestLeadByPhone = buildLatestLeadCreatedAtByPhone(leads);
+
+    const messages = await WhatsappMessageDemand.find({ assignedTo: null, direction: 'incoming' })
       .sort({ createdAt: 1 })
       .populate('assignedTo', 'name email')
       .lean();
@@ -464,6 +494,7 @@ router.get('/messages/unassigned/first', async (req, res) => {
     for (const msg of messages) {
       const normPhone = normalizePhone(msg.phone);
       if (!normPhone) continue;
+      if (shouldSkipPhoneForUnassignedFirst(normPhone, latestLeadByPhone)) continue;
       if (seenPhones.has(normPhone)) continue;
       seenPhones.add(normPhone);
       result.push(msg);
