@@ -7,7 +7,9 @@ import {
   updateAddMediaAndCanonical,
   deleteAdd,
   deleteMultipleAdds,
-  getPackageOnly 
+  getPackageOnly,
+  getPackagesByDurationAndState,
+  searchPackages
 } from '../controllers/add.controller.js';
 
 const router = express.Router();
@@ -16,6 +18,8 @@ router.post('/create', createAdd);
 router.get('/get', getAdds);
 router.get('/get/:id', getAdd);
 router.get('/packages', getPackageOnly);
+router.get('/packages/filter', getPackagesByDurationAndState);
+router.get('/packages/search', searchPackages);
 router.put('/update/:id', updateAdd);
 router.put('/update-media/:id', updateAddMediaAndCanonical);
 router.delete('/delete/:id', deleteAdd);
