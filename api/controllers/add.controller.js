@@ -72,6 +72,17 @@ const normalizeSearchText = (value) =>
     .trim()
     .replace(/\s+/g, " ");
 
+/** Full state name match — ignores case; avoids $text OR on words like "pradesh". */
+const buildExactStateFilter = (state) => {
+  const normalized = normalizeSearchText(state);
+  if (!normalized) return null;
+  return {
+    "package.state": {
+      $regex: new RegExp(`^${escapeRegex(normalized)}$`, "i"),
+    },
+  };
+};
+
 const buildWildcardTextSearch = (value) => {
   const words = normalizeSearchText(value)
     .split(" ")
@@ -451,11 +462,11 @@ export const getPackageOnly = async (req, res, next) => {
 };
 
 // --------------------------------------
-// GET PACKAGES BY DURATION + STATE (FAST + TYPO FRIENDLY)
+// GET PACKAGES BY DURATION + STATE (EXACT STATE — CASE/SPACE INSENSITIVE)
 // --------------------------------------
 export const getPackagesByDurationAndState = async (req, res, next) => {
   try {
-    const state = (req.query.state || "").trim().replace(/\s+/g, " ");
+    const state = normalizeSearchText(req.query.state);
     const duration = (req.query.duration || "").trim().toUpperCase();
 
     if (!state || !duration) {
@@ -468,17 +479,12 @@ export const getPackagesByDurationAndState = async (req, res, next) => {
     const cached = cacheGet(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const rows = await Add.find(
-      {
-        "package.duration": duration,
-        $text: { $search: state },
-      },
-      { score: { $meta: "textScore" } }
-    )
-      .sort({ score: { $meta: "textScore" }, createdAt: -1 })
+    const packages = await Add.find({
+      "package.duration": duration,
+      ...buildExactStateFilter(state),
+    })
+      .sort({ createdAt: -1 })
       .lean();
-
-    const packages = stripTextScore(rows);
 
     const data = { packages };
     cacheSet(cacheKey, data);
@@ -621,7 +627,7 @@ export const searchPackages = async (req, res, next) => {
 // --------------------------------------
 export const getPackagesByDurationAndStateOnly = async (req, res, next) => {
   try {
-    const state = (req.query.state || "").trim().replace(/\s+/g, " ");
+    const state = normalizeSearchText(req.query.state);
     const duration = (req.query.duration || "").trim().toUpperCase();
 
     if (!state || !duration) {
@@ -634,17 +640,17 @@ export const getPackagesByDurationAndStateOnly = async (req, res, next) => {
     const cached = cacheGet(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const rows = await Add.find(
+    const packages = await Add.find(
       {
         "package.duration": duration,
-        $text: { $search: state },
+        ...buildExactStateFilter(state),
       },
-      { ...packageProjection, score: { $meta: "textScore" } }
+      packageProjection
     )
-      .sort({ score: { $meta: "textScore" }, createdAt: -1 })
+      .sort({ createdAt: -1 })
       .lean();
 
-    const data = { packages: stripTextScore(rows) };
+    const data = { packages };
     cacheSet(cacheKey, data);
 
     return res.status(200).json(data);
