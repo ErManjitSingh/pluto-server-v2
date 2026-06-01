@@ -3,6 +3,78 @@ import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 
+const HOTEL_PI_PROJECTION = {
+  basicInfo: 1,
+  location: 1,
+  photosAndVideos: 1,
+  amenities: 1,
+  rooms: 1,
+};
+
+function collapseWhitespace(str) {
+  if (!str || typeof str !== "string") return "";
+  return str.trim().replace(/\s+/g, " ");
+}
+
+function normalizeLocationKey(str) {
+  return collapseWhitespace(str).toLowerCase();
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildLocationRegex(name) {
+  const collapsed = collapseWhitespace(name);
+  if (!collapsed) return null;
+  const pattern = escapeRegex(collapsed).replace(/\s+/g, "\\s+");
+  return new RegExp(`^${pattern}$`, "i");
+}
+
+function dedupeLocationValues(rawValues) {
+  const groups = new Map();
+
+  for (const raw of rawValues) {
+    const collapsed = collapseWhitespace(raw);
+    if (!collapsed) continue;
+
+    const key = normalizeLocationKey(collapsed);
+    if (!groups.has(key)) {
+      groups.set(key, new Map());
+    }
+
+    const variants = groups.get(key);
+    variants.set(collapsed, (variants.get(collapsed) || 0) + 1);
+  }
+
+  const result = [];
+  for (const variants of groups.values()) {
+    let bestDisplay = "";
+    let bestCount = -1;
+
+    for (const [display, count] of variants) {
+      if (
+        count > bestCount ||
+        (count === bestCount && display.localeCompare(bestDisplay, undefined, { sensitivity: "base" }) < 0)
+      ) {
+        bestCount = count;
+        bestDisplay = display;
+      }
+    }
+
+    result.push(bestDisplay);
+  }
+
+  return result.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+async function getDistinctNormalizedLocations(fieldPath) {
+  const values = await Property.distinct(fieldPath, {
+    [fieldPath]: { $exists: true, $nin: [null, ""] },
+  });
+  return dedupeLocationValues(values);
+}
+
 function sanitizeInventoryData(data) {
   const today = new Date(); // Get today's date
   for (const key in data) {
@@ -206,6 +278,110 @@ export const getPropertyById = async (req, res) => {
     });
   } catch (error) {
     // Handle errors and send error response
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getAllHotelStates = async (req, res) => {
+  try {
+    const states = await getDistinctNormalizedLocations("location.state");
+
+    res.status(200).json({
+      success: true,
+      data: states,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getAllHotelCities = async (req, res) => {
+  try {
+    const cities = await getDistinctNormalizedLocations("location.city");
+
+    res.status(200).json({
+      success: true,
+      data: cities,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getHotelsByState = async (req, res) => {
+  const { stateName } = req.params;
+
+  try {
+    const regex = buildLocationRegex(stateName);
+    if (!regex) {
+      return res.status(400).json({
+        success: false,
+        message: "State name is required",
+      });
+    }
+
+    const hotels = await Property.find(
+      { "location.state": { $regex: regex } },
+      HOTEL_PI_PROJECTION
+    );
+
+    if (hotels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No hotels found in state: ${stateName}`,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: hotels,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getHotelsByCityPi = async (req, res) => {
+  const { cityName } = req.params;
+
+  try {
+    const regex = buildLocationRegex(cityName);
+    if (!regex) {
+      return res.status(400).json({
+        success: false,
+        message: "City name is required",
+      });
+    }
+
+    const hotels = await Property.find(
+      { "location.city": { $regex: regex } },
+      HOTEL_PI_PROJECTION
+    );
+
+    if (hotels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No hotels found in city: ${cityName}`,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: hotels,
+    });
+  } catch (error) {
     res.status(500).json({
       success: false,
       message: error.message,
