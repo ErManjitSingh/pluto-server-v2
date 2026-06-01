@@ -389,6 +389,54 @@ export const getHotelsByCityPi = async (req, res) => {
   }
 };
 
+export const getHotelsByPropertyType = async (req, res) => {
+  const { propertyType } = req.params;
+
+  try {
+    const regex = buildLocationRegex(propertyType);
+    if (!regex) {
+      return res.status(400).json({
+        success: false,
+        message: "Property type is required",
+      });
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 25;
+    const skip = (page - 1) * limit;
+
+    const filter = { "basicInfo.propertyType": { $regex: regex } };
+
+    const totalProperties = await Property.countDocuments(filter);
+
+    const hotels = await Property.find(filter, HOTEL_PI_PROJECTION)
+      .skip(skip)
+      .limit(limit);
+
+    const totalPages = Math.ceil(totalProperties / limit) || 0;
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      data: hotels,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalProperties,
+        hasNextPage,
+        hasPrevPage,
+        limit,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const getHotelsByCityName = async (req, res) => {
   const { cityName } = req.params;
 
