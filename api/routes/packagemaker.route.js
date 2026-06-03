@@ -3,7 +3,8 @@ import { handleStep, getProperties, getRoomsById, getPropertyById,
      getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo,
       deletePackageMaker, deleteAllPackageMakerPhotosAndVideos,
       loginPackageMaker, getAllHotelStates, getAllHotelCities,
-      getHotelsByState, getHotelsByCityPi, getHotelsByPropertyType } from '../controllers/packagemaker.controller.js';
+      getHotelsByState, getHotelsByCityPi, getHotelsByPropertyType,
+      getHotelsByPropertyTypeAndLocation } from '../controllers/packagemaker.controller.js';
 
 const router = express.Router();
 router.use(express.json()); 
@@ -25,6 +26,7 @@ router.get('/get-packagemaker-hotel-cities', getAllHotelCities);
 router.get('/get-packagemaker-hotels-by-state/:stateName', getHotelsByState);
 router.get('/get-packagemaker-hotels-by-city-pi/:cityName', getHotelsByCityPi);
 router.get('/get-packagemaker-hotels-by-property-type/:propertyType', getHotelsByPropertyType);
+router.get('/get-packagemaker-hotels-by-filters', getHotelsByPropertyTypeAndLocation);
 //get-basic-property-info/:id
 router.get('/get-packagemaker-basic-info/:id', getBasicPropertyInfo);
 //get-all-basic-property-info
