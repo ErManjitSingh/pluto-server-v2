@@ -1,5 +1,5 @@
 import express from 'express';
-import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,getConvertedOperationsWithoutTransferByLead,getConvertedOperationsWithoutHotelsByLead,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory, getConvertedOperationsByUserIdLite } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,getConvertedOperationsWithoutTransferByLead,getConvertedOperationsWithoutHotelsByLead,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory, getConvertedOperationsByUserIdLite, initializePropertyNightsBooked } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
@@ -44,5 +44,6 @@ router.get('/get-specific-fields/:id', getOperationSpecificFields);
 router.put('/update-specific-fields/:id', updateOperationSpecificFields);
 router.post('/opened', trackOperationOpened);
 router.put('/convert-with-category/:id', convertOperationWithCategory);
+router.post('/initialize-property-nights-booked', initializePropertyNightsBooked);
 
 export default router;
