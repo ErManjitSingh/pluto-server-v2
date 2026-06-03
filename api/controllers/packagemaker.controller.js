@@ -437,6 +437,72 @@ export const getHotelsByPropertyType = async (req, res) => {
   }
 };
 
+export const getHotelsByPropertyTypeAndLocation = async (req, res) => {
+  const { propertyType, cityName, stateName } = req.query;
+
+  try {
+    const propertyTypeRegex = buildLocationRegex(propertyType);
+    if (!propertyTypeRegex) {
+      return res.status(400).json({
+        success: false,
+        message: "Property type is required",
+      });
+    }
+
+    if (!cityName && !stateName) {
+      return res.status(400).json({
+        success: false,
+        message: "Either cityName or stateName is required",
+      });
+    }
+
+    const filter = {
+      "basicInfo.propertyType": { $regex: propertyTypeRegex },
+    };
+
+    if (cityName) {
+      const cityRegex = buildLocationRegex(cityName);
+      if (!cityRegex) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid city name",
+        });
+      }
+      filter["location.city"] = { $regex: cityRegex };
+    }
+
+    if (stateName) {
+      const stateRegex = buildLocationRegex(stateName);
+      if (!stateRegex) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid state name",
+        });
+      }
+      filter["location.state"] = { $regex: stateRegex };
+    }
+
+    const hotels = await Property.find(filter, HOTEL_PI_PROJECTION);
+
+    if (hotels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No hotels found for the given filters",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: hotels,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const getHotelsByCityName = async (req, res) => {
   const { cityName } = req.params;
 
