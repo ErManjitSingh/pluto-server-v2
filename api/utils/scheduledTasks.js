@@ -33,25 +33,34 @@ export const deleteOldNonConvertedOperations = async () => {
 };
 
 /**
+ * Schedule Meta lead sync to run once, then again 3 months after each run.
+ */
+const scheduleMetaLeadSyncEveryThreeMonths = () => {
+  const scheduleNext = () => {
+    const nextRunAt = new Date();
+    nextRunAt.setMonth(nextRunAt.getMonth() + 3);
+
+    setTimeout(async () => {
+      try {
+        await syncMetaLeads();
+      } catch (err) {
+        console.error('❌ Meta lead sync scheduled run error:', err);
+      }
+      scheduleNext();
+    }, nextRunAt.getTime() - Date.now());
+  };
+
+  scheduleNext();
+};
+
+/**
  * Initialize scheduled tasks
  */
 export const initializeScheduledTasks = () => {
   let webmailPolling = false;
 
-  // Daily cleanup at 2:00 AM
-  cron.schedule('0 2 * * *', async () => {
-    console.log('🕐 Running scheduled cleanup of old non-converted operations...');
-    await deleteOldNonConvertedOperations();
-  });
-
-  // Meta (FB/Instagram) lead sync every 3 minutes
-  cron.schedule('*/3 * * * *', async () => {
-    try {
-      await syncMetaLeads();
-    } catch (err) {
-      console.error('❌ Meta lead sync scheduled run error:', err);
-    }
-  });
+  // Meta (FB/Instagram) lead sync — runs every 3 months after the previous run
+  scheduleMetaLeadSyncEveryThreeMonths();
 
   // Webmail IMAP poll — every 60 seconds (with overlap guard)
   cron.schedule('*/1 * * * *', async () => {
