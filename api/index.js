@@ -38,7 +38,6 @@ import hotelFormRouter from './routes/hotelform.route.js';
 import packageApprovalRouter from './routes/packageApproval.route.js';
 import marginRouter from './routes/margin.route.js';
 import finalcostingRouter from './routes/finalcosting.route.js';
-import { initializePropertyNightsBooked } from './controllers/finalcosting.controller.js';
 import updateHotelRouter from './routes/updatehotel.route.js';
 import hotelBookingRouter from './routes/hotelbooking.route.js';
 import cabUserRouter from './routes/cabuser.route.js';
@@ -74,18 +73,10 @@ if (!mongoUri) {
 // Connect MongoDB
 mongoose
   .connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(async () => {
+  .then(() => {
     console.log("✅ MongoDB connected");
     // Initialize scheduled tasks after MongoDB connection
     initializeScheduledTasks();
-    // Initialize property nights booked from existing converted operations
-    // This processes all already converted operations
-    try {
-      await initializePropertyNightsBooked();
-    } catch (error) {
-      console.error("⚠️ Warning: Could not initialize property nights booked:", error.message);
-      // Don't block server startup if this fails
-    }
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
