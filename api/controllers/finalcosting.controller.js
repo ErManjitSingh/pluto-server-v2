@@ -2304,16 +2304,20 @@ export const updateOperationSpecificFields = async (req, res, next) => {
 };
 
 // Initialize property nights booked from all existing converted operations
-// This function runs automatically on server start to process existing converted operations
-export const initializePropertyNightsBooked = async () => {
+export const initializePropertyNightsBooked = async (req, res, next) => {
   try {
-    console.log('🔄 Initializing property nights booked from existing converted operations...');
     const result = await updatePropertyNightsBooked();
-    console.log(`✅ Property nights booked initialized: ${result.updated} properties updated, ${result.totalNightsBooked} total nights booked`);
-    return result;
+    res.status(200).json({
+      message: 'Property nights booked initialized successfully',
+      updated: result.updated,
+      reset: result.reset,
+      totalPropertiesWithBookings: result.totalPropertiesWithBookings,
+      totalNightsBooked: result.totalNightsBooked,
+      results: result.results,
+      resetResults: result.resetResults
+    });
   } catch (error) {
-    console.error('❌ Error initializing property nights booked:', error);
-    throw error;
+    next(error);
   }
 };
 
