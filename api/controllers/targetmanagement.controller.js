@@ -125,10 +125,34 @@ export const getTargetManagementsByUserId = async (req, res, next) => {
   }
 };
 
+const filterTargetsInDocs = async (matchField, matchValue) => {
+  const valueStr = String(matchValue);
+  const queryField = `targets.${matchField}`;
+
+  return TargetManagement.aggregate([
+    { $match: { [queryField]: matchValue } },
+    { $sort: { createdAt: -1 } },
+    {
+      $project: {
+        month: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        targets: {
+          $filter: {
+            input: '$targets',
+            as: 't',
+            cond: { $eq: [{ $toString: `$$t.${matchField}` }, valueStr] },
+          },
+        },
+      },
+    },
+  ]).option({ maxTimeMS: 15000 });
+};
+
 export const getTargetManagementsByTeamLeaderId = async (req, res, next) => {
   try {
     const { teamLeaderId } = req.params;
-    const targets = await runListQuery({ 'targets.teamLeaderId': teamLeaderId });
+    const targets = await filterTargetsInDocs('teamLeaderId', teamLeaderId);
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
@@ -138,7 +162,7 @@ export const getTargetManagementsByTeamLeaderId = async (req, res, next) => {
 export const getTargetManagementsByManagerId = async (req, res, next) => {
   try {
     const { managerId } = req.params;
-    const targets = await runListQuery({ 'targets.managerId': managerId });
+    const targets = await filterTargetsInDocs('managerId', managerId);
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
@@ -148,7 +172,7 @@ export const getTargetManagementsByManagerId = async (req, res, next) => {
 export const getTargetManagementsByCompanyName = async (req, res, next) => {
   try {
     const { companyName } = req.params;
-    const targets = await runListQuery({ 'targets.companyName': companyName });
+    const targets = await filterTargetsInDocs('companyName', companyName);
     return res.status(200).json(targets);
   } catch (error) {
     next(error);
