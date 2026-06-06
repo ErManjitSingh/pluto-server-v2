@@ -934,7 +934,50 @@ export const getAssignedLeadsDemand = async (req, res, next) => {
     next(error);
   }
 };
+const getAssignedLeadsPaginated = async (req, res, next, filter) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
 
+    const sort = {};
+    sort[sortBy] = sortOrder;
+
+    const totalLeads = await Lead.countDocuments(filter);
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    const leads = await Lead.find(filter)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit);
+
+    res.status(200).json({
+      leads,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalLeads,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+        limit,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET assigned PTW leads with pagination (same filter as getAssignedLeadsPtw)
+export const getAssignedLeadsPtwPaginated = async (req, res, next) => {
+  return getAssignedLeadsPaginated(req, res, next, { isAssignedLead: true, publish: 'ptw' });
+};
+
+// GET assigned Demand leads with pagination (same filter as getAssignedLeadsDemand)
+export const getAssignedLeadsDemandPaginated = async (req, res, next) => {
+  return getAssignedLeadsPaginated(req, res, next, { isAssignedLead: true, publish: 'demand' });
+};
 // POST create assigned lead – sets isAssignedLead true and assignedUserId from body
 export const createAssignedLead = async (req, res, next) => {
   try {
