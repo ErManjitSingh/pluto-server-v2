@@ -21,6 +21,8 @@ import {
   getAssignedLeads,
   getAssignedLeadsPtw,
   getAssignedLeadsDemand,
+  getAssignedLeadsPtwPaginated,
+  getAssignedLeadsDemandPaginated,
   createAssignedLead,
   updateAssignedLead,
   bulkUpdateAssignedUserId,
@@ -55,6 +57,8 @@ router.delete('/delete-leads', verifyToken, deleteMultipleLeads);
 router.get('/get-assigned-leads', getAssignedLeads);
 router.get('/get-assigned-leads-ptw', getAssignedLeadsPtw);
 router.get('/get-assigned-leads-demand', getAssignedLeadsDemand);
+router.get('/get-assigned-leads-ptw-paginated', getAssignedLeadsPtwPaginated);
+router.get('/get-assigned-leads-demand-paginated', getAssignedLeadsDemandPaginated);
 router.post('/create-assigned-lead', createAssignedLead);
 router.put('/update-assigned-lead/:id',  updateAssignedLead);
 router.put('/update-assigned-leads-bulk', bulkUpdateAssignedUserId);
