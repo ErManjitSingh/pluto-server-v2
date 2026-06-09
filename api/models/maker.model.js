@@ -62,6 +62,10 @@ const makerSchema = new mongoose.Schema({
     type: String,
     default: 'No'
   },
+   active: {
+    type: Boolean,
+    default: true
+  },
   // Google Calendar integration tokens (stored on maker instead of user)
   googleAccessToken: {
     type: String,
