@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { errorHandler } from '../utils/error.js';
+import Maker from '../models/maker.model.js';
 
 export const verifyToken = async (req, res, next) => {
     try {
@@ -22,7 +23,15 @@ export const verifyToken = async (req, res, next) => {
 
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = { id: decoded.id };
+
+            if (decoded.isMaker) {
+                const maker = await Maker.findById(decoded.id).select('active');
+                if (!maker || maker.active === false) {
+                    return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+                }
+            }
+
+            req.user = { id: decoded.id, isMaker: decoded.isMaker };
             console.log('Token verified successfully for user:', decoded.id);
             next();
         } catch (error) {
