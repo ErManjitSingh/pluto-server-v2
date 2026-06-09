@@ -57,6 +57,10 @@ export const signin = async (req, res, next) => {
             }
         }
 
+        if (isMaker && validUser.active === false) {
+            return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+        }
+
         const validPassword = bcryptjs.compareSync(password, validUser.password);
         if (!validPassword) return next(errorHandler(401, 'Wrong Credentials!'));
 
