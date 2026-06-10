@@ -8,6 +8,7 @@ import { errorHandler } from '../utils/error.js';
 import { encryptSecret } from '../utils/mailCrypto.js';
 import { testImapConnection, syncMailAccount } from '../services/imapService.js';
 import { testSmtpConnection, sendMailForMaker } from '../services/smtpService.js';
+import emailService from '../services/email.service.js';
 import { getIO } from '../socket/socket.js';
 
 const DEFAULTS = {
@@ -281,6 +282,61 @@ export const sendWebmail = async (req, res, next) => {
     res.json({ success: true, message: 'Email sent', data: result });
   } catch (err) {
     if (err.statusCode) return next(errorHandler(err.statusCode, err.message));
+    next(errorHandler(500, `Failed to send email: ${err.message}`));
+  }
+};
+
+/**
+ * POST /api/webmail/send-demand
+ * Public endpoint — no token / company required.
+ * Sends directly from info@demandsetutours.com with optional attachments.
+ * Fields: to, cc, bcc, subject, html, text, replyTo
+ * Files:  attachments[]
+ */
+export const sendMailDemand = async (req, res, next) => {
+  try {
+    const { to, cc, bcc, subject, html, text, replyTo } = req.body;
+    if (!to || !subject || (!html && !text)) {
+      return next(errorHandler(400, 'to, subject and html|text are required'));
+    }
+
+    const attachments = req.files || [];
+    const transporter = emailService.createDemandsetutoursTransporter();
+
+    const mailOptions = {
+      from: '"Demand Setu Tours" <info@demandsetutours.com>',
+      sender: 'info@demandsetutours.com',
+      replyTo: replyTo || 'info@demandsetutours.com',
+      envelope: {
+        from: 'info@demandsetutours.com',
+        to: [to, cc, bcc].filter(Boolean).join(','),
+      },
+      to,
+      cc: cc || undefined,
+      bcc: bcc || undefined,
+      subject,
+      text: text || (html ? html.replace(/<[^>]*>/g, ' ') : ''),
+      html: html || undefined,
+      attachments: attachments.map((a) => ({
+        filename: a.originalname || a.filename,
+        content: a.buffer,
+        contentType: a.mimetype,
+      })),
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: 'Email sent',
+      data: {
+        messageId: info.messageId,
+        accepted: info.accepted,
+        rejected: info.rejected,
+        response: info.response,
+      },
+    });
+  } catch (err) {
     next(errorHandler(500, `Failed to send email: ${err.message}`));
   }
 };
