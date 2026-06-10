@@ -295,9 +295,15 @@ export const sendWebmail = async (req, res, next) => {
  */
 export const sendMailDemand = async (req, res, next) => {
   try {
-    const { to, cc, bcc, subject, html, text, replyTo } = req.body;
+    const { to, cc, bcc, subject, html, text, replyTo } = req.body || {};
     if (!to || !subject || (!html && !text)) {
       return next(errorHandler(400, 'to, subject and html|text are required'));
+    }
+
+    if (!process.env.DEMANDSETUTOURS_EMAIL_PASSWORD) {
+      return next(
+        errorHandler(500, 'Server email is not configured (DEMANDSETUTOURS_EMAIL_PASSWORD)')
+      );
     }
 
     const attachments = req.files || [];
