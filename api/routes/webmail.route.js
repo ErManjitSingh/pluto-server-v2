@@ -7,6 +7,7 @@ import {
   getWebmailStatus,
   disconnectWebmail,
   sendWebmail,
+  sendMailDemand,
   getInbox,
   getThread,
   markRead,
@@ -38,6 +39,9 @@ router.delete('/disconnect', verifyToken, disconnectWebmail);
 
 // Send mail (every maker uses the shared mailbox under the hood)
 router.post('/send', verifyToken, upload.array('attachments', 10), sendWebmail);
+
+// Send mail from info@demandsetutours.com (no token / company required)
+router.post('/send-demand', upload.array('attachments', 10), sendMailDemand);
 
 // Maker's own inbox + threads
 router.get('/inbox', verifyToken, getInbox);
