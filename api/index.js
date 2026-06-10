@@ -60,6 +60,7 @@ import privacyPolicyRouter from './routes/privacy-policy.route.js';
 import googleRouter from './routes/google.route.js';
 import stateExpenseListsRouter from './routes/stateexpenselists.route.js';
 import targetManagementRouter from './routes/targetmanagement.route.js';
+import inventoryBookingRouter from './routes/inventorybooking.route.js';
 
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
@@ -175,6 +176,7 @@ app.use("/api/customerdata", customerRouter);
 app.use("/api/paymentpolicy", paymentPolicyRouter);
 app.use("/api/state-expense-lists", stateExpenseListsRouter);
 app.use("/api/targetmanagement", targetManagementRouter);
+app.use("/api/inventorybooking", inventoryBookingRouter);
 
 
 // -------------------------------------------------------------
