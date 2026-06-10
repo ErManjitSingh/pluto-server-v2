@@ -32,6 +32,15 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024, files: 10 },
 });
 
+/** Only run multer when the client actually sends multipart (booking forms usually send JSON). */
+const optionalAttachments = (req, res, next) => {
+  const ct = req.headers['content-type'] || '';
+  if (ct.includes('multipart/form-data')) {
+    return upload.array('attachments', 10)(req, res, next);
+  }
+  next();
+};
+
 // Connection management (admin sets up the shared mailbox once with isShared: true)
 router.post('/connect', verifyToken, connectWebmail);
 router.get('/status', verifyToken, getWebmailStatus);
@@ -41,7 +50,7 @@ router.delete('/disconnect', verifyToken, disconnectWebmail);
 router.post('/send', verifyToken, upload.array('attachments', 10), sendWebmail);
 
 // Send mail from info@demandsetutours.com (no token / company required)
-router.post('/send-demand', upload.array('attachments', 10), sendMailDemand);
+router.post('/send-demand', optionalAttachments, sendMailDemand);
 
 // Maker's own inbox + threads
 router.get('/inbox', verifyToken, getInbox);
