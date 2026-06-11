@@ -1,18 +1,30 @@
 import nodemailer from 'nodemailer';
 
+// mail.demandsetutours.com is behind Cloudflare (no SMTP on 465).
+// Connect to the Hostinger origin IP; keep TLS SNI as mail.demandsetutours.com.
+const DEMAND_SMTP = {
+  host: process.env.DEMANDSETUTOURS_SMTP_HOST || '119.18.54.120',
+  port: Number(process.env.DEMANDSETUTOURS_SMTP_PORT) || 465,
+  secure: process.env.DEMANDSETUTOURS_SMTP_SECURE !== 'false',
+  tlsName: process.env.DEMANDSETUTOURS_SMTP_TLS_NAME || 'mail.demandsetutours.com',
+  user: 'info@demandsetutours.com',
+};
+
 // Create transporter for demandsetutours.com email
 const createDemandsetutoursTransporter = () => {
   return nodemailer.createTransport({
-    host: 'mail.demandsetutours.com',
-    port: 465,
-    secure: true, // true for 465, false for other ports
+    host: DEMAND_SMTP.host,
+    port: DEMAND_SMTP.port,
+    secure: DEMAND_SMTP.secure,
+    name: DEMAND_SMTP.tlsName,
     auth: {
-      user: 'info@demandsetutours.com',
-      pass: process.env.DEMANDSETUTOURS_EMAIL_PASSWORD || '', // Password should be in environment variables
+      user: DEMAND_SMTP.user,
+      pass: process.env.DEMANDSETUTOURS_EMAIL_PASSWORD || '',
     },
     tls: {
-      rejectUnauthorized: false
-    }
+      rejectUnauthorized: false,
+      servername: DEMAND_SMTP.tlsName,
+    },
   });
 };
 
