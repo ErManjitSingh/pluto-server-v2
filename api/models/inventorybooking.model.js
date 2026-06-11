@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const STATUS_ENUM = ['pending', 'completed', 'rejected'];
+const STATUS_ENUM = ['pending', 'completed', 'rejected' ,'partially_paid'];
 
 const inventoryBookingSchema = new mongoose.Schema(
   {
@@ -39,6 +39,21 @@ const inventoryBookingSchema = new mongoose.Schema(
       type: String,
       enum: STATUS_ENUM,
       default: 'pending',
+    },
+    amountPaid: {
+      type: Number,
+      default: 0,
+    },
+    paymentHistory: {
+      type: [
+        {
+          orderId: { type: String, default: '' },
+          paymentId: { type: String, default: '' },
+          amount: { type: Number, default: '' },
+          paidAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
     },
   },
   { timestamps: true }
