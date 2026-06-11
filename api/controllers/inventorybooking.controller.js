@@ -3,8 +3,60 @@ import InventoryBooking from '../models/inventorybooking.model.js';
 import WebsiteGuest from '../models/websiteguest.model.js';
 import { errorHandler } from '../utils/error.js';
 
-const STATUS_VALUES = ['pending', 'completed', 'rejected'];
+const STATUS_VALUES = ['pending', 'completed', 'rejected', 'partially_paid'];
 
+const getBookingTotalAmount = (pricing = {}) =>
+  Number(
+    pricing.total ?? pricing.grandTotal ?? pricing.totalAmount ?? pricing.finalAmount ?? 0
+  );
+
+export const applyInventoryBookingPayment = async ({
+  bookingId,
+  paidAmount,
+  orderId,
+  paymentId,
+}) => {
+  const booking = await InventoryBooking.findById(bookingId);
+  if (!booking) {
+    const err = new Error('Inventory booking not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const amount = Number(paidAmount);
+  if (!amount || Number.isNaN(amount) || amount <= 0) {
+    const err = new Error('Invalid payment amount');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (orderId && booking.paymentHistory?.some((entry) => entry.orderId === orderId)) {
+    return booking;
+  }
+
+  const newAmountPaid = (booking.amountPaid || 0) + amount;
+  const totalDue = getBookingTotalAmount(booking.pricing);
+
+  let paymentStatus = 'partially_paid';
+  if (newAmountPaid <= 0) {
+    paymentStatus = 'pending';
+  } else if (totalDue > 0 && newAmountPaid >= totalDue) {
+    paymentStatus = 'completed';
+  }
+
+  booking.amountPaid = newAmountPaid;
+  booking.payment = paymentStatus;
+  booking.paymentHistory.push({
+    orderId: orderId || '',
+    paymentId: paymentId || '',
+    amount,
+    paidAt: new Date(),
+  });
+
+  await booking.save();
+  return booking;
+};
+ 
 const signGuestToken = (id, mobile) =>
   jwt.sign({ id, mobile, isWebsiteGuest: true }, process.env.JWT_SECRET, {
     expiresIn: '30d',
@@ -120,16 +172,21 @@ export const getInventoryBookingsByMobile = async (req, res, next) => {
 
 export const updateInventoryBooking = async (req, res, next) => {
   try {
-    const { guest, tourCompleted, payment, ...updateData } = req.body;
+    const { guest, tourCompleted, payment, amountPaid, ...updateData } = req.body;
 
     if (tourCompleted && !STATUS_VALUES.includes(tourCompleted)) {
       return next(
-        errorHandler(400, 'tourCompleted must be pending, completed, or rejected')
+        errorHandler(
+          400,
+          'tourCompleted must be pending, completed, rejected, or partially_paid'
+        )
       );
     }
 
     if (payment && !STATUS_VALUES.includes(payment)) {
-      return next(errorHandler(400, 'payment must be pending, completed, or rejected'));
+      return next(
+        errorHandler(400, 'payment must be pending, completed, rejected, or partially_paid')
+      );
     }
 
     if (guest?.mobile && guest?.password) {
@@ -140,6 +197,7 @@ export const updateInventoryBooking = async (req, res, next) => {
       ...updateData,
       ...(tourCompleted && { tourCompleted }),
       ...(payment && { payment }),
+      ...(amountPaid !== undefined && { amountPaid: Number(amountPaid) }),
       ...(guest && { guest: sanitizeGuestForBooking(guest) }),
     };
 
