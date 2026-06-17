@@ -106,6 +106,24 @@ function emitWhatsappMessageUpdatedToViewRooms(messagePayload) {
   }
 }
 
+/**
+ * Executive real-time notification.
+ * Used for badges / popup alerts when a new customer message arrives.
+ */
+function emitWhatsappExecNotification(messagePayload) {
+  const io = getIO();
+  if (!io) return;
+  const assignedId = messagePayload?.assignedTo?._id ?? messagePayload?.assignedTo;
+  if (!assignedId) return;
+
+  const notificationPayload = { ...messagePayload, source: 'whatsapp' };
+  io.to(`user:${assignedId}`).emit('whatsapp:exec-notification:new', notificationPayload);
+  io.to(`whatsapp:exec-notifications:${assignedId}`).emit(
+    'whatsapp:exec-notification:new',
+    notificationPayload
+  );
+}
+
 function buildIncomingWhatsappMessageCreatePayload(message) {
   const type = message?.type || 'unknown';
 
@@ -318,6 +336,7 @@ router.post('/webhook', async (req, res) => {
       .lean();
     await notifyIncomingWhatsappOnGoogleCalendar(messagePayload);
     emitWhatsappMessageToViewRooms(messagePayload);
+    emitWhatsappExecNotification(messagePayload);
 
     // Real-time for filtered unassigned: emit only if this message would appear in GET /message/unassigned
     const io = getIO();
