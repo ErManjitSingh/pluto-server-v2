@@ -63,6 +63,7 @@ import targetManagementRouter from './routes/targetmanagement.route.js';
 import inventoryBookingRouter from './routes/inventorybooking.route.js';
 import razorpayDemandRouter from './routes/razorpayDemand.route.js';
 import seoListingRouter from './routes/seoListing.route.js';
+import attendanceRouter from './routes/attendance.route.js';
 
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
@@ -181,6 +182,7 @@ app.use("/api/paymentpolicy", paymentPolicyRouter);
 app.use("/api/state-expense-lists", stateExpenseListsRouter);
 app.use("/api/targetmanagement", targetManagementRouter);
 app.use("/api/inventorybooking", inventoryBookingRouter);
+app.use("/api/attendance", attendanceRouter);
 
 
 // -------------------------------------------------------------
