@@ -26,6 +26,22 @@ function normalizePhone(phone) {
   return String(phone).replace(/\D/g, '').slice(-10);
 }
 
+/** Canonical storage format — Meta uses country code (e.g. 917018566969). */
+function normalizePhoneForStorage(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  const last10 = digits.slice(-10);
+  if (last10.length === 10) return `91${last10}`;
+  return digits;
+}
+
+function phoneCandidates(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return [];
+  const last10 = digits.slice(-10);
+  return Array.from(new Set([digits, last10, `91${last10}`, `910${last10}`, `0${last10}`]));
+}
+
 const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 
 /** Latest lead createdAt per normalized mobile (last 10 digits). */
@@ -190,16 +206,11 @@ function buildIncomingWhatsappDemandMessageCreatePayload(message) {
   };
 }
 
-async function latestAssignedExecutiveForPhone(phone) {
-  if (!phone) return null;
-  const digits = String(phone).replace(/\D/g, '');
-  if (!digits) return null;
-  const last10 = digits.slice(-10);
-  const phoneCandidates = Array.from(
-    new Set([digits, last10, `91${last10}`, `910${last10}`, `0${last10}`])
-  );
-  const latestOutgoing = await WhatsappMessageDemand.findOne({
-    phone: { $in: phoneCandidates },
+async function latestAssignedExecutiveForPhone(phone, MessageModel = WhatsappMessageDemand) {
+  const candidates = phoneCandidates(phone);
+  if (!candidates.length) return null;
+  const latestOutgoing = await MessageModel.findOne({
+    phone: { $in: candidates },
     direction: 'outgoing',
     assignedTo: { $ne: null },
   })
@@ -207,6 +218,31 @@ async function latestAssignedExecutiveForPhone(phone) {
     .select('assignedTo')
     .lean();
   return latestOutgoing?.assignedTo || null;
+}
+
+/** Resolve assignee: explicit body param → latest outgoing for phone → assigned lead owner. */
+async function assignedUserIdFromLeadForPhone(phone) {
+  const last10 = normalizePhone(phone);
+  if (!last10) return null;
+  const lead = await Lead.findOne({
+    mobile: { $regex: new RegExp(`${last10}$`) },
+    assignedUserId: { $ne: null },
+  })
+    .sort({ assignedAt: -1, updatedAt: -1, createdAt: -1 })
+    .select('assignedUserId')
+    .lean();
+  return lead?.assignedUserId || null;
+}
+
+async function resolveAssignedExecutiveForPhone(phone, explicitAssignee, MessageModel = WhatsappMessageDemand) {
+  if (isValidObjectId(String(explicitAssignee || ''))) {
+    return String(explicitAssignee);
+  }
+  const fromMessages = await latestAssignedExecutiveForPhone(phone, MessageModel);
+  if (fromMessages) return String(fromMessages);
+  const fromLead = await assignedUserIdFromLeadForPhone(phone);
+  if (fromLead) return String(fromLead);
+  return null;
 }
 
 async function notifyIncomingWhatsappOnGoogleCalendar(messagePayload) {
@@ -332,7 +368,8 @@ router.post('/webhook', async (req, res) => {
     const message = value.messages[0];
 
     const createPayload = buildIncomingWhatsappDemandMessageCreatePayload(message);
-    createPayload.assignedTo = await latestAssignedExecutiveForPhone(createPayload.phone);
+    createPayload.phone = normalizePhoneForStorage(createPayload.phone);
+    createPayload.assignedTo = await resolveAssignedExecutiveForPhone(createPayload.phone, null);
     const doc = await WhatsappMessageDemand.create(createPayload);
 
     if (createPayload.metaMediaId) {
@@ -726,7 +763,7 @@ router.post('/send-reply', async (req, res) => {
     }
 
     // Phone: strip + and spaces (e.g. "917807150922")
-    const to = String(phone).replace(/\D/g, '');
+    const to = normalizePhoneForStorage(phone);
 
     const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
     const payload = {
@@ -758,8 +795,7 @@ router.post('/send-reply', async (req, res) => {
     }
 
     // Save outgoing message to MongoDB for CRM history (only set assignedTo if valid ObjectId)
-    const assigneeInput = executiveId ?? assignedTo;
-    const assigneeId = isValidObjectId(String(assigneeInput || '')) ? String(assigneeInput) : null;
+    const assigneeId = await resolveAssignedExecutiveForPhone(to, executiveId ?? assignedTo);
     const doc = await WhatsappMessageDemand.create({
       phone: to,
       message: String(message),
@@ -833,7 +869,7 @@ router.post('/send-media', async (req, res) => {
       mediaObject.filename = (filename && String(filename).trim()) || filenameFromMediaUrl(mediaLink);
     }
 
-    const to = String(phone).replace(/\D/g, '');
+    const to = normalizePhoneForStorage(phone);
     if (!to.length) {
       return res.status(400).json({ success: false, message: 'Invalid phone number' });
     }
@@ -867,8 +903,7 @@ router.post('/send-media', async (req, res) => {
       });
     }
 
-    const assigneeInput = executiveId ?? assignedTo;
-    const assigneeId = isValidObjectId(String(assigneeInput || '')) ? String(assigneeInput) : null;
+    const assigneeId = await resolveAssignedExecutiveForPhone(to, executiveId ?? assignedTo);
     const displayName =
       mediaType === 'document' ? mediaObject.filename || 'document' : mediaType;
     const summary = `[${mediaType}] ${displayName}${mediaObject.caption ? `: ${mediaObject.caption}` : ''}`;
@@ -1049,7 +1084,7 @@ router.post('/send-template', async (req, res) => {
     }
 
     // Phone: digits only, with country code (e.g. 919876543210)
-    const to = String(phone).replace(/\D/g, '');
+    const to = normalizePhoneForStorage(phone);
     if (!to.length) {
       return res.status(400).json({
         success: false,
@@ -1094,8 +1129,7 @@ router.post('/send-template', async (req, res) => {
       });
     }
 
-    const assigneeInput = executiveId ?? assignedTo;
-    const assigneeId = isValidObjectId(String(assigneeInput || '')) ? String(assigneeInput) : null;
+    const assigneeId = await resolveAssignedExecutiveForPhone(to, executiveId ?? assignedTo);
 
     // Save outgoing template as a message in CRM for history
     const doc = await WhatsappMessageDemand.create({
