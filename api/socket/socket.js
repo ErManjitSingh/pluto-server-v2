@@ -208,6 +208,18 @@ export const initializeSocket = (server) => {
       socket.leave("whatsapp");
     });
 
+    // Executive real-time notifications (incoming customer messages).
+    // Frontend should call `whatsapp:exec-notifications:subscribe` after `user:connect`.
+    socket.on("whatsapp:exec-notifications:subscribe", () => {
+      if (!socket.userId) {
+        socket.emit("error", { message: "Connect using user:connect first" });
+        return;
+      }
+      const room = `whatsapp:exec-notifications:${socket.userId}`;
+      socket.join(room);
+      socket.emit("whatsapp:exec-notifications:subscribed", { room });
+    });
+
     // Real-time list: all messages — initial snapshot + live updates via whatsapp:message:new
     socket.on("whatsapp:subscribe:all", async () => {
       try {
