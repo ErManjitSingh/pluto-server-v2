@@ -116,6 +116,24 @@ function emitWhatsappDemandMessageUpdatedToViewRooms(messagePayload) {
   }
 }
 
+/**
+ * Executive real-time notification (incoming customer messages).
+ * Used for badges / popup alerts when a new WhatsApp demand message arrives.
+ */
+function emitWhatsappDemandExecNotification(messagePayload) {
+  const io = getIO();
+  if (!io) return;
+  const assignedId = messagePayload?.assignedTo?._id ?? messagePayload?.assignedTo;
+  if (!assignedId) return;
+
+  const notificationPayload = { ...messagePayload, source: 'demand' };
+  io.to(`user:${assignedId}`).emit('whatsapp-demand:exec-notification:new', notificationPayload);
+  io.to(`whatsapp:exec-notifications:${assignedId}`).emit(
+    'whatsapp-demand:exec-notification:new',
+    notificationPayload
+  );
+}
+
 function buildIncomingWhatsappDemandMessageCreatePayload(message) {
   const type = message?.type || 'unknown';
 
@@ -326,6 +344,7 @@ router.post('/webhook', async (req, res) => {
       .lean();
     await notifyIncomingWhatsappOnGoogleCalendar(messagePayload);
     emitWhatsappDemandMessageToViewRooms(messagePayload);
+    emitWhatsappDemandExecNotification(messagePayload);
 
     // Real-time for filtered unassigned: emit only if this message would appear in GET /message/unassigned
     const io = getIO();
