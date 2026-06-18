@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
 const seoListingSchema = new mongoose.Schema({
+  category: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    default: ''
+  },
   locationType: {
     type: String,
     enum: ['country', 'state', 'city', 'destination', 'attraction', 'region'],
@@ -171,6 +177,7 @@ const seoListingSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 seoListingSchema.index({ country: 1, state: 1, city: 1 });
+seoListingSchema.index({ category: 1, locationType: 1, isActive: 1 });
 seoListingSchema.index({ locationType: 1, isActive: 1 });
 seoListingSchema.index({ slug: 1 });
 seoListingSchema.index({ tags: 1 });
