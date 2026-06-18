@@ -37,11 +37,11 @@ async function loadMakerSnapshot(userId) {
 
 /**
  * POST /mark — Mark attendance for today (or a given date).
- * Body: { userId, date?, status?, note? }
+ * Body: { userId, date?, status?, note?, image? }
  */
 export const markAttendance = async (req, res, next) => {
   try {
-    const { userId, status = 'present', note } = req.body;
+    const { userId, status = 'present', note, image } = req.body;
     const date = req.body.date ? String(req.body.date).trim() : toDateString();
 
     if (!userId || !isValidObjectId(String(userId))) {
@@ -76,6 +76,7 @@ export const markAttendance = async (req, res, next) => {
       status,
       markedAt: new Date(),
       note: note != null ? String(note).trim() : null,
+      image: image != null ? String(image).trim() : null,
       ...snapshot,
     });
 
@@ -296,7 +297,7 @@ export const getAttendanceByManager = async (req, res, next) => {
 export const updateAttendance = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, note } = req.body;
+    const { status, note, image } = req.body;
 
     if (!isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: 'Invalid attendance id' });
@@ -310,6 +311,7 @@ export const updateAttendance = async (req, res, next) => {
       setFields.status = status;
     }
     if (note !== undefined) setFields.note = note != null ? String(note).trim() : null;
+    if (image !== undefined) setFields.image = image != null ? String(image).trim() : null;
 
     if (Object.keys(setFields).length === 0) {
       return res.status(400).json({ success: false, message: 'Nothing to update' });
