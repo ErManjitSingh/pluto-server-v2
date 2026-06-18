@@ -36,6 +36,7 @@ export const getAllSeoListings = async (req, res) => {
       country,
       state,
       city,
+      category,
       locationType,
       isActive,
       search,
@@ -46,6 +47,7 @@ export const getAllSeoListings = async (req, res) => {
     if (country) filter.country = country;
     if (state) filter.state = state;
     if (city) filter.city = city;
+    if (category) filter.category = String(category).trim().toLowerCase();
     if (locationType) filter.locationType = locationType;
     if (isActive !== undefined) filter.isActive = isActive === 'true';
     if (tag) filter.tags = { $in: [tag] };
@@ -159,6 +161,61 @@ export const getSeoListingsByLocationType = async (req, res) => {
 
     res.status(200).json({
       success: true,
+      data: listings,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalItems: total
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const VALID_LOCATION_TYPES = ['country', 'state', 'city', 'destination', 'attraction', 'region'];
+
+export const getSeoListingsByCategoryAndLocationType = async (req, res) => {
+  try {
+    const { category, locationType } = req.params;
+    const { page = 1, limit = 10, country, state, city } = req.query;
+
+    const normalizedCategory = String(category || '').trim().toLowerCase();
+    if (!normalizedCategory) {
+      return res.status(400).json({ success: false, message: 'category is required' });
+    }
+    if (!VALID_LOCATION_TYPES.includes(locationType)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid locationType. Must be one of: ${VALID_LOCATION_TYPES.join(', ')}`
+      });
+    }
+
+    const filter = {
+      category: normalizedCategory,
+      locationType,
+      isActive: true
+    };
+    if (country) filter.country = country;
+    if (state) filter.state = state;
+    if (city) filter.city = city;
+
+    const skip = (page - 1) * limit;
+
+    const listings = await SeoListing.find(filter)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 });
+
+    const total = await SeoListing.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      category: normalizedCategory,
+      locationType,
       data: listings,
       pagination: {
         currentPage: parseInt(page),
