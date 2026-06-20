@@ -474,19 +474,15 @@ router.get('/messages', async (req, res) => {
 
 /**
  * GET /messages/by-phone/:phone — Get all messages for a specific customer phone.
- * Phone can be with or without country code (e.g. 917807150922 or 7807150922).
+ * Accepts any common Indian format (+91, 91, 0, +910, or 10 digits).
  */
 router.get('/messages/by-phone/:phone', async (req, res) => {
   try {
-    const raw = String(req.params.phone || '').replace(/\D/g, '');
-    if (!raw) {
+    const candidates = phoneCandidates(req.params.phone);
+    if (!candidates.length) {
       return res.status(400).json({ success: false, message: 'Invalid phone' });
     }
-    // Match exact phone or with 91 prefix (e.g. 7807150922 -> 917807150922)
-    const query = raw.length <= 10 && !raw.startsWith('91')
-      ? { $or: [ { phone: raw }, { phone: '91' + raw } ] }
-      : { phone: raw };
-    const messages = await WhatsappMessage.find(query)
+    const messages = await WhatsappMessage.find({ phone: { $in: candidates } })
       .sort({ createdAt: 1 })
       .populate('assignedTo', 'name email')
       .lean();
