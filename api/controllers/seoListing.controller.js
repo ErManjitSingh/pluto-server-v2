@@ -176,32 +176,56 @@ export const getSeoListingsByLocationType = async (req, res) => {
   }
 };
 
-const VALID_LOCATION_TYPES = ['country', 'state', 'city', 'destination', 'attraction', 'region'];
+const CATEGORY_LOCATION_TYPES = ['state', 'city'];
+
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeLocationParam(value) {
+  return decodeURIComponent(String(value || ''))
+    .trim()
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ');
+}
 
 export const getSeoListingsByCategoryAndLocationType = async (req, res) => {
   try {
-    const { category, locationType } = req.params;
-    const { page = 1, limit = 10, country, state, city } = req.query;
+    const { category, locationType, stateOrCity } = req.params;
+    const { page = 1, limit = 10, country } = req.query;
 
     const normalizedCategory = String(category || '').trim().toLowerCase();
+    const locationName = normalizeLocationParam(stateOrCity);
+
     if (!normalizedCategory) {
       return res.status(400).json({ success: false, message: 'category is required' });
     }
-    if (!VALID_LOCATION_TYPES.includes(locationType)) {
+    if (!CATEGORY_LOCATION_TYPES.includes(locationType)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid locationType. Must be one of: ${VALID_LOCATION_TYPES.join(', ')}`
+        message: 'locationType must be "state" or "city"',
       });
     }
+    if (!locationName) {
+      return res.status(400).json({ success: false, message: 'state or city name is required' });
+    }
+
+    const locationRegex = new RegExp(`^${escapeRegex(locationName)}$`, 'i');
 
     const filter = {
       category: normalizedCategory,
       locationType,
-      isActive: true
+      isActive: true,
     };
+
+    // Match DB field based on locationType from frontend
+    if (locationType === 'state') {
+      filter.state = locationRegex;
+    } else {
+      filter.city = locationRegex;
+    }
+
     if (country) filter.country = country;
-    if (state) filter.state = state;
-    if (city) filter.city = city;
 
     const skip = (page - 1) * limit;
 
@@ -216,17 +240,18 @@ export const getSeoListingsByCategoryAndLocationType = async (req, res) => {
       success: true,
       category: normalizedCategory,
       locationType,
+      ...(locationType === 'state' ? { state: locationName } : { city: locationName }),
       data: listings,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(total / limit),
-        totalItems: total
-      }
+        totalItems: total,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
