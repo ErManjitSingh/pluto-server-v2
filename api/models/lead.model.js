@@ -77,6 +77,7 @@ const leadSchema = new mongoose.Schema({
   nights: String,
   noOfRooms: String,
   packageCategory: String,
+  tourType: String,
   packageType: String,
   persons: String,
   publish: String,
