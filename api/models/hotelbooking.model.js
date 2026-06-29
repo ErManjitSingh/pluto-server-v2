@@ -29,6 +29,9 @@ const hotelBookingSchema = new mongoose.Schema(
     totalAmount: {
       type: Number,
     },
+     totalamountwith25: {
+      type: Number,
+    },
     bookingresponse: {
       type: mongoose.Schema.Types.Mixed,
     },
