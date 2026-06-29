@@ -114,6 +114,28 @@ export const updateHotelBooking = async (req, res, next) => {
   }
 };
 
+// Update hotel booking by websiteid
+export const updateHotelBookingByWebsiteId = async (req, res, next) => {
+  try {
+    const { websiteid } = req.params;
+    if (!websiteid) {
+      return res.status(400).json({ message: 'websiteid parameter is required' });
+    }
+
+    const hotelBooking = await HotelBooking.findOneAndUpdate(
+      { websiteid },
+      req.body,
+      { new: true }
+    );
+    if (!hotelBooking) {
+      return res.status(404).json({ message: 'Hotel booking not found' });
+    }
+    res.status(200).json(hotelBooking);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Delete hotel booking
 export const deleteHotelBooking = async (req, res, next) => {
   try {
