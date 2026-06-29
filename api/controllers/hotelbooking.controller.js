@@ -126,3 +126,16 @@ export const deleteHotelBooking = async (req, res, next) => {
     next(error);
   }
 };
+
+// Delete all hotel bookings
+export const deleteAllHotelBookings = async (req, res, next) => {
+  try {
+    const result = await HotelBooking.deleteMany({});
+    res.status(200).json({
+      message: `Successfully deleted ${result.deletedCount} hotel booking(s)`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
