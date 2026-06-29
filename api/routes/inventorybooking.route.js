@@ -6,6 +6,7 @@ import {
   getInventoryBookingsByMobile,
   updateInventoryBooking,
   deleteInventoryBooking,
+  deleteAllInventoryBookings,
   guestLogin,
 } from '../controllers/inventorybooking.controller.js';
 
@@ -18,5 +19,6 @@ router.get('/get-by-mobile/:mobile', getInventoryBookingsByMobile);
 router.get('/get/:id', getInventoryBookingById);
 router.put('/update/:id', updateInventoryBooking);
 router.delete('/delete/:id', deleteInventoryBooking);
+router.delete('/delete-all', deleteAllInventoryBookings);
 
 export default router;
