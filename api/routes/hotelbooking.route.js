@@ -8,6 +8,7 @@ import {
   getHotelBookingsByPropertyName,
   updateBookingResponse,
   updateHotelBooking,
+  updateHotelBookingByWebsiteId,
   deleteHotelBooking,
   deleteAllHotelBookings,
 } from '../controllers/hotelbooking.controller.js';
@@ -21,6 +22,7 @@ router.get('/getbypropertyname', getHotelBookingsByPropertyName);
 router.post('/create', createHotelBooking);
 router.get('/:id', getHotelBookingById);
 router.put('/update/:id', updateHotelBooking);
+router.put('/update-by-websiteid/:websiteid', updateHotelBookingByWebsiteId);
 router.patch('/:id/bookingresponse', updateBookingResponse);
 router.delete('/delete/:id', deleteHotelBooking);
 router.delete('/delete-all', deleteAllHotelBookings);
