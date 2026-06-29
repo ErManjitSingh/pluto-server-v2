@@ -32,6 +32,10 @@ const hotelBookingSchema = new mongoose.Schema(
      totalamountwith25: {
       type: Number,
     },
+     websiteid: {
+      type: String,
+      required: false,
+    },
     customerResponse: {
       status: {
         type: String,
