@@ -44,6 +44,9 @@ const inventoryBookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+     totalamountwith25: {
+      type: Number,
+    },
     paymentHistory: {
       type: [
         {
