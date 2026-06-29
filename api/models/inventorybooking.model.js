@@ -58,6 +58,10 @@ const inventoryBookingSchema = new mongoose.Schema(
         required: false,
       },
     },
+     websiteid: {
+      type: String,
+      required: false,
+    },
     paymentHistory: {
       type: [
         {
