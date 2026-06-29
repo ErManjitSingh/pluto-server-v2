@@ -235,6 +235,19 @@ export const deleteInventoryBooking = async (req, res, next) => {
   }
 };
 
+export const deleteAllInventoryBookings = async (req, res, next) => {
+  try {
+    const result = await InventoryBooking.deleteMany({});
+    res.status(200).json({
+      success: true,
+      message: `Successfully deleted ${result.deletedCount} inventory booking(s)`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const guestLogin = async (req, res, next) => {
   try {
     const { mobile, password } = req.body;
