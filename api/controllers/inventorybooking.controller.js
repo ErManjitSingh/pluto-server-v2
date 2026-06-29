@@ -170,38 +170,94 @@ export const getInventoryBookingsByMobile = async (req, res, next) => {
   }
 };
 
+const buildInventoryBookingUpdatePayload = (body = {}) => {
+  const { guest, tourCompleted, payment, amountPaid, ...updateData } = body;
+
+  return {
+    updateData,
+    guest,
+    tourCompleted,
+    payment,
+    amountPaid,
+    payload: {
+      ...updateData,
+      ...(tourCompleted && { tourCompleted }),
+      ...(payment && { payment }),
+      ...(amountPaid !== undefined && { amountPaid: Number(amountPaid) }),
+      ...(guest && { guest: sanitizeGuestForBooking(guest) }),
+    },
+  };
+};
+
+const validateInventoryBookingStatusFields = (tourCompleted, payment, next) => {
+  if (tourCompleted && !STATUS_VALUES.includes(tourCompleted)) {
+    return next(
+      errorHandler(
+        400,
+        'tourCompleted must be pending, completed, rejected, or partially_paid'
+      )
+    );
+  }
+
+  if (payment && !STATUS_VALUES.includes(payment)) {
+    return next(
+      errorHandler(400, 'payment must be pending, completed, rejected, or partially_paid')
+    );
+  }
+
+  return true;
+};
+
 export const updateInventoryBooking = async (req, res, next) => {
   try {
-    const { guest, tourCompleted, payment, amountPaid, ...updateData } = req.body;
+    const { guest, tourCompleted, payment, amountPaid, payload } =
+      buildInventoryBookingUpdatePayload(req.body);
 
-    if (tourCompleted && !STATUS_VALUES.includes(tourCompleted)) {
-      return next(
-        errorHandler(
-          400,
-          'tourCompleted must be pending, completed, rejected, or partially_paid'
-        )
-      );
-    }
-
-    if (payment && !STATUS_VALUES.includes(payment)) {
-      return next(
-        errorHandler(400, 'payment must be pending, completed, rejected, or partially_paid')
-      );
+    if (validateInventoryBookingStatusFields(tourCompleted, payment, next) !== true) {
+      return;
     }
 
     if (guest?.mobile && guest?.password) {
       await upsertWebsiteGuest(guest);
     }
 
-    const payload = {
-      ...updateData,
-      ...(tourCompleted && { tourCompleted }),
-      ...(payment && { payment }),
-      ...(amountPaid !== undefined && { amountPaid: Number(amountPaid) }),
-      ...(guest && { guest: sanitizeGuestForBooking(guest) }),
-    };
-
     const booking = await InventoryBooking.findByIdAndUpdate(req.params.id, payload, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!booking) {
+      return next(errorHandler(404, 'Inventory booking not found'));
+    }
+
+    res.status(200).json({
+      success: true,
+      data: booking,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateInventoryBookingByWebsiteId = async (req, res, next) => {
+  try {
+    const { websiteid } = req.params;
+    if (!websiteid) {
+      return next(errorHandler(400, 'websiteid parameter is required'));
+    }
+
+    const { guest, tourCompleted, payment, amountPaid, payload } =
+      buildInventoryBookingUpdatePayload(req.body);
+
+    if (validateInventoryBookingStatusFields(tourCompleted, payment, next) !== true) {
+      return;
+    }
+
+    if (guest?.mobile && guest?.password) {
+      await upsertWebsiteGuest(guest);
+    }
+
+    const booking = await InventoryBooking.findOneAndUpdate({ websiteid }, payload, {
       new: true,
       runValidators: true,
     });
