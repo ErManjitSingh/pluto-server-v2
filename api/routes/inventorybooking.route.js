@@ -5,6 +5,7 @@ import {
   getInventoryBookingById,
   getInventoryBookingsByMobile,
   updateInventoryBooking,
+  updateInventoryBookingByWebsiteId,
   deleteInventoryBooking,
   deleteAllInventoryBookings,
   guestLogin,
@@ -18,6 +19,7 @@ router.get('/get', getAllInventoryBookings);
 router.get('/get-by-mobile/:mobile', getInventoryBookingsByMobile);
 router.get('/get/:id', getInventoryBookingById);
 router.put('/update/:id', updateInventoryBooking);
+router.put('/update-by-websiteid/:websiteid', updateInventoryBookingByWebsiteId);
 router.delete('/delete/:id', deleteInventoryBooking);
 router.delete('/delete-all', deleteAllInventoryBookings);
 
