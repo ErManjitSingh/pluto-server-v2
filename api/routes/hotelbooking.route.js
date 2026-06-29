@@ -9,6 +9,7 @@ import {
   updateBookingResponse,
   updateHotelBooking,
   deleteHotelBooking,
+  deleteAllHotelBookings,
 } from '../controllers/hotelbooking.controller.js';
 
 const router = express.Router();
@@ -22,5 +23,6 @@ router.get('/:id', getHotelBookingById);
 router.put('/update/:id', updateHotelBooking);
 router.patch('/:id/bookingresponse', updateBookingResponse);
 router.delete('/delete/:id', deleteHotelBooking);
+router.delete('/delete-all', deleteAllHotelBookings);
 
 export default router;
