@@ -32,6 +32,17 @@ const hotelBookingSchema = new mongoose.Schema(
      totalamountwith25: {
       type: Number,
     },
+    customerResponse: {
+      status: {
+        type: String,
+        enum: ['cancel', 'accepted'],
+        required: false,
+      },
+      note: {
+        type: String,
+        required: false,
+      },
+    },
     bookingresponse: {
       type: mongoose.Schema.Types.Mixed,
     },
