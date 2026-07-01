@@ -47,6 +47,11 @@ const inventoryBookingSchema = new mongoose.Schema(
      totalamountwith25: {
       type: Number,
     },
+      hotelResponse :{
+      type: String,
+      enum: ['cancel', 'accepted','rejected'],
+      required: false,
+    },
     customerResponse: {
       status: {
         type: String,
