@@ -3,6 +3,35 @@ import Lead from '../models/lead.model.js';
 import { errorHandler } from '../utils/error.js';
 import bcryptjs from 'bcryptjs';
 
+const BCRYPT_HASH_REGEX = /^\$2[aby]\$\d+\$.{53}$/;
+
+const stripPasswordFromResponse = (maker) => {
+  const obj = maker.toObject ? maker.toObject() : { ...maker };
+  delete obj.password;
+  return obj;
+};
+
+const applyPasswordUpdate = (updateData) => {
+  let rawNewPassword = updateData.newPassword;
+  delete updateData.newPassword;
+
+  if (rawNewPassword == null && typeof updateData.password === 'string') {
+    const candidate = updateData.password.trim();
+    if (candidate.length > 0 && !BCRYPT_HASH_REGEX.test(candidate)) {
+      rawNewPassword = candidate;
+    }
+  }
+
+  delete updateData.password;
+
+  if (typeof rawNewPassword === 'string') {
+    const nextPassword = rawNewPassword.trim();
+    if (nextPassword.length > 0) {
+      updateData.password = bcryptjs.hashSync(nextPassword, 10);
+    }
+  }
+};
+
 export const createMaker = async (req, res, next) => {
   // Ensure all required fields are present
   const requiredFields = ['firstName', 'lastName', 'dateOfBirth',  
@@ -24,7 +53,7 @@ export const createMaker = async (req, res, next) => {
       password: hashedPassword
     });
     
-    return res.status(201).json(maker);
+    return res.status(201).json(stripPasswordFromResponse(maker));
   } catch (error) {
     console.log('Database error:', error);
     
@@ -48,7 +77,7 @@ export const createMaker = async (req, res, next) => {
 
 export const getMakers = async (req, res, next) => {
   try {
-    const makers = await Maker.find();
+    const makers = await Maker.find().select('-password');
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -83,7 +112,7 @@ export const getMakerById = async (req, res, next) => {
       req.params.id,
       { $set: { lastFetch: new Date() } },
       { new: true }
-    );
+    ).select('-password');
     if (!maker) {
       return next(errorHandler(404, 'Maker not found'));
     }
@@ -108,28 +137,15 @@ export const updateMaker = async (req, res, next) => {
   try {
     const { id } = req.params;
     const updateData = { ...req.body };
-    
-    // Never change password unless an explicit new password is provided
-    // (prevents accidental overwrites from empty string / hashed password coming from frontend)
-    if (typeof updateData.password === 'string') {
-      const nextPassword = updateData.password.trim();
-      if (nextPassword.length > 0) {
-        updateData.password = bcryptjs.hashSync(nextPassword, 10);
-      } else {
-        delete updateData.password;
-      }
-    } else {
-      delete updateData.password;
-    }
-    
-    // Remove _id from update data if present
+
+    applyPasswordUpdate(updateData);
     delete updateData._id;
-    
+
     const updatedMaker = await Maker.findByIdAndUpdate(
       id,
-      updateData,
+      { $set: updateData },
       { new: true, runValidators: true }
-    );
+    ).select('-password');
     
     if (!updatedMaker) {
       return next(errorHandler(404, 'Maker not found'));
