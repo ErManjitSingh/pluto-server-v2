@@ -18,6 +18,9 @@ const websiteGuestSchema = new mongoose.Schema(
     email: {
       type: String,
       trim: true,
+      lowercase: true,
+      sparse: true,
+      unique: true,
     },
     country: {
       type: String,
@@ -25,13 +28,36 @@ const websiteGuestSchema = new mongoose.Schema(
     },
     mobile: {
       type: String,
-      required: true,
-      unique: true,
       trim: true,
+      sparse: true,
+      unique: true,
+    },
+    photoURL: {
+      type: String,
+      trim: true,
+    },
+    googleId: {
+      type: String,
+      trim: true,
+      sparse: true,
+      unique: true,
+    },
+    firebaseUid: {
+      type: String,
+      trim: true,
+      sparse: true,
+      unique: true,
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    mobileVerified: {
+      type: Boolean,
+      default: false,
     },
     password: {
       type: String,
-      required: true,
       select: false,
     },
   },
@@ -39,12 +65,13 @@ const websiteGuestSchema = new mongoose.Schema(
 );
 
 websiteGuestSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || !this.password) return next();
   this.password = await bcrypt.hash(this.password, 12);
   next();
 });
 
 websiteGuestSchema.methods.comparePassword = async function (candidatePassword) {
+  if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
 };
 
