@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  firebaseGuestLogin,
   googleGuestLogin,
   sendGuestOtp,
   verifyGuestOtp,
@@ -10,6 +11,7 @@ import { verifyGuestToken } from '../middleware/verifyGuest.js';
 
 const router = express.Router();
 
+router.post('/firebase', firebaseGuestLogin);
 router.post('/google', googleGuestLogin);
 router.post('/send-otp', sendGuestOtp);
 router.post('/verify-otp', verifyGuestOtp);
