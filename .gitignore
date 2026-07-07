@@ -1,6 +1,7 @@
 # .gitignore
 node_modules/
 .env
+api/config/firebase-service-account.json
 uploads/
 .vscode/
 .idea/
