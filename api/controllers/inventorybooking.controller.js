@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import InventoryBooking from '../models/inventorybooking.model.js';
 import WebsiteGuest from '../models/websiteguest.model.js';
 import { errorHandler } from '../utils/error.js';
+import { normalizeMobile, normalizeEmail } from '../utils/guestAuth.js';
 
 const STATUS_VALUES = ['pending', 'completed', 'rejected', 'partially_paid'];
 
@@ -9,6 +10,31 @@ const getBookingTotalAmount = (pricing = {}) =>
   Number(
     pricing.total ?? pricing.grandTotal ?? pricing.totalAmount ?? pricing.finalAmount ?? 0
   );
+
+
+const resolveUserIdForBooking = async (req, guest = {}) => {
+  if (req.guestUser?.id) {
+    return req.guestUser.id;
+  }
+
+  const normalizedMobile = normalizeMobile(guest.mobile);
+  if (normalizedMobile) {
+    const guestByMobile = await WebsiteGuest.findOne({ mobile: normalizedMobile });
+    if (guestByMobile) {
+      return guestByMobile._id;
+    }
+  }
+
+  const normalizedEmail = normalizeEmail(guest.email);
+  if (normalizedEmail) {
+    const guestByEmail = await WebsiteGuest.findOne({ email: normalizedEmail });
+    if (guestByEmail) {
+      return guestByEmail._id;
+    }
+  }
+
+  return null;
+};
 
 export const applyInventoryBookingPayment = async ({
   bookingId,
@@ -62,39 +88,14 @@ const signGuestToken = (id, mobile) =>
     expiresIn: '30d',
   });
 
-const upsertWebsiteGuest = async (guest) => {
-  if (!guest?.mobile || !guest?.password) {
-    return null;
-  }
-
-  const existingGuest = await WebsiteGuest.findOne({ mobile: guest.mobile }).select(
-    '+password'
-  );
-
-  if (existingGuest) {
-    existingGuest.firstName = guest.firstName ?? existingGuest.firstName;
-    existingGuest.lastName = guest.lastName ?? existingGuest.lastName;
-    existingGuest.fullName = guest.fullName ?? existingGuest.fullName;
-    existingGuest.email = guest.email ?? existingGuest.email;
-    existingGuest.country = guest.country ?? existingGuest.country;
-    existingGuest.password = guest.password;
-    await existingGuest.save();
-    return existingGuest;
-  }
-
-  return WebsiteGuest.create({
-    firstName: guest.firstName,
-    lastName: guest.lastName,
-    fullName: guest.fullName,
-    email: guest.email,
-    country: guest.country,
-    mobile: guest.mobile,
-    password: guest.password,
-  });
-};
-
 const sanitizeGuestForBooking = (guest = {}) => {
   const guestData = { ...guest };
+  if (guestData.mobile !== undefined) {
+    guestData.mobile = normalizeMobile(guestData.mobile);
+  }
+  if (guestData.email !== undefined) {
+    guestData.email = normalizeEmail(guestData.email);
+  }
   delete guestData.password;
   return guestData;
 };
@@ -102,13 +103,15 @@ const sanitizeGuestForBooking = (guest = {}) => {
 export const createInventoryBooking = async (req, res, next) => {
   try {
     const { guest, ...bookingData } = req.body;
-
-    if (guest?.mobile && guest?.password) {
-      await upsertWebsiteGuest(guest);
+    if (guest?.mobile && !normalizeMobile(guest.mobile)) {
+      return next(errorHandler(400, 'Mobile number must contain at least 10 digits'));
     }
+
+    const userId = await resolveUserIdForBooking(req, guest);
 
     const booking = await InventoryBooking.create({
       ...bookingData,
+      userId,
       guest: sanitizeGuestForBooking(guest),
       bookingType: bookingData.bookingType || 'inventory',
     });
@@ -157,7 +160,48 @@ export const getInventoryBookingsByMobile = async (req, res, next) => {
       return next(errorHandler(400, 'Mobile number is required'));
     }
 
-    const bookings = await InventoryBooking.find({ 'guest.mobile': mobile }).sort({
+    const normalizedMobile = normalizeMobile(mobile);
+    if (!normalizedMobile) {
+      return next(errorHandler(400, 'Mobile number must contain at least 10 digits'));
+    }
+
+    const bookings = await InventoryBooking.find({ 'guest.mobile': normalizedMobile }).sort({
+      createdAt: -1,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: bookings,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getInventoryBookingsByEmail = async (req, res, next) => {
+  try {
+    const { email } = req.params;
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      return next(errorHandler(400, 'Email is required'));
+    }
+
+    const bookings = await InventoryBooking.find({ 'guest.email': normalizedEmail }).sort({
+      createdAt: -1,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: bookings,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyInventoryBookings = async (req, res, next) => {
+  try {
+    const bookings = await InventoryBooking.find({ userId: req.guestUser.id }).sort({
       createdAt: -1,
     });
 
@@ -217,8 +261,8 @@ export const updateInventoryBooking = async (req, res, next) => {
       return;
     }
 
-    if (guest?.mobile && guest?.password) {
-      await upsertWebsiteGuest(guest);
+    if (guest?.mobile && !normalizeMobile(guest.mobile)) {
+      return next(errorHandler(400, 'Mobile number must contain at least 10 digits'));
     }
 
     const booking = await InventoryBooking.findByIdAndUpdate(req.params.id, payload, {
@@ -253,8 +297,8 @@ export const updateInventoryBookingByWebsiteId = async (req, res, next) => {
       return;
     }
 
-    if (guest?.mobile && guest?.password) {
-      await upsertWebsiteGuest(guest);
+    if (guest?.mobile && !normalizeMobile(guest.mobile)) {
+      return next(errorHandler(400, 'Mobile number must contain at least 10 digits'));
     }
 
     const booking = await InventoryBooking.findOneAndUpdate({ websiteid }, payload, {
@@ -312,7 +356,12 @@ export const guestLogin = async (req, res, next) => {
       return next(errorHandler(400, 'Mobile and password are required'));
     }
 
-    const guest = await WebsiteGuest.findOne({ mobile }).select('+password');
+    const normalizedMobile = normalizeMobile(mobile);
+    if (!normalizedMobile) {
+      return next(errorHandler(400, 'Mobile number must contain at least 10 digits'));
+    }
+
+    const guest = await WebsiteGuest.findOne({ mobile: normalizedMobile }).select('+password');
     if (!guest || !(await guest.comparePassword(password))) {
       return next(errorHandler(401, 'Invalid mobile number or password'));
     }
