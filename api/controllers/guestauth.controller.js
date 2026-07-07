@@ -1,6 +1,5 @@
 import WebsiteGuest from '../models/websiteguest.model.js';
 import { verifyFirebaseIdToken } from '../config/firebase.js';
-import { createAndSendOtp, verifyOtpCode } from '../services/otp.service.js';
 import { errorHandler } from '../utils/error.js';
 import {
   normalizeEmail,
@@ -8,6 +7,9 @@ import {
   sendGuestAuthResponse,
   formatGuestResponse,
 } from '../utils/guestAuth.js';
+
+const FIREBASE_PHONE_AUTH_MESSAGE =
+  'Use Firebase Phone Authentication on the client, then send the Firebase idToken to /api/auth/guest/google or /api/auth/guest/firebase';
 
 const splitName = (name = '') => {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -22,66 +24,93 @@ const splitName = (name = '') => {
   };
 };
 
-const findGuestByGoogleIdentity = async ({ firebaseUid, email }) => {
+const getSignInProvider = (firebaseUser = {}) =>
+  firebaseUser.firebase?.sign_in_provider || '';
+
+const buildGuestLookupQuery = ({ firebaseUid, email, mobile }) => {
   const orConditions = [{ firebaseUid }, { googleId: firebaseUid }];
+
+  if (mobile) {
+    orConditions.push({ mobile });
+  }
 
   if (email) {
     orConditions.push({ email });
   }
 
-  return WebsiteGuest.findOne({ $or: orConditions });
+  return { $or: orConditions };
 };
 
-const upsertGuestFromGoogle = async (firebaseUser) => {
+const upsertGuestFromFirebase = async (firebaseUser) => {
   const firebaseUid = firebaseUser.uid;
   const email = normalizeEmail(firebaseUser.email);
+  const mobile = normalizeMobile(firebaseUser.phone_number);
   const names = splitName(firebaseUser.name);
+  const signInProvider = getSignInProvider(firebaseUser);
+  const isGoogleSignIn = signInProvider === 'google.com';
+  const isPhoneSignIn = signInProvider === 'phone';
 
-  let guest = await findGuestByGoogleIdentity({ firebaseUid, email });
+  if (!email && !mobile) {
+    const err = new Error('Firebase token must include email or phone_number');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let guest = await WebsiteGuest.findOne(
+    buildGuestLookupQuery({ firebaseUid, email, mobile })
+  );
 
   if (!guest) {
     guest = await WebsiteGuest.create({
-      ...names,
-      email,
+      firstName: names.firstName || undefined,
+      lastName: names.lastName || undefined,
+      fullName: names.fullName || (mobile ? 'Guest' : ''),
+      email: email || undefined,
+      mobile: mobile || undefined,
       photoURL: firebaseUser.picture || '',
-      googleId: firebaseUid,
+      googleId: isGoogleSignIn ? firebaseUid : undefined,
       firebaseUid,
       emailVerified: Boolean(firebaseUser.email_verified),
+      mobileVerified: Boolean(mobile && isPhoneSignIn),
     });
     return guest;
   }
 
-  guest.firstName = names.firstName || guest.firstName;
-  guest.lastName = names.lastName || guest.lastName;
-  guest.fullName = names.fullName || guest.fullName;
-  guest.email = email || guest.email;
-  guest.photoURL = firebaseUser.picture || guest.photoURL;
-  guest.googleId = firebaseUid;
   guest.firebaseUid = firebaseUid;
-  guest.emailVerified = Boolean(firebaseUser.email_verified || guest.emailVerified);
-  await guest.save();
 
-  return guest;
-};
-
-const upsertGuestFromMobile = async (mobile) => {
-  let guest = await WebsiteGuest.findOne({ mobile });
-
-  if (!guest) {
-    guest = await WebsiteGuest.create({
-      mobile,
-      mobileVerified: true,
-      fullName: 'Guest',
-    });
-    return guest;
+  if (email) {
+    guest.email = email;
+    guest.emailVerified = Boolean(firebaseUser.email_verified || guest.emailVerified);
   }
 
-  guest.mobileVerified = true;
+  if (mobile) {
+    guest.mobile = mobile;
+    if (isPhoneSignIn) {
+      guest.mobileVerified = true;
+    }
+  }
+
+  if (firebaseUser.picture) {
+    guest.photoURL = firebaseUser.picture;
+  }
+
+  if (names.fullName) {
+    guest.firstName = names.firstName || guest.firstName;
+    guest.lastName = names.lastName || guest.lastName;
+    guest.fullName = names.fullName;
+  } else if (!guest.fullName && mobile) {
+    guest.fullName = guest.fullName || 'Guest';
+  }
+
+  if (isGoogleSignIn) {
+    guest.googleId = firebaseUid;
+  }
+
   await guest.save();
   return guest;
 };
 
-export const googleGuestLogin = async (req, res, next) => {
+export const firebaseGuestLogin = async (req, res, next) => {
   try {
     const { idToken } = req.body;
 
@@ -90,7 +119,7 @@ export const googleGuestLogin = async (req, res, next) => {
     }
 
     const firebaseUser = await verifyFirebaseIdToken(idToken);
-    const guest = await upsertGuestFromGoogle(firebaseUser);
+    const guest = await upsertGuestFromFirebase(firebaseUser);
 
     return sendGuestAuthResponse(res, guest);
   } catch (error) {
@@ -98,16 +127,11 @@ export const googleGuestLogin = async (req, res, next) => {
   }
 };
 
+export const googleGuestLogin = firebaseGuestLogin;
+
 export const sendGuestOtp = async (req, res, next) => {
   try {
-    const { mobile } = req.body;
-    const result = await createAndSendOtp(mobile);
-
-    res.status(200).json({
-      success: true,
-      mobile: result.mobile,
-      message: result.message,
-    });
+    return next(errorHandler(410, FIREBASE_PHONE_AUTH_MESSAGE));
   } catch (error) {
     next(error);
   }
@@ -115,11 +139,7 @@ export const sendGuestOtp = async (req, res, next) => {
 
 export const verifyGuestOtp = async (req, res, next) => {
   try {
-    const { mobile, otp } = req.body;
-    const verifiedMobile = await verifyOtpCode(mobile, otp);
-    const guest = await upsertGuestFromMobile(verifiedMobile);
-
-    return sendGuestAuthResponse(res, guest);
+    return next(errorHandler(410, FIREBASE_PHONE_AUTH_MESSAGE));
   } catch (error) {
     next(error);
   }
@@ -127,14 +147,30 @@ export const verifyGuestOtp = async (req, res, next) => {
 
 export const linkGuestMobile = async (req, res, next) => {
   try {
-    const { mobile, otp } = req.body;
-    const normalizedMobile = normalizeMobile(mobile);
+    const { idToken } = req.body;
 
-    if (!normalizedMobile) {
-      return next(errorHandler(400, 'Please enter a valid 10-digit mobile number'));
+    if (!idToken) {
+      return next(
+        errorHandler(
+          400,
+          'Firebase idToken is required. Verify mobile with Firebase Phone Auth on the client first.'
+        )
+      );
     }
 
-    await verifyOtpCode(normalizedMobile, otp);
+    const firebaseUser = await verifyFirebaseIdToken(idToken);
+    const signInProvider = getSignInProvider(firebaseUser);
+
+    if (signInProvider !== 'phone') {
+      return next(
+        errorHandler(400, 'Firebase token must be from Phone Authentication to link mobile')
+      );
+    }
+
+    const normalizedMobile = normalizeMobile(firebaseUser.phone_number);
+    if (!normalizedMobile) {
+      return next(errorHandler(400, 'Firebase token does not include a valid phone number'));
+    }
 
     const existingMobileUser = await WebsiteGuest.findOne({
       mobile: normalizedMobile,
@@ -154,6 +190,7 @@ export const linkGuestMobile = async (req, res, next) => {
 
     guest.mobile = normalizedMobile;
     guest.mobileVerified = true;
+    guest.firebaseUid = guest.firebaseUid || firebaseUser.uid;
     await guest.save();
 
     return sendGuestAuthResponse(res, guest);
