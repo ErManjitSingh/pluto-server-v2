@@ -10,6 +10,7 @@ import { initializeScheduledTasks } from './utils/scheduledTasks.js';
 // ROUTES IMPORTS
 import userRouter from './routes/user.route.js'; 
 import authRouter from './routes/auth.route.js';
+import guestAuthRouter from './routes/guestauth.route.js';
 import listingRouter from './routes/listing.route.js';
 import activityRouter from './routes/activity.route.js';
 import cookieParser  from 'cookie-parser';
@@ -137,6 +138,7 @@ app.use("/api/whatsapp", whatsappWebhookRouter);
 app.use("/api/whatsapp-demand", whatsappWebhookDemandRouter);
 app.use("/api/user", userRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/auth/guest", guestAuthRouter);
 app.use("/api/listing", listingRouter);
 app.use("/api/activity", activityRouter);
 app.use("/api/destination", destinationRouter);
