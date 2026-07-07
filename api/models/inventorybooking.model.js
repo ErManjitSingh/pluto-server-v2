@@ -21,6 +21,11 @@ const inventoryBookingSchema = new mongoose.Schema(
       type: [mongoose.Schema.Types.Mixed],
       default: [],
     },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WebsiteGuest',
+      index: true,
+    },
     guest: {
       type: mongoose.Schema.Types.Mixed,
     },
@@ -82,7 +87,9 @@ const inventoryBookingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+inventoryBookingSchema.index({ userId: 1, createdAt: -1 });
 inventoryBookingSchema.index({ 'guest.mobile': 1, createdAt: -1 });
+inventoryBookingSchema.index({ 'guest.email': 1, createdAt: -1 });
 
 const InventoryBooking = mongoose.model('InventoryBooking', inventoryBookingSchema);
 
