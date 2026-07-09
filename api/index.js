@@ -108,11 +108,33 @@ app.use(
 
 
 // -------------------------------------------------------------
-//  ENABLE CORS 
+//  ENABLE CORS (credentials require explicit origins, not "*")
 // -------------------------------------------------------------
+const defaultCorsOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+  "https://testting-website.vercel.app",
+];
+const corsOrigins = [
+  ...defaultCorsOrigins,
+  ...(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
+
 app.use(
   cors({
-    origin: "*",
+    origin: (origin, callback) => {
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     exposedHeaders: ["Content-Disposition", "Content-Range", "X-Content-Range"],
