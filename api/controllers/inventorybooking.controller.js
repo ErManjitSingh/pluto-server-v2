@@ -1,4 +1,3 @@
-import jwt from 'jsonwebtoken';
 import InventoryBooking from '../models/inventorybooking.model.js';
 import WebsiteGuest from '../models/websiteguest.model.js';
 import { errorHandler } from '../utils/error.js';
@@ -83,11 +82,6 @@ export const applyInventoryBookingPayment = async ({
   return booking;
 };
  
-const signGuestToken = (id, mobile) =>
-  jwt.sign({ id, mobile, isWebsiteGuest: true }, process.env.JWT_SECRET, {
-    expiresIn: '30d',
-  });
-
 const sanitizeGuestForBooking = (guest = {}) => {
   const guestData = { ...guest };
   if (guestData.mobile !== undefined) {
@@ -343,46 +337,6 @@ export const deleteAllInventoryBookings = async (req, res, next) => {
       message: `Successfully deleted ${result.deletedCount} inventory booking(s)`,
       deletedCount: result.deletedCount,
     });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const guestLogin = async (req, res, next) => {
-  try {
-    const { mobile, password } = req.body;
-
-    if (!mobile || !password) {
-      return next(errorHandler(400, 'Mobile and password are required'));
-    }
-
-    const normalizedMobile = normalizeMobile(mobile);
-    if (!normalizedMobile) {
-      return next(errorHandler(400, 'Mobile number must contain at least 10 digits'));
-    }
-
-    const guest = await WebsiteGuest.findOne({ mobile: normalizedMobile }).select('+password');
-    if (!guest || !(await guest.comparePassword(password))) {
-      return next(errorHandler(401, 'Invalid mobile number or password'));
-    }
-
-    const token = signGuestToken(guest._id, guest.mobile);
-    const guestData = guest.toObject();
-    delete guestData.password;
-
-    res
-      .cookie('access_token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-      })
-      .status(200)
-      .json({
-        success: true,
-        token,
-        data: guestData,
-      });
   } catch (error) {
     next(error);
   }
