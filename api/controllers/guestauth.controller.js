@@ -7,9 +7,8 @@ import {
   sendGuestAuthResponse,
   formatGuestResponse,
 } from '../utils/guestAuth.js';
-
-const FIREBASE_PHONE_AUTH_MESSAGE =
-  'Use Firebase Phone Authentication on the client, then send the Firebase idToken to /api/auth/guest/google or /api/auth/guest/firebase';
+import { createAndSendOtp, verifyOtpCode } from '../services/otp.service.js';
+import { createAndSendEmailOtp, verifyEmailOtpCode } from '../services/emailotp.service.js';
 
 const splitName = (name = '') => {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -26,6 +25,87 @@ const splitName = (name = '') => {
 
 const getSignInProvider = (firebaseUser = {}) =>
   firebaseUser.firebase?.sign_in_provider || '';
+
+const setGuestNameFields = (guest, fullNameInput = '') => {
+  const names = splitName(fullNameInput);
+  if (names.fullName) {
+    guest.firstName = names.firstName || guest.firstName;
+    guest.lastName = names.lastName || guest.lastName;
+    guest.fullName = names.fullName;
+  }
+};
+
+const findGuestByIdentifiers = async ({ email, mobile, firebaseUid }) => {
+  const conditions = [];
+  if (firebaseUid) {
+    conditions.push({ firebaseUid }, { googleId: firebaseUid });
+  }
+  if (mobile) {
+    conditions.push({ mobile });
+  }
+  if (email) {
+    conditions.push({ email });
+  }
+
+  if (!conditions.length) {
+    return null;
+  }
+
+  return WebsiteGuest.findOne({ $or: conditions });
+};
+
+const findOrCreateGuestFromIdentity = async ({
+  email,
+  mobile,
+  fullName,
+  password,
+  markEmailVerified = false,
+  markMobileVerified = false,
+}) => {
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedMobile = normalizeMobile(mobile);
+
+  let guest = await findGuestByIdentifiers({
+    email: normalizedEmail,
+    mobile: normalizedMobile,
+  });
+
+  if (!guest) {
+    guest = new WebsiteGuest({
+      email: normalizedEmail || undefined,
+      mobile: normalizedMobile || undefined,
+      emailVerified: Boolean(markEmailVerified),
+      mobileVerified: Boolean(markMobileVerified),
+    });
+  }
+
+  if (normalizedEmail && !guest.email) {
+    guest.email = normalizedEmail;
+  }
+
+  if (normalizedMobile && !guest.mobile) {
+    guest.mobile = normalizedMobile;
+  }
+
+  if (markEmailVerified) {
+    guest.emailVerified = true;
+  }
+
+  if (markMobileVerified) {
+    guest.mobileVerified = true;
+  }
+
+  if (fullName) {
+    setGuestNameFields(guest, fullName);
+  }
+
+  if (password) {
+    guest.password = password;
+  }
+
+  await guest.save();
+  return guest;
+};
 
 const buildGuestLookupQuery = ({ firebaseUid, email, mobile }) => {
   const orConditions = [{ firebaseUid }, { googleId: firebaseUid }];
@@ -131,7 +211,12 @@ export const googleGuestLogin = firebaseGuestLogin;
 
 export const sendGuestOtp = async (req, res, next) => {
   try {
-    return next(errorHandler(410, FIREBASE_PHONE_AUTH_MESSAGE));
+    const { mobile } = req.body;
+    const response = await createAndSendOtp(mobile);
+    return res.status(200).json({
+      success: true,
+      ...response,
+    });
   } catch (error) {
     next(error);
   }
@@ -139,7 +224,107 @@ export const sendGuestOtp = async (req, res, next) => {
 
 export const verifyGuestOtp = async (req, res, next) => {
   try {
-    return next(errorHandler(410, FIREBASE_PHONE_AUTH_MESSAGE));
+    const { mobile, otp, fullName, email } = req.body;
+    const verifiedMobile = await verifyOtpCode(mobile, otp);
+    const guest = await findOrCreateGuestFromIdentity({
+      mobile: verifiedMobile,
+      email,
+      fullName,
+      markMobileVerified: true,
+    });
+
+    return sendGuestAuthResponse(res, guest);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const sendGuestEmailOtp = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const response = await createAndSendEmailOtp(email);
+    return res.status(200).json({
+      success: true,
+      ...response,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const verifyGuestEmailOtp = async (req, res, next) => {
+  try {
+    const { email, otp, fullName, mobile } = req.body;
+    const verifiedEmail = await verifyEmailOtpCode(email, otp);
+    const guest = await findOrCreateGuestFromIdentity({
+      email: verifiedEmail,
+      mobile,
+      fullName,
+      markEmailVerified: true,
+    });
+
+    return sendGuestAuthResponse(res, guest);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const guestSignup = async (req, res, next) => {
+  try {
+    const { name, fullName, email, mobile, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedMobile = normalizeMobile(mobile);
+
+    if (!normalizedEmail || !normalizedMobile || !password) {
+      return next(errorHandler(400, 'Name, email, mobile and password are required'));
+    }
+
+    if (password.length < 6) {
+      return next(errorHandler(400, 'Password must be at least 6 characters'));
+    }
+
+    const guest = await findOrCreateGuestFromIdentity({
+      email: normalizedEmail,
+      mobile: normalizedMobile,
+      fullName: fullName || name,
+      password,
+    });
+
+    return sendGuestAuthResponse(res, guest);
+  } catch (error) {
+    if (error?.code === 11000) {
+      return next(errorHandler(409, 'Email or mobile already linked to another account'));
+    }
+    next(error);
+  }
+};
+
+export const guestLogin = async (req, res, next) => {
+  try {
+    const { mobile, email, password } = req.body;
+    if (!password) {
+      return next(errorHandler(400, 'Password is required'));
+    }
+
+    const normalizedMobile = normalizeMobile(mobile);
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedMobile && !normalizedEmail) {
+      return next(errorHandler(400, 'Mobile or email is required'));
+    }
+
+    const guest = await WebsiteGuest.findOne({
+      $or: [
+        ...(normalizedMobile ? [{ mobile: normalizedMobile }] : []),
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+      ],
+    }).select('+password');
+
+    if (!guest || !(await guest.comparePassword(password))) {
+      return next(errorHandler(401, 'Invalid credentials'));
+    }
+
+    return sendGuestAuthResponse(res, guest);
   } catch (error) {
     next(error);
   }
