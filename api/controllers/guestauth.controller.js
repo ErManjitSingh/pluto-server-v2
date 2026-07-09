@@ -7,7 +7,6 @@ import {
   sendGuestAuthResponse,
   formatGuestResponse,
 } from '../utils/guestAuth.js';
-import { createAndSendOtp, verifyOtpCode } from '../services/otp.service.js';
 import { createAndSendEmailOtp, verifyEmailOtpCode } from '../services/emailotp.service.js';
 
 const splitName = (name = '') => {
@@ -211,11 +210,10 @@ export const googleGuestLogin = firebaseGuestLogin;
 
 export const sendGuestOtp = async (req, res, next) => {
   try {
-    const { mobile } = req.body;
-    const response = await createAndSendOtp(mobile);
     return res.status(200).json({
       success: true,
-      ...response,
+      message:
+        'Use Firebase Phone Authentication on client to send OTP, then call /api/auth/guest/verify-otp with idToken',
     });
   } catch (error) {
     next(error);
@@ -224,15 +222,18 @@ export const sendGuestOtp = async (req, res, next) => {
 
 export const verifyGuestOtp = async (req, res, next) => {
   try {
-    const { mobile, otp, fullName, email } = req.body;
-    const verifiedMobile = await verifyOtpCode(mobile, otp);
-    const guest = await findOrCreateGuestFromIdentity({
-      mobile: verifiedMobile,
-      email,
-      fullName,
-      markMobileVerified: true,
-    });
+    const { idToken } = req.body;
+    if (!idToken) {
+      return next(errorHandler(400, 'Firebase idToken is required'));
+    }
 
+    const firebaseUser = await verifyFirebaseIdToken(idToken);
+    const signInProvider = getSignInProvider(firebaseUser);
+    if (signInProvider !== 'phone') {
+      return next(errorHandler(400, 'Use Firebase Phone Authentication token only'));
+    }
+
+    const guest = await upsertGuestFromFirebase(firebaseUser);
     return sendGuestAuthResponse(res, guest);
   } catch (error) {
     next(error);
