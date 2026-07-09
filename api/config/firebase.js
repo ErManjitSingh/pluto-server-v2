@@ -7,12 +7,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let firebaseApp = null;
 
-const loadServiceAccount = () => {
-  const filePath =
-    process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
-    path.join(__dirname, 'firebase-service-account.json');
+const resolveServiceAccountPath = (inputPath) => {
+  const candidates = [
+    inputPath,
+    inputPath ? path.resolve(process.cwd(), inputPath) : null,
+    path.join(__dirname, 'firebase-service-account.json'),
+    path.resolve(process.cwd(), 'api/config/firebase-service-account.json'),
+  ].filter(Boolean);
 
-  if (fs.existsSync(filePath)) {
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+};
+
+const loadServiceAccount = () => {
+  const filePath = resolveServiceAccountPath(
+    process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+  );
+
+  if (filePath) {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   }
 
@@ -41,6 +52,7 @@ const initFirebase = () => {
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
+    console.log(`Firebase Admin initialized for project: ${serviceAccount.project_id}`);
     return firebaseApp;
   } catch (error) {
     console.error('Failed to initialize Firebase Admin:', error.message);
