@@ -1,46 +1,28 @@
-import nodemailer from 'nodemailer';
 import EmailOtp from '../models/emailotp.model.js';
 import { normalizeEmail } from '../utils/guestAuth.js';
+import emailService from './email.service.js';
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES || 5);
 const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
-const buildEmailTransport = () => {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const secure = String(process.env.SMTP_SECURE || 'false') === 'true';
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (!host || !user || !pass) {
-    return null;
-  }
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: { user, pass },
-  });
-};
-
 const sendOtpByEmail = async (email, otp) => {
-  const transporter = buildEmailTransport();
-  if (!transporter) {
+  if (!process.env.DEMANDSETUTOURS_EMAIL_PASSWORD) {
     console.log(`[EMAIL OTP] ${email} => ${otp}`);
     return;
   }
 
-  const fromAddress = process.env.EMAIL_FROM || process.env.SMTP_USER;
-  await transporter.sendMail({
-    from: fromAddress,
+  const transporter = emailService.createDemandsetutoursTransporter();
+  const info = await transporter.sendMail({
+    from: '"Demand Setu Tours" <info@demandsetutours.com>',
     to: email,
     subject: 'Your Login OTP',
     text: `Your OTP is ${otp}. It will expire in ${OTP_EXPIRY_MINUTES} minutes.`,
     html: `<p>Your OTP is <b>${otp}</b>.</p><p>It will expire in ${OTP_EXPIRY_MINUTES} minutes.</p>`,
   });
+
+  console.log(`[EMAIL OTP] sent to ${email}, messageId: ${info.messageId || 'n/a'}`);
 };
 
 export const createAndSendEmailOtp = async (emailInput) => {
