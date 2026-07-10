@@ -56,7 +56,11 @@ const initFirebase = () => {
     console.log(`Firebase Admin initialized for project: ${serviceAccount.project_id}`);
     return firebaseApp;
   } catch (error) {
-    console.error('Failed to initialize Firebase Admin:', error.message);
+    console.error('========== FIREBASE ERROR ==========');
+    console.error(error);
+    console.error('Message:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('===================================');
     return null;
   }
 };
