@@ -50,10 +50,17 @@ const initFirebase = () => {
       return null;
     }
 
+    console.log('🔥 Before initializeApp');
+
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
-    console.log(`Firebase Admin initialized for project: ${serviceAccount.project_id}`);
+
+    console.log('🔥 After initializeApp');
+
+    console.log(
+      `Firebase Admin initialized for project: ${serviceAccount.project_id}`
+    );
     return firebaseApp;
   } catch (error) {
     console.error('========== FIREBASE ERROR ==========');
@@ -66,14 +73,27 @@ const initFirebase = () => {
 };
 
 export const verifyFirebaseIdToken = async (idToken) => {
+  console.log('🔥 verifyFirebaseIdToken called');
+
   const app = initFirebase();
+
+  console.log('🔥 initFirebase returned:', !!app);
+
   if (!app) {
-    const err = new Error('Firebase is not configured on the server');
-    err.statusCode = 500;
-    throw err;
+    throw new Error('Firebase is not configured on the server');
   }
 
-  return admin.auth().verifyIdToken(idToken);
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+
+    console.log('🔥 Token verified:', decoded.uid);
+
+    return decoded;
+  } catch (err) {
+    console.error('🔥 verifyIdToken ERROR');
+    console.error(err);
+    throw err;
+  }
 };
 
 export const warmupFirebase = () => initFirebase();
