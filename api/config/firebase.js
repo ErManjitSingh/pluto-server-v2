@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import admin from 'firebase-admin';
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,7 +62,7 @@ const initFirebase = () => {
     return firebaseApp;
   }
 
-  const existingApps = admin.apps;
+  const existingApps = getApps();
   if (existingApps.length > 0) {
     firebaseApp = existingApps[0];
     return firebaseApp;
@@ -76,8 +77,8 @@ const initFirebase = () => {
       return null;
     }
 
-    firebaseApp = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+    firebaseApp = initializeApp({
+      credential: cert(serviceAccount),
     });
 
     console.log(`Firebase Admin initialized for project: ${serviceAccount.project_id}`);
@@ -97,7 +98,7 @@ export const verifyFirebaseIdToken = async (idToken) => {
     throw err;
   }
 
-  return admin.auth().verifyIdToken(idToken);
+  return getAuth(app).verifyIdToken(idToken);
 };
 
 export const warmupFirebase = () => initFirebase();
