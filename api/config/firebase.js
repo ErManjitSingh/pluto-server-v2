@@ -42,7 +42,14 @@ const initFirebase = () => {
   }
 
   try {
+    console.log('STEP 1');
+
     const serviceAccount = loadServiceAccount();
+
+    console.log('STEP 2', !!serviceAccount);
+
+    console.log('STEP 3');
+
     if (!serviceAccount) {
       console.warn(
         'Firebase Admin not configured. Add api/config/firebase-service-account.json or set FIREBASE_SERVICE_ACCOUNT_PATH'
@@ -50,24 +57,23 @@ const initFirebase = () => {
       return null;
     }
 
-    console.log('🔥 Before initializeApp');
+    console.log('STEP 4');
 
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
 
-    console.log('🔥 After initializeApp');
+    console.log('STEP 5');
 
     console.log(
       `Firebase Admin initialized for project: ${serviceAccount.project_id}`
     );
     return firebaseApp;
   } catch (error) {
-    console.error('========== FIREBASE ERROR ==========');
+    console.error('🔥 FIREBASE ERROR START');
     console.error(error);
-    console.error('Message:', error.message);
-    console.error('Stack:', error.stack);
-    console.error('===================================');
+    console.error(error.stack);
+    console.error('🔥 FIREBASE ERROR END');
     return null;
   }
 };
