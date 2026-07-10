@@ -18,19 +18,39 @@ const resolveServiceAccountPath = (inputPath) => {
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 };
 
+const normalizeServiceAccount = (serviceAccount = {}) => {
+  const normalized = { ...serviceAccount };
+
+  if (typeof normalized.private_key === 'string') {
+    normalized.private_key = normalized.private_key.replace(/\\n/g, '\n');
+  }
+
+  return normalized;
+};
+
+const parseServiceAccountJson = (rawJson, sourceLabel) => {
+  try {
+    const parsed = normalizeServiceAccount(JSON.parse(rawJson));
+    console.log(`Firebase service account parsed from: ${sourceLabel}`);
+    return parsed;
+  } catch (error) {
+    console.error(`Failed to parse Firebase service account from ${sourceLabel}:`, error.message);
+    throw error;
+  }
+};
+
 const loadServiceAccount = () => {
   const filePath =
     resolveServiceAccountPath(process.env.FIREBASE_SERVICE_ACCOUNT_PATH) ||
     resolveServiceAccountPath(path.join(__dirname, 'firebase-service-account.json'));
 
   if (filePath) {
-    console.log(`Firebase service account loaded from: ${filePath}`);
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return parseServiceAccountJson(fs.readFileSync(filePath, 'utf8'), filePath);
   }
 
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (serviceAccountJson) {
-    return JSON.parse(serviceAccountJson);
+    return parseServiceAccountJson(serviceAccountJson, 'FIREBASE_SERVICE_ACCOUNT_JSON');
   }
 
   return null;
@@ -41,65 +61,43 @@ const initFirebase = () => {
     return firebaseApp;
   }
 
+  const existingApps = admin.apps;
+  if (existingApps.length > 0) {
+    firebaseApp = existingApps[0];
+    return firebaseApp;
+  }
+
   try {
-    console.log('STEP 1');
-
     const serviceAccount = loadServiceAccount();
-
-    console.log('STEP 2', !!serviceAccount);
-
-    console.log('STEP 3');
-
     if (!serviceAccount) {
       console.warn(
-        'Firebase Admin not configured. Add api/config/firebase-service-account.json or set FIREBASE_SERVICE_ACCOUNT_PATH'
+        'Firebase Admin not configured. Add api/config/firebase-service-account.json or set FIREBASE_SERVICE_ACCOUNT_JSON'
       );
       return null;
     }
-
-    console.log('STEP 4');
 
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
 
-    console.log('STEP 5');
-
-    console.log(
-      `Firebase Admin initialized for project: ${serviceAccount.project_id}`
-    );
+    console.log(`Firebase Admin initialized for project: ${serviceAccount.project_id}`);
     return firebaseApp;
   } catch (error) {
-    console.error('🔥 FIREBASE ERROR START');
-    console.error(error);
+    console.error('Firebase initialization failed:', error.message);
     console.error(error.stack);
-    console.error('🔥 FIREBASE ERROR END');
     return null;
   }
 };
 
 export const verifyFirebaseIdToken = async (idToken) => {
-  console.log('🔥 verifyFirebaseIdToken called');
-
   const app = initFirebase();
-
-  console.log('🔥 initFirebase returned:', !!app);
-
   if (!app) {
-    throw new Error('Firebase is not configured on the server');
-  }
-
-  try {
-    const decoded = await admin.auth().verifyIdToken(idToken);
-
-    console.log('🔥 Token verified:', decoded.uid);
-
-    return decoded;
-  } catch (err) {
-    console.error('🔥 verifyIdToken ERROR');
-    console.error(err);
+    const err = new Error('Firebase is not configured on the server');
+    err.statusCode = 500;
     throw err;
   }
+
+  return admin.auth().verifyIdToken(idToken);
 };
 
 export const warmupFirebase = () => initFirebase();
