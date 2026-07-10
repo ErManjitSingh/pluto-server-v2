@@ -19,11 +19,12 @@ const resolveServiceAccountPath = (inputPath) => {
 };
 
 const loadServiceAccount = () => {
-  const filePath = resolveServiceAccountPath(
-    process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-  );
+  const filePath =
+    resolveServiceAccountPath(process.env.FIREBASE_SERVICE_ACCOUNT_PATH) ||
+    resolveServiceAccountPath(path.join(__dirname, 'firebase-service-account.json'));
 
   if (filePath) {
+    console.log(`Firebase service account loaded from: ${filePath}`);
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   }
 
@@ -70,3 +71,5 @@ export const verifyFirebaseIdToken = async (idToken) => {
 
   return admin.auth().verifyIdToken(idToken);
 };
+
+export const warmupFirebase = () => initFirebase();
