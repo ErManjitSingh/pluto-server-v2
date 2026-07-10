@@ -1,5 +1,4 @@
 import './config/env.js';
-import { warmupFirebase } from './config/firebase.js';
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -67,8 +66,6 @@ import razorpayDemandRouter from './routes/razorpayDemand.route.js';
 import seoListingRouter from './routes/seoListing.route.js';
 import attendanceRouter from './routes/attendance.route.js';
 
-warmupFirebase();
-
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -111,33 +108,11 @@ app.use(
 
 
 // -------------------------------------------------------------
-//  ENABLE CORS (credentials require explicit origins, not "*")
+//  ENABLE CORS 
 // -------------------------------------------------------------
-const defaultCorsOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "http://127.0.0.1:3000",
-  "http://127.0.0.1:3001",
-  "https://testting-website.vercel.app",
-];
-const corsOrigins = [
-  ...defaultCorsOrigins,
-  ...(process.env.CORS_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
-];
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || corsOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    credentials: true,
+    origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     exposedHeaders: ["Content-Disposition", "Content-Range", "X-Content-Range"],
