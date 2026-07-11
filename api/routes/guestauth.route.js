@@ -11,12 +11,14 @@ import {
   linkGuestMobile,
   getGuestProfile,
 } from '../controllers/guestauth.controller.js';
+import { nextAuthGoogleGuestLogin } from '../controllers/nextauthguest.controller.js';
 import { verifyGuestToken } from '../middleware/verifyGuest.js';
 
 const router = express.Router();
 
 router.post('/firebase', firebaseGuestLogin);
 router.post('/google', googleGuestLogin);
+router.post('/nextauth-google', nextAuthGoogleGuestLogin);
 router.post('/signup', guestSignup);
 router.post('/login', guestLogin);
 router.post('/send-otp', sendGuestOtp);
