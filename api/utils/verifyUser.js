@@ -2,6 +2,8 @@ import { errorHandler } from "./error.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
 export const verifyToken = (req, res, next) => {
     // Check for token in both cookie and Authorization header
     const token = req.cookies.access_token || 
@@ -11,7 +13,7 @@ export const verifyToken = (req, res, next) => {
         return next(errorHandler(401, 'Unauthorized - No token provided'));
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    jwt.verify(token, JWT_SECRET, (err, user) => {
         if(err) return next(errorHandler(403, 'Forbidden - Invalid token'));
         req.user = user;
         next();
@@ -52,7 +54,7 @@ export const verifyTokenOrCommon = (req, res, next) => {
     }
 
     // First, try to verify as a regular JWT token
-    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    jwt.verify(token, JWT_SECRET, (err, user) => {
         if (!err) {
             // Valid JWT token - regular user
             req.user = user;
