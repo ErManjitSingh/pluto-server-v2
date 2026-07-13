@@ -151,6 +151,15 @@ const PropertySchema = new Schema({
   // true = signed up via website; no auto password from mobile
   isWebsiteHotel: { type: Boolean, default: false },
 
+  // Signup snapshot — stays on property even after hotel form is filled
+  websiteSignup: {
+    propertyId: { type: String, required: false },
+    name: { type: String, required: false },
+    email: { type: String, required: false, trim: true, lowercase: true },
+    mobile: { type: String, required: false, trim: true },
+    signedUpAt: { type: Date, required: false },
+  },
+
   // Basic Info
   basicInfo: {
     propertyName: { type: String, required: true },
