@@ -1,6 +1,7 @@
 import Property from "../models/packagemaker.model.js";
 import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -17,8 +18,79 @@ function normalizeEmail(email) {
 }
 
 function normalizeMobile(mobile) {
+  return normalizeMobileDigits(mobile);
+}
+
+function normalizeMobileDigits(mobile) {
   if (!mobile || typeof mobile !== 'string') return '';
-  return mobile.replace(/\s+/g, '').trim();
+  const digits = mobile.replace(/\D/g, '');
+  if (!digits) return '';
+
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits.slice(2);
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return digits.slice(1);
+  }
+
+  return digits;
+}
+
+function buildWebsiteSignupSnapshot(propertyId, account, signedUpAt) {
+  return {
+    propertyId: String(propertyId),
+    name: account?.name || '',
+    email: normalizeEmail(account?.email),
+    mobile: normalizeMobileDigits(account?.mobile),
+    signedUpAt: signedUpAt || new Date(),
+  };
+}
+
+async function findWebsiteHotelByLoginId(loginId) {
+  const raw = String(loginId || '').trim();
+  if (!raw) return null;
+
+  const email = normalizeEmail(raw);
+  const mobile = normalizeMobileDigits(raw);
+  const or = [];
+
+  if (mongoose.Types.ObjectId.isValid(raw)) {
+    or.push({ _id: raw });
+    or.push({ 'websiteSignup.propertyId': raw });
+  }
+
+  if (email) {
+    or.push({ 'account.email': email });
+    or.push({ 'websiteSignup.email': email });
+  }
+
+  if (mobile) {
+    or.push({ 'account.mobile': mobile });
+    or.push({ 'websiteSignup.mobile': mobile });
+  }
+
+  if (!or.length) return null;
+
+  return Property.findOne({
+    isWebsiteHotel: true,
+    $or: or,
+  });
+}
+
+function attachWebsiteSignupFields(existingProperty, updateData) {
+  if (existingProperty?.isWebsiteHotel !== true || !existingProperty?.account) {
+    return updateData;
+  }
+
+  return {
+    ...updateData,
+    isWebsiteHotel: true,
+    websiteSignup: buildWebsiteSignupSnapshot(
+      existingProperty._id,
+      existingProperty.account,
+      existingProperty.websiteSignup?.signedUpAt || existingProperty.createdAt
+    ),
+  };
 }
 
 function signPackageMakerToken(property) {
@@ -220,8 +292,14 @@ export const handleStep = async (req, res) => {
 
 export const updateOrCreateProperty = async (propertyId, updateData) => {
   if (propertyId) {
-    const existing = await Property.findById(propertyId).select('isWebsiteHotel');
+    const existing = await Property.findById(propertyId).select(
+      'isWebsiteHotel account websiteSignup createdAt'
+    );
     const isWebsiteHotel = existing?.isWebsiteHotel === true;
+
+    if (isWebsiteHotel) {
+      updateData = attachWebsiteSignupFields(existing, updateData);
+    }
 
     // Website hotels: never auto-set basicInfo password from mobile
     if (!isWebsiteHotel && updateData.basicInfo && updateData.basicInfo.mobile) {
@@ -824,11 +902,19 @@ export const signupWebsitePackagemaker = async (req, res) => {
       });
     }
 
-    const property = await Property.create({
+    const property = new Property({
       isWebsiteHotel: true,
       account: { name, email, mobile, password },
       basicInfo: buildWebsiteBasicInfoPlaceholder(name),
     });
+
+    property.websiteSignup = buildWebsiteSignupSnapshot(property._id, {
+      name,
+      email,
+      mobile,
+    });
+
+    await property.save();
 
     const token = signPackageMakerToken(property);
 
@@ -860,35 +946,33 @@ export const signupWebsitePackagemaker = async (req, res) => {
  */
 export const signinWebsitePackagemaker = async (req, res) => {
   try {
-    const loginId = (req.body.loginId || req.body.mobile || req.body.email || '').trim();
+    const loginId = (req.body.loginId || req.body.mobile || req.body.email || req.body.propertyId || req.body.id || '').trim();
     const password = req.body.password;
 
     if (!loginId || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Login ID (mobile or email) and password are required',
+        message: 'Login ID (property id, mobile or email) and password are required',
       });
     }
 
-    const normalizedEmail = normalizeEmail(loginId);
-    const normalizedMobile = normalizeMobile(loginId);
-
-    const property = await Property.findOne({
-      isWebsiteHotel: true,
-      $or: [
-        { 'account.mobile': normalizedMobile },
-        { 'account.email': normalizedEmail },
-      ],
-    }).select('+account.password');
-
+    const property = await findWebsiteHotelByLoginId(loginId);
     if (!property) {
       return res.status(404).json({
         success: false,
-        message: 'No website account found with this mobile or email',
+        message: 'No website account found with this id, mobile or email',
       });
     }
 
-    const validPassword = bcryptjs.compareSync(password, property.account.password);
+    const propertyWithPassword = await Property.findById(property._id).select('+account.password');
+    if (!propertyWithPassword?.account?.password) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid password',
+      });
+    }
+
+    const validPassword = bcryptjs.compareSync(password, propertyWithPassword.account.password);
     if (!validPassword) {
       return res.status(401).json({
         success: false,
@@ -896,15 +980,56 @@ export const signinWebsitePackagemaker = async (req, res) => {
       });
     }
 
-    const token = signPackageMakerToken(property);
+    const token = signPackageMakerToken(propertyWithPassword);
 
     res.status(200).json({
       success: true,
       message: 'Login successful',
       data: {
-        property: sanitizePropertyResponse(property),
+        property: sanitizePropertyResponse(propertyWithPassword),
         token,
       },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET website hotel by property id, email or mobile — no token required.
+ * GET /api/packagemaker/get-website-hotel-by-login?loginId=...
+ */
+export const getWebsiteHotelByLogin = async (req, res) => {
+  try {
+    const loginId =
+      req.query.loginId ||
+      req.query.id ||
+      req.query.propertyId ||
+      req.query.mobile ||
+      req.query.email;
+
+    if (!loginId || !String(loginId).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'loginId, propertyId, mobile or email is required',
+      });
+    }
+
+    const property = await findWebsiteHotelByLoginId(loginId);
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: 'No website hotel found for this id, email or mobile',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: sanitizePropertyResponse(property),
     });
   } catch (error) {
     res.status(500).json({
@@ -964,6 +1089,7 @@ export const getAllWebsiteAccounts = async (req, res) => {
       { isWebsiteHotel: true },
       {
         account: 1,
+        websiteSignup: 1,
         isWebsiteHotel: 1,
         'basicInfo.propertyName': 1,
         'basicInfo.mobile': 1,
@@ -981,6 +1107,15 @@ export const getAllWebsiteAccounts = async (req, res) => {
             name: property.account.name || '',
             email: property.account.email || '',
             mobile: property.account.mobile || '',
+          }
+        : null,
+      websiteSignup: property.websiteSignup
+        ? {
+            propertyId: property.websiteSignup.propertyId || String(property._id),
+            name: property.websiteSignup.name || '',
+            email: property.websiteSignup.email || '',
+            mobile: property.websiteSignup.mobile || '',
+            signedUpAt: property.websiteSignup.signedUpAt || null,
           }
         : null,
       propertyContact: {
