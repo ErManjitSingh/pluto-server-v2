@@ -3,7 +3,7 @@ import { handleStep, getProperties, getRoomsById, getPropertyById,
      getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo,
       deletePackageMaker, deleteAllPackageMakerPhotosAndVideos,
       loginPackageMaker, signupWebsitePackagemaker, signinWebsitePackagemaker,
-      getMyWebsitePackagemaker, getAllHotelStates, getAllHotelCities,
+      getMyWebsitePackagemaker, getMyWebsiteAccount, getAllWebsiteAccounts, getAllHotelStates, getAllHotelCities,
       getHotelsByState, getHotelsByCityPi, getHotelsByPropertyType,
       getHotelsByPropertyTypeAndLocation } from '../controllers/packagemaker.controller.js';
 import { verifyToken } from '../utils/verifyUser.js';
@@ -45,6 +45,8 @@ router.post('/login-packagemaker', loginPackageMaker);
 router.post('/signup-website-packagemaker', signupWebsitePackagemaker);
 router.post('/signin-website-packagemaker', signinWebsitePackagemaker);
 router.get('/my-website-packagemaker', verifyToken, getMyWebsitePackagemaker);
+router.get('/my-website-account', verifyToken, getMyWebsiteAccount);
+router.get('/get-all-website-accounts', getAllWebsiteAccounts);
 
 export default router;
 
