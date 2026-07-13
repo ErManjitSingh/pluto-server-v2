@@ -953,3 +953,116 @@ export const getMyWebsitePackagemaker = async (req, res) => {
     });
   }
 };
+
+/**
+ * GET all website signup accounts (no token) — for checking login data.
+ * GET /api/packagemaker/get-all-website-accounts
+ */
+export const getAllWebsiteAccounts = async (req, res) => {
+  try {
+    const properties = await Property.find(
+      { isWebsiteHotel: true },
+      {
+        account: 1,
+        isWebsiteHotel: 1,
+        'basicInfo.propertyName': 1,
+        'basicInfo.mobile': 1,
+        'basicInfo.email': 1,
+        createdAt: 1,
+        updatedAt: 1,
+      }
+    ).sort({ createdAt: -1 });
+
+    const accounts = properties.map((property) => ({
+      propertyId: property._id,
+      isWebsiteHotel: property.isWebsiteHotel,
+      account: property.account
+        ? {
+            name: property.account.name || '',
+            email: property.account.email || '',
+            mobile: property.account.mobile || '',
+          }
+        : null,
+      propertyContact: {
+        propertyName: property.basicInfo?.propertyName || '',
+        email: property.basicInfo?.email || '',
+        mobile: property.basicInfo?.mobile || '',
+      },
+      createdAt: property.createdAt,
+      updatedAt: property.updatedAt,
+    }));
+
+    res.status(200).json({
+      success: true,
+      total: accounts.length,
+      data: accounts,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * GET website partner login account (name, email, mobile) for logged-in user.
+ * GET /api/packagemaker/my-website-account
+ */
+export const getMyWebsiteAccount = async (req, res) => {
+  try {
+    if (!req.user?.isPackageMaker) {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid token for package maker',
+      });
+    }
+
+    const property = await Property.findById(req.user.id).select(
+      'isWebsiteHotel account basicInfo.propertyName basicInfo.mobile basicInfo.email createdAt updatedAt'
+    );
+
+    if (!property) {
+      return res.status(404).json({
+        success: false,
+        message: 'Website account not found',
+      });
+    }
+
+    if (property.isWebsiteHotel !== true) {
+      return res.status(403).json({
+        success: false,
+        message: 'This endpoint is only for website hotel accounts',
+      });
+    }
+
+    const account = property.account
+      ? {
+          name: property.account.name || '',
+          email: property.account.email || '',
+          mobile: property.account.mobile || '',
+        }
+      : null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        propertyId: property._id,
+        isWebsiteHotel: property.isWebsiteHotel,
+        account,
+        propertyContact: {
+          propertyName: property.basicInfo?.propertyName || '',
+          email: property.basicInfo?.email || '',
+          mobile: property.basicInfo?.mobile || '',
+        },
+        createdAt: property.createdAt,
+        updatedAt: property.updatedAt,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
