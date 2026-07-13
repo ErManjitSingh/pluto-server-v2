@@ -2,9 +2,11 @@ import express from 'express';
 import { handleStep, getProperties, getRoomsById, getPropertyById,
      getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo,
       deletePackageMaker, deleteAllPackageMakerPhotosAndVideos,
-      loginPackageMaker, getAllHotelStates, getAllHotelCities,
+      loginPackageMaker, signupWebsitePackagemaker, signinWebsitePackagemaker,
+      getMyWebsitePackagemaker, getAllHotelStates, getAllHotelCities,
       getHotelsByState, getHotelsByCityPi, getHotelsByPropertyType,
       getHotelsByPropertyTypeAndLocation } from '../controllers/packagemaker.controller.js';
+import { verifyToken } from '../utils/verifyUser.js';
 
 const router = express.Router();
 router.use(express.json()); 
@@ -36,8 +38,13 @@ router.get('/get-all-packagemaker-basic-info', getAllBasicPropertyInfo);
 router.delete('/delete-packagemaker/:id', deletePackageMaker);
 router.delete('/delete-packagemaker-photos-videos', deleteAllPackageMakerPhotosAndVideos);
 
-// Add login route
+// Legacy admin login (auto password = mobile for non-website hotels)
 router.post('/login-packagemaker', loginPackageMaker);
+
+// Website hotel owner auth
+router.post('/signup-website-packagemaker', signupWebsitePackagemaker);
+router.post('/signin-website-packagemaker', signinWebsitePackagemaker);
+router.get('/my-website-packagemaker', verifyToken, getMyWebsitePackagemaker);
 
 export default router;
 
