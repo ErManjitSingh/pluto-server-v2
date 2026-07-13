@@ -140,6 +140,17 @@ const InventorySchema = new mongoose.Schema({
 });
 
 const PropertySchema = new Schema({
+  // Website owner account (login only — separate from hotel contact in basicInfo)
+  account: {
+    name: { type: String, required: false },
+    email: { type: String, required: false, trim: true, lowercase: true },
+    mobile: { type: String, required: false, trim: true },
+    password: { type: String, required: false, select: false },
+  },
+
+  // true = signed up via website; no auto password from mobile
+  isWebsiteHotel: { type: Boolean, default: false },
+
   // Basic Info
   basicInfo: {
     propertyName: { type: String, required: true },
@@ -389,29 +400,65 @@ PropertySchema.pre("save", function (next) {
   next();
 });
 
+function isBcryptHash(value) {
+  return (
+    typeof value === 'string' &&
+    (value.startsWith('$2a$') || value.startsWith('$2b$') || value.startsWith('$2y$'))
+  );
+}
+
+async function hashPlainPassword(password) {
+  if (!password || isBcryptHash(password)) return password;
+  return bcryptjs.hash(password, 10);
+}
+
 // Middleware to hash password before saving
 PropertySchema.pre("save", async function (next) {
-  // Auto-generate password from mobile if password is not provided
-  if (this.basicInfo && this.basicInfo.mobile) {
-    // If password is missing, empty, or null, set it to mobile number
-    if (!this.basicInfo.password || 
-        (typeof this.basicInfo.password === 'string' && this.basicInfo.password.trim().length === 0)) {
-      this.basicInfo.password = this.basicInfo.mobile;
+  try {
+    if (this.isWebsiteHotel) {
+      if (
+        this.account?.password &&
+        (this.isNew || this.isModified('account.password'))
+      ) {
+        this.account.password = await hashPlainPassword(this.account.password);
+      }
+      return next();
     }
-  }
 
-  // Only hash the password if it has been modified (or is new)
-  // Check if basicInfo.password is modified or if this is a new document
-  if (this.isNew || this.isModified("basicInfo.password") || this.isModified("basicInfo")) {
-    if (this.basicInfo && this.basicInfo.password && typeof this.basicInfo.password === 'string' && this.basicInfo.password.length > 0) {
-      // Only hash if password is not already hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
-      if (!this.basicInfo.password.startsWith('$2a$') && !this.basicInfo.password.startsWith('$2b$') && !this.basicInfo.password.startsWith('$2y$')) {
-        this.basicInfo.password = await bcryptjs.hash(this.basicInfo.password, 10);
+    // Admin / legacy flow: auto password from basicInfo.mobile
+    if (this.basicInfo && this.basicInfo.mobile) {
+      if (
+        !this.basicInfo.password ||
+        (typeof this.basicInfo.password === 'string' && this.basicInfo.password.trim().length === 0)
+      ) {
+        this.basicInfo.password = this.basicInfo.mobile;
       }
     }
+
+    if (this.isNew || this.isModified('basicInfo.password') || this.isModified('basicInfo')) {
+      if (
+        this.basicInfo?.password &&
+        typeof this.basicInfo.password === 'string' &&
+        this.basicInfo.password.length > 0
+      ) {
+        this.basicInfo.password = await hashPlainPassword(this.basicInfo.password);
+      }
+    }
+
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 });
+
+PropertySchema.index(
+  { 'account.mobile': 1 },
+  { unique: true, sparse: true, partialFilterExpression: { isWebsiteHotel: true } }
+);
+PropertySchema.index(
+  { 'account.email': 1 },
+  { unique: true, sparse: true, partialFilterExpression: { isWebsiteHotel: true } }
+);
 
 const Property = mongoose.model("PackageMaker", PropertySchema);
 
