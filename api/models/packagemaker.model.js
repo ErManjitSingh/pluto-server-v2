@@ -140,25 +140,16 @@ const InventorySchema = new mongoose.Schema({
 });
 
 const PropertySchema = new Schema({
-  // Website owner account (login only — separate from hotel contact in basicInfo)
-  account: {
-    name: { type: String, required: false },
-    email: { type: String, required: false, trim: true, lowercase: true },
-    mobile: { type: String, required: false, trim: true },
-    password: { type: String, required: false, select: false },
+  // Website partner auth lives in WebsitePartner model — this only links it
+  websitePartnerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WebsitePartner',
+    required: false,
+    index: true,
   },
 
-  // true = signed up via website; no auto password from mobile
+  // true = created via website partner signup; no auto password from mobile
   isWebsiteHotel: { type: Boolean, default: false },
-
-  // Signup snapshot — stays on property even after hotel form is filled
-  websiteSignup: {
-    propertyId: { type: String, required: false },
-    name: { type: String, required: false },
-    email: { type: String, required: false, trim: true, lowercase: true },
-    mobile: { type: String, required: false, trim: true },
-    signedUpAt: { type: Date, required: false },
-  },
 
   // Basic Info
   basicInfo: {
@@ -424,13 +415,8 @@ async function hashPlainPassword(password) {
 // Middleware to hash password before saving
 PropertySchema.pre("save", async function (next) {
   try {
+    // Website hotels: credentials live in WebsitePartner — skip basicInfo auto-password
     if (this.isWebsiteHotel) {
-      if (
-        this.account?.password &&
-        (this.isNew || this.isModified('account.password'))
-      ) {
-        this.account.password = await hashPlainPassword(this.account.password);
-      }
       return next();
     }
 
@@ -459,15 +445,6 @@ PropertySchema.pre("save", async function (next) {
     next(error);
   }
 });
-
-PropertySchema.index(
-  { 'account.mobile': 1 },
-  { unique: true, sparse: true, partialFilterExpression: { isWebsiteHotel: true } }
-);
-PropertySchema.index(
-  { 'account.email': 1 },
-  { unique: true, sparse: true, partialFilterExpression: { isWebsiteHotel: true } }
-);
 
 const Property = mongoose.model("PackageMaker", PropertySchema);
 
