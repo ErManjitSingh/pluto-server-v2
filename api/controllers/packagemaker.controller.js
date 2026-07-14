@@ -1,6 +1,8 @@
 import Property from "../models/packagemaker.model.js";
+import WebsitePartner from "../models/websitepartner.model.js";
 import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -9,6 +11,48 @@ function isBcryptHash(value) {
     typeof value === 'string' &&
     (value.startsWith('$2a$') || value.startsWith('$2b$') || value.startsWith('$2y$'))
   );
+}
+
+/** Root website-partner fields — must not go inside basicInfo/location/etc. */
+function extractWebsitePartnerRootFields(data = {}) {
+  const root = {};
+  const stepData = { ...data };
+
+  if (stepData.isWebsiteHotel === true || stepData.isWebsiteHotel === 'true') {
+    root.isWebsiteHotel = true;
+  }
+  delete stepData.isWebsiteHotel;
+
+  const partnerId =
+    stepData.websitePartnerId ||
+    stepData.websitePartner?._id ||
+    stepData.websitePartner?.id ||
+    null;
+  if (partnerId && mongoose.Types.ObjectId.isValid(String(partnerId))) {
+    root.websitePartnerId = partnerId;
+    root.isWebsiteHotel = true;
+  }
+  delete stepData.websitePartnerId;
+  delete stepData.websitePartner;
+  delete stepData.partnerName;
+  delete stepData.partnerEmail;
+  delete stepData.partnerMobile;
+
+  // Partner "name" is not basicInfo.propertyName
+  if (Object.prototype.hasOwnProperty.call(stepData, 'name')) {
+    delete stepData.name;
+  }
+
+  return { root, stepData };
+}
+
+async function linkWebsitePartnerToProperty(partnerId, propertyId) {
+  if (!partnerId || !propertyId) return;
+  if (!mongoose.Types.ObjectId.isValid(String(partnerId))) return;
+
+  await WebsitePartner.findByIdAndUpdate(partnerId, {
+    $set: { packageMakerId: propertyId },
+  });
 }
 
 function signPackageMakerToken(property) {
@@ -140,50 +184,92 @@ function sanitizeInventoryData(data) {
 
 
 export const handleStep = async (req, res) => {
-  const { step, ...data } = req.body;
+  const { step, ...rawData } = req.body;
   const propertyId = req.params.id;
-  console.log("propertyId========>", propertyId)
 
   try {
+    const { root: websiteRoot, stepData: data } = extractWebsitePartnerRootFields(rawData);
     let updatedProperty;
 
     switch (step) {
       case 0:  // Basic Info
-        updatedProperty = await updateOrCreateProperty(propertyId, { basicInfo: data });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          basicInfo: data,
+          ...websiteRoot,
+        });
         break;
 
       case 1:  // Location
-        updatedProperty = await updateOrCreateProperty(propertyId, { location: data });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          location: data,
+          ...websiteRoot,
+        });
         break;
 
       case 2:  // Amenities
-        updatedProperty = await updateOrCreateProperty(propertyId, { amenities: data });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          amenities: data,
+          ...websiteRoot,
+        });
         break;
 
       case 3:  // Rooms
-        // Ensure step is set to 3 for rooms data
         const roomsData = { ...data, step: 3 };
-        updatedProperty = await updateOrCreateProperty(propertyId, { rooms: roomsData });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          rooms: roomsData,
+          ...websiteRoot,
+        });
         break;
 
       case 4:  // Photos and Videos
-        updatedProperty = await updateOrCreateProperty(propertyId, { photosAndVideos: data });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          photosAndVideos: data,
+          ...websiteRoot,
+        });
         break;
 
       case 5:  // Policies
-        updatedProperty = await updateOrCreateProperty(propertyId, { policies: data });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          policies: data,
+          ...websiteRoot,
+        });
         break;
 
       case 6:  // Finance & Legal
-        updatedProperty = await updateOrCreateProperty(propertyId, { financeAndLegal: data });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          financeAndLegal: data,
+          ...websiteRoot,
+        });
         break;
 
       case 7: // Inventory & Rates
         const sanitizedData = sanitizeInventoryData(req.body);
-        updatedProperty = await updateOrCreateProperty(propertyId, { inventory: sanitizedData });
+        updatedProperty = await updateOrCreateProperty(propertyId, {
+          inventory: sanitizedData,
+          ...websiteRoot,
+        });
         break;
       default:
         return res.status(400).json({ success: false, step: step, message: "Invalid step" });
+    }
+
+    // Website partner create/update: keep WebsitePartner.packageMakerId in sync
+    if (
+      updatedProperty?._id &&
+      (updatedProperty.isWebsiteHotel === true || websiteRoot.isWebsiteHotel === true) &&
+      (updatedProperty.websitePartnerId || websiteRoot.websitePartnerId)
+    ) {
+      await linkWebsitePartnerToProperty(
+        updatedProperty.websitePartnerId || websiteRoot.websitePartnerId,
+        updatedProperty._id
+      );
+    }
+
+    if (propertyId && !updatedProperty) {
+      return res.status(404).json({
+        success: false,
+        message: "Property not found for update",
+      });
     }
 
     res.status(200).json({ success: true, data: updatedProperty });
@@ -197,16 +283,16 @@ export const updateOrCreateProperty = async (propertyId, updateData) => {
     const existing = await Property.findById(propertyId).select(
       'isWebsiteHotel websitePartnerId'
     );
-    const isWebsiteHotel = existing?.isWebsiteHotel === true;
+    const isWebsiteHotel =
+      existing?.isWebsiteHotel === true || updateData.isWebsiteHotel === true;
 
-    // Keep website hotel markers when partner updates their property
+    // Keep / apply website hotel markers when partner updates their property
     if (isWebsiteHotel) {
       updateData = {
         ...updateData,
         isWebsiteHotel: true,
-        ...(existing.websitePartnerId
-          ? { websitePartnerId: existing.websitePartnerId }
-          : {}),
+        websitePartnerId:
+          updateData.websitePartnerId || existing?.websitePartnerId || undefined,
       };
     }
 
@@ -224,6 +310,7 @@ export const updateOrCreateProperty = async (propertyId, updateData) => {
     }
     return await Property.findByIdAndUpdate(propertyId, { $set: updateData }, { new: true });
   } else {
+    // Create: website flags only when explicitly sent (website partner flow)
     return await Property.create(updateData);
   }
 };
