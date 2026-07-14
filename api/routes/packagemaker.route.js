@@ -2,11 +2,9 @@ import express from 'express';
 import { handleStep, getProperties, getRoomsById, getPropertyById,
      getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo,
       deletePackageMaker, deleteAllPackageMakerPhotosAndVideos,
-      loginPackageMaker,       signupWebsitePackagemaker, signinWebsitePackagemaker,
-      getWebsiteHotelByLogin, getMyWebsitePackagemaker, getMyWebsiteAccount, getAllWebsiteAccounts, getAllHotelStates, getAllHotelCities,
+      loginPackageMaker, getAllHotelStates, getAllHotelCities,
       getHotelsByState, getHotelsByCityPi, getHotelsByPropertyType,
       getHotelsByPropertyTypeAndLocation } from '../controllers/packagemaker.controller.js';
-import { verifyToken } from '../utils/verifyUser.js';
 
 const router = express.Router();
 router.use(express.json()); 
@@ -41,13 +39,6 @@ router.delete('/delete-packagemaker-photos-videos', deleteAllPackageMakerPhotosA
 // Legacy admin login (auto password = mobile for non-website hotels)
 router.post('/login-packagemaker', loginPackageMaker);
 
-// Website hotel owner auth
-router.post('/signup-website-packagemaker', signupWebsitePackagemaker);
-router.post('/signin-website-packagemaker', signinWebsitePackagemaker);
-router.get('/get-website-hotel-by-login', getWebsiteHotelByLogin);
-router.get('/my-website-packagemaker', verifyToken, getMyWebsitePackagemaker);
-router.get('/my-website-account', verifyToken, getMyWebsiteAccount);
-router.get('/get-all-website-accounts', getAllWebsiteAccounts);
+// Website partner auth moved to /api/website-partner (separate schema)
 
 export default router;
-
