@@ -65,7 +65,7 @@ import inventoryBookingRouter from './routes/inventorybooking.route.js';
 import razorpayDemandRouter from './routes/razorpayDemand.route.js';
 import seoListingRouter from './routes/seoListing.route.js';
 import attendanceRouter from './routes/attendance.route.js';
-
+import websitePartnerRouter from './routes/websitepartner.route.js';
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -133,7 +133,7 @@ app.use("/api/google", googleRouter);
 app.use("/api/google-calendar", googleCalendarRouter);
 app.use("/api/razorpay-demand", razorpayDemandRouter);
 app.use("/api/seo-listing", seoListingRouter);
-
+app.use("/api/website-partner", websitePartnerRouter);
 app.use("/api/whatsapp", whatsappWebhookRouter);
 app.use("/api/whatsapp-demand", whatsappWebhookDemandRouter);
 app.use("/api/user", userRouter);
