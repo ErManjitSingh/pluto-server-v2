@@ -7,6 +7,7 @@ import { createServer } from 'http';
 import compression from "compression";   // ✅ ADD THIS
 import { initializeSocket } from './socket/socket.js';
 import { initializeScheduledTasks } from './utils/scheduledTasks.js';
+import { warmPdfEngine } from './utils/finalcostingPdf.js';
 // ROUTES IMPORTS
 import userRouter from './routes/user.route.js'; 
 import authRouter from './routes/auth.route.js';
@@ -205,4 +206,9 @@ app.use((err, req, res, next) => {
 server.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`💬 Socket.IO ready`);
+  // Pre-warm Chrome + company logos so first PDF is not cold-start slow
+  warmPdfEngine().catch(() => {});
 });
+server.timeout = 120000;
+server.keepAliveTimeout = 125000;
+server.headersTimeout = 126000;
