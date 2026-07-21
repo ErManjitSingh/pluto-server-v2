@@ -5,6 +5,7 @@ import Property from '../models/packagemaker.model.js';
 import nodemailer from 'nodemailer';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount } from './banktransactions.controller.js';
+import { generateFinalCostingPdfBuffer } from '../utils/finalcostingPdf.js';
 
 // Helper function to find lead by identifier (supports both ObjectId and leadId)
 async function findLeadByIdentifier(leadIdentifier) {
@@ -79,6 +80,37 @@ async function updateLeadTotalAmountFromOperations(customerLeadId) {
     console.error('Error updating lead totalAmount from operations:', error);
     return null;
   }
+}
+
+function sanitizeItineraryDays(itineraryDays) {
+  if (!Array.isArray(itineraryDays)) return itineraryDays;
+  return itineraryDays.map((dayEntry) => {
+    if (!dayEntry || typeof dayEntry !== 'object') return dayEntry;
+    const { selectedHotel, ...rest } = dayEntry;
+    return rest;
+  });
+}
+
+function sanitizeOperationForOutput(operation) {
+  if (!operation || typeof operation !== 'object') return operation;
+
+  const sanitized = { ...operation };
+
+  if (operation.package && typeof operation.package === 'object') {
+    sanitized.package = {
+      ...operation.package,
+      itineraryDays: sanitizeItineraryDays(operation.package.itineraryDays),
+    };
+  }
+
+  if (operation.transfer && typeof operation.transfer === 'object') {
+    sanitized.transfer = {
+      ...operation.transfer,
+      itineraryDays: sanitizeItineraryDays(operation.transfer.itineraryDays),
+    };
+  }
+
+  return sanitized;
 }
 
 // Helper function to normalize property name for matching (case-insensitive, trimmed)
@@ -305,10 +337,73 @@ export const getOperationById = async (req, res, next) => {
       return res.status(404).json({ message: 'Operation not found' });
     }
     
-    res.status(200).json(operations);
+    const sanitizedOperations = operations.map(sanitizeOperationForOutput);
+    res.status(200).json(sanitizedOperations);
   } catch (error) {
     next(error);
   }
+};
+
+async function sendOperationPdf(req, res, next, brand = 'ptw') {
+  req.setTimeout(120000);
+  req.headers['x-no-compression'] = '1';
+
+  try {
+    const { id, userId, customerLeadId } = req.params;
+    const operations = await Operation.find({ id, userId, customerLeadId })
+      .lean()
+      .maxTimeMS(70000);
+
+    if (!operations?.length) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+
+    const operation = sanitizeOperationForOutput(operations[0]);
+    const pdfBuffer = await generateFinalCostingPdfBuffer(operation, brand);
+
+    const brandTag = brand === 'demandsetu' ? 'DemandSetu' : 'PTW';
+    const rawName =
+      operation.package?.packageName ||
+      operation.id ||
+      'quotation';
+    const safeName = `${brandTag}-${String(rawName).replace(/[^\w\-]+/g, '-').slice(0, 70)}`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safeName}.pdf"`
+    );
+    res.end(pdfBuffer);
+  } catch (error) {
+    console.error('Final costing PDF error:', error);
+    const msg = error?.message || '';
+    if (msg.includes('Could not find Chrome')) {
+      return res.status(503).json({
+        success: false,
+        message:
+          'Chrome for PDF is not installed. Run: npm run install-chrome — or install Google Chrome on this PC.',
+      });
+    }
+    if (msg.includes('timeout') || msg.includes('Timeout')) {
+      return res.status(504).json({
+        success: false,
+        message: 'PDF took too long. Please try again in a few seconds.',
+      });
+    }
+    next(error);
+  }
+}
+
+/** PTW Holidays PDF (navy/blue theme) */
+export const downloadOperationPdf = async (req, res, next) => {
+  return sendOperationPdf(req, res, next, 'ptw');
+};
+
+/** Demand Setu Tours PDF (orange theme, different layout) */
+export const downloadOperationPdfDemandSetu = async (req, res, next) => {
+  return sendOperationPdf(req, res, next, 'demandsetu');
 };
 
 export const deleteOperation = async (req, res, next) => {
