@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "nodemon api/index.js",
     "start": "node api/index.js",
-    "heroku-postbuild": "npm prune --production"
+    "heroku-postbuild": "npm prune --production",
+    "install-chrome": "npx puppeteer browsers install chrome"
   },
   "engines": {
-    "node": "v16.20.1"
+    "node": ">=20"
   },
   "keywords": [],
   "author": "",
@@ -33,7 +34,9 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.1",
     "prerender-node": "^3.8.3",
+    "puppeteer": "^24.43.1",
     "razorpay": "^2.9.2",
+    "sharp": "^0.33.5",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
