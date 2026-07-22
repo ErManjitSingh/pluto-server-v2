@@ -349,31 +349,41 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
   req.headers['x-no-compression'] = '1';
 
   try {
+    const t0 = Date.now();
     const { id, userId, customerLeadId } = req.params;
-    const operations = await Operation.find({ id, userId, customerLeadId })
+    const operation = await Operation.findOne({ id, userId, customerLeadId })
       .lean()
-      .maxTimeMS(70000);
+      .maxTimeMS(15000);
 
-    if (!operations?.length) {
+    if (!operation) {
       return res.status(404).json({ message: 'Operation not found' });
     }
 
-    const operation = sanitizeOperationForOutput(operations[0]);
-    const pdfBuffer = await generateFinalCostingPdfBuffer(operation, brand);
+    const dbMs = Date.now() - t0;
+    const sanitized = sanitizeOperationForOutput(operation);
+    const { buffer: pdfBuffer, cacheHit, timings } =
+      await generateFinalCostingPdfBuffer(sanitized, brand);
 
     const brandTag = brand === 'demandsetu' ? 'DemandSetu' : 'PTW';
     const rawName =
-      operation.package?.packageName ||
-      operation.id ||
+      sanitized.package?.packageName ||
+      sanitized.id ||
       'quotation';
     const safeName = `${brandTag}-${String(rawName).replace(/[^\w\-]+/g, '-').slice(0, 70)}`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', pdfBuffer.length);
     res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('X-PDF-Cache', cacheHit ? 'HIT' : 'MISS');
+    if (timings?.totalMs != null) {
+      res.setHeader('X-PDF-Time', String(timings.totalMs));
+    }
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${safeName}.pdf"`
+    );
+    console.log(
+      `[pdf] ${brand} ${cacheHit ? 'HIT' : 'MISS'} db=${dbMs}ms gen=${timings?.totalMs ?? '?'}ms total=${Date.now() - t0}ms`
     );
     res.end(pdfBuffer);
   } catch (error) {
