@@ -345,15 +345,20 @@ export const getOperationById = async (req, res, next) => {
 };
 
 async function sendOperationPdf(req, res, next, brand = 'ptw') {
-  req.setTimeout(120000);
+  req.setTimeout(180000);
+  res.setTimeout(180000);
   req.headers['x-no-compression'] = '1';
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
     const t0 = Date.now();
     const { id, userId, customerLeadId } = req.params;
     const operation = await Operation.findOne({ id, userId, customerLeadId })
       .lean()
-      .maxTimeMS(15000);
+      .maxTimeMS(20000)
+      .select(
+        'id userId customerLeadId updatedAt finalTotal total totals hotels package transfer'
+      );
 
     if (!operation) {
       return res.status(404).json({ message: 'Operation not found' });
@@ -383,11 +388,13 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
       `attachment; filename="${safeName}.pdf"`
     );
     console.log(
-      `[pdf] ${brand} ${cacheHit ? 'HIT' : 'MISS'} db=${dbMs}ms gen=${timings?.totalMs ?? '?'}ms total=${Date.now() - t0}ms`
+      `[pdf] ${brand} ${cacheHit ? 'HIT' : 'MISS'} db=${dbMs}ms gen=${timings?.totalMs ?? '?'}ms total=${Date.now() - t0}ms bytes=${pdfBuffer.length}`
     );
     res.end(pdfBuffer);
   } catch (error) {
     console.error('Final costing PDF error:', error);
+    if (res.headersSent) return;
+    res.setHeader('Access-Control-Allow-Origin', '*');
     const msg = error?.message || '';
     if (msg.includes('Could not find Chrome')) {
       return res.status(503).json({
@@ -396,13 +403,16 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
           'Chrome for PDF is not installed. Run: npm run install-chrome — or install Google Chrome on this PC.',
       });
     }
-    if (msg.includes('timeout') || msg.includes('Timeout')) {
+    if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('aborted')) {
       return res.status(504).json({
         success: false,
         message: 'PDF took too long. Please try again in a few seconds.',
       });
     }
-    next(error);
+    return res.status(500).json({
+      success: false,
+      message: msg || 'PDF generation failed',
+    });
   }
 }
 
