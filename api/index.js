@@ -117,7 +117,14 @@ app.use(
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-    exposedHeaders: ["Content-Disposition", "Content-Range", "X-Content-Range"],
+    exposedHeaders: [
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Range",
+      "X-Content-Range",
+      "X-PDF-Cache",
+      "X-PDF-Time",
+    ],
   })
 );
 
@@ -194,6 +201,10 @@ app.use("/api/attendance", attendanceRouter);
 //  GLOBAL ERROR HANDLER
 // -------------------------------------------------------------
 app.use((err, req, res, next) => {
+  // Always attach CORS so browser shows real error (not fake CORS) when PDF/proxy fails
+  if (!res.headersSent) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.status(err.statusCode || 500).json({
     success: false,
     message: err.message || "Internal Server Error",
@@ -209,6 +220,11 @@ server.listen(port, () => {
   // Pre-warm Chrome + company logos so first PDF is not cold-start slow
   warmPdfEngine().catch(() => {});
 });
-server.timeout = 120000;
-server.keepAliveTimeout = 125000;
-server.headersTimeout = 126000;
+
+// Large PDF downloads (9D/8N) need longer than default limits
+server.timeout = 180000;
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 185000;
+if (typeof server.requestTimeout !== "undefined") {
+  server.requestTimeout = 180000;
+}
