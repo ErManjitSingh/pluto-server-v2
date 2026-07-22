@@ -235,13 +235,16 @@ async function mapPool(items, concurrency, worker) {
  * - Success cache for instant repeat downloads
  * - Icon only when no URL / timeout / fail (stable for this request)
  */
-export async function attachOptimizedHotelImages(operation) {
+export async function attachOptimizedHotelImages(operation, opts = {}) {
   if (!operation || typeof operation !== 'object') return operation;
 
   const hotels = Array.isArray(operation.hotels) ? operation.hotels : [];
   if (!hotels.length) return operation;
 
   const t0 = Date.now();
+  const overallBudget =
+    typeof opts.budgetMs === 'number' ? opts.budgetMs : OVERALL_BUDGET_MS;
+
   const urlSet = new Set();
   const hotelUrlMap = hotels.map((h) => {
     const u = getHotelImageUrl(h);
@@ -269,7 +272,7 @@ export async function attachOptimizedHotelImages(operation) {
   }
 
   if (misses.length) {
-    const budgetTimer = setTimeout(() => budgetCtrl.abort(), OVERALL_BUDGET_MS);
+    const budgetTimer = setTimeout(() => budgetCtrl.abort(), overallBudget);
 
     const fetchAll = mapPool(misses, CONCURRENCY, async (url) => {
       if (budgetCtrl.signal.aborted) {
@@ -283,7 +286,6 @@ export async function attachOptimizedHotelImages(operation) {
       urlToData.set(url, dataUri);
     });
 
-    // Finish early if all done; otherwise stop at budget (no hang)
     await Promise.race([
       fetchAll,
       new Promise((resolve) => {
@@ -295,10 +297,8 @@ export async function attachOptimizedHotelImages(operation) {
 
     clearTimeout(budgetTimer);
 
-    // Give in-flight jobs a tiny settle window after abort (~150ms) so near-done
-    // images aren't dropped mid-encode (reduces icon flicker / inconsistency)
     if (budgetCtrl.signal.aborted) {
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 120));
     }
 
     for (const url of misses) {
@@ -314,7 +314,6 @@ export async function attachOptimizedHotelImages(operation) {
     if (url && urlToData.has(url)) {
       pdfImage = urlToData.get(url) || null;
     } else if (url) {
-      // URL beyond MAX_UNIQUE_URLS → icon (stable)
       pdfImage = null;
     }
     if (pdfImage) withPhoto += 1;
@@ -323,7 +322,7 @@ export async function attachOptimizedHotelImages(operation) {
   });
 
   console.log(
-    `[pdf-image] ${Date.now() - t0}ms hotels=${hotels.length} urls=${urls.length} miss=${misses.length} photos=${withPhoto} icons=${withIcon}`
+    `[pdf-image] ${Date.now() - t0}ms hotels=${hotels.length} urls=${urls.length} miss=${misses.length} photos=${withPhoto} icons=${withIcon} budget=${overallBudget}`
   );
 
   return { ...operation, hotels: enrichedHotels };
