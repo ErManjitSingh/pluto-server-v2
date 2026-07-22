@@ -3,11 +3,30 @@ import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationB
 
 const router = express.Router();
 
+/** Large PDFs can take >60s; keep socket open + always send CORS (proxy errors look like CORS in browser). */
+function pdfDownloadMiddleware(req, res, next) {
+  req.headers['x-no-compression'] = '1';
+  req.setTimeout(180000);
+  res.setTimeout(180000);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader(
+    'Access-Control-Expose-Headers',
+    'Content-Disposition, Content-Length, Content-Type, X-PDF-Cache, X-PDF-Time'
+  );
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+}
+
 router.post('/create', createOperation);
 router.get('/get', getOperations);
 router.get('/get/:id/:userId/:customerLeadId', getOperationById);
-router.get('/pdf/:id/:userId/:customerLeadId', downloadOperationPdf);
-router.get('/pdf-demandsetu/:id/:userId/:customerLeadId', downloadOperationPdfDemandSetu);
+router.get('/pdf/:id/:userId/:customerLeadId', pdfDownloadMiddleware, downloadOperationPdf);
+router.get(
+  '/pdf-demandsetu/:id/:userId/:customerLeadId',
+  pdfDownloadMiddleware,
+  downloadOperationPdfDemandSetu
+);
 router.get('/get-by-id-base64/:encodedId', getOperationByMongoIdBase64);
 router.get('/get-by-id/:id', getOperationByMongoId);
 router.put('/update/:id', updateOperation);
