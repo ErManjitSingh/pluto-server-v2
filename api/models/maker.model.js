@@ -85,6 +85,26 @@ const makerSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  salaryHistory: [
+    {
+      month: {
+        type: String, // e.g. "2026-07"
+        required: true,
+      },
+      basicSalary: {
+        type: Number,
+        default: 0,
+      },
+      overtime: {
+        type: Number,
+        default: 0,
+      },
+      epf: {
+        type: Number,
+        default: 0,
+      },
+    },
+  ],
 }, { timestamps: true });
 
 const Maker = mongoose.model('Maker', makerSchema);
