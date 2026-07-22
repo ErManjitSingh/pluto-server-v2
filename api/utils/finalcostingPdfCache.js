@@ -1,7 +1,7 @@
-const TTL_MS = 15 * 60 * 1000;
-const MAX_ENTRIES = 40;
-/** Bump when PDF HTML/layout changes so cached PDFs refresh without waiting for DB updates */
-export const PDF_TEMPLATE_VERSION = 'v14';
+/** Bump when PDF HTML/layout changes so cached PDFs refresh */
+export const PDF_TEMPLATE_VERSION = 'v20';
+const TTL_MS = 30 * 60 * 1000;
+const MAX_ENTRIES = 60;
 
 /** @type {Map<string, { buffer: Buffer, expires: number }>} */
 const store = new Map();
