@@ -202,6 +202,107 @@ async function renderPdfBufferWithRetry(html) {
   throw lastError;
 }
 
+function clipText(str, max = 900) {
+  const s = String(str || '');
+  if (s.length <= max) return s;
+  return `${s.slice(0, max).trim()}…`;
+}
+
+/**
+ * Drop heavy Mongo fields that are unused in PDF HTML.
+ * Big 9D/8N ops otherwise make setContent/page.pdf very slow / timeout (browser shows fake CORS).
+ */
+function slimOperationForPdf(operation) {
+  if (!operation || typeof operation !== 'object') return operation;
+
+  const slimLead = (lead) => {
+    if (!lead || typeof lead !== 'object') return lead;
+    return {
+      name: lead.name,
+      mobile: lead.mobile,
+      email: lead.email,
+      travelDate: lead.travelDate,
+      days: lead.days,
+      noOfRooms: lead.noOfRooms,
+    };
+  };
+
+  const hotels = (Array.isArray(operation.hotels) ? operation.hotels : []).map((h) => ({
+    day: h.day,
+    propertyName: h.propertyName,
+    cityName: h.cityName,
+    roomName: h.roomName,
+    mealPlan: h.mealPlan,
+    roomcount: h.roomcount,
+    propertyphoto: h.propertyphoto,
+    propertyPhoto: h.propertyPhoto,
+    roomimage: h.roomimage,
+    roomImage: h.roomImage,
+    image: h.image,
+    photo: h.photo,
+    selectedLead: slimLead(h.selectedLead),
+  }));
+
+  const pkg = operation.package || {};
+  const itinDays = (pkg.itineraryDays || operation.transfer?.itineraryDays || []).map((d) => {
+    const it = d.selectedItinerary || {};
+    return {
+      day: d.day,
+      selectedItinerary: {
+        itineraryTitle: it.itineraryTitle,
+        cityName: it.cityName,
+        itineraryDescription: clipText(it.itineraryDescription, 1000),
+      },
+    };
+  });
+
+  const transferDetails = (operation.transfer?.details || []).map((d) => ({
+    cabName: d.cabName,
+    cabType: d.cabType,
+    seatingCapacity: d.seatingCapacity,
+    cabSeatingCapacity: d.cabSeatingCapacity,
+    luggage: d.luggage,
+    quantity: d.quantity,
+  }));
+
+  return {
+    id: operation.id,
+    _id: operation._id,
+    userId: operation.userId,
+    customerLeadId: operation.customerLeadId,
+    updatedAt: operation.updatedAt,
+    finalTotal: operation.finalTotal,
+    total: operation.total,
+    totals: operation.totals
+      ? { grandTotal: operation.totals.grandTotal }
+      : undefined,
+    hotels,
+    package: {
+      packageName: pkg.packageName,
+      state: pkg.state,
+      duration: pkg.duration,
+      packageType: pkg.packageType,
+      tags: pkg.tags,
+      pickupLocation: pkg.pickupLocation,
+      dropLocation: pkg.dropLocation,
+      packagePlaces: pkg.packagePlaces,
+      packageDescription: pkg.packageDescription,
+      packageInclusions: pkg.packageInclusions,
+      packageExclusions: pkg.packageExclusions,
+      customExclusions: (pkg.customExclusions || []).map((p) => ({
+        name: p.name,
+        description: p.description,
+      })),
+      itineraryDays: itinDays,
+    },
+    transfer: {
+      selectedLead: slimLead(operation.transfer?.selectedLead),
+      details: transferDetails,
+      itineraryDays: pkg.itineraryDays?.length ? undefined : itinDays,
+    },
+  };
+}
+
 /**
  * @param {object} operation
  * @param {'ptw'|'demandsetu'} [brand='ptw']
@@ -209,16 +310,21 @@ async function renderPdfBufferWithRetry(html) {
  */
 export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
   const t0 = Date.now();
-  const cacheKey = buildPdfCacheKey(operation, brand);
+  const slim = slimOperationForPdf(operation);
+  const cacheKey = buildPdfCacheKey(slim, brand);
   const cached = getCachedPdf(cacheKey);
   if (cached) {
     return { buffer: cached, cacheHit: true, timings: { totalMs: Date.now() - t0, cacheHit: true } };
   }
 
+  const hotelCount = slim.hotels?.length || 0;
+  // Large trips: shorter image wait so render starts sooner (icons for slow ones)
+  const imageBudgetMs = hotelCount >= 7 ? 2200 : 3200;
+
   const tImages = Date.now();
   const [, withImages] = await Promise.all([
     Promise.all([getBrowser(), ensureBrandLogo(brand)]),
-    attachOptimizedHotelImages(operation),
+    attachOptimizedHotelImages(slim, { budgetMs: imageBudgetMs }),
   ]);
   const imagesMs = Date.now() - tImages;
 
@@ -229,6 +335,7 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
       : buildFinalCostingPdfHtml(withImages);
   html = injectLogoDataUri(html, brand);
   const htmlMs = Date.now() - tHtml;
+  console.log(`[pdf] htmlBytes=${Buffer.byteLength(html, 'utf8')} hotels=${hotelCount}`);
 
   const tRender = Date.now();
   const buffer = await enqueuePdfJob(() => renderPdfBufferWithRetry(html));
