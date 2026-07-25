@@ -38,7 +38,9 @@ import {
   syncMetaLeadsController,
   getLeadsByAssignedUserId,
   removeLeadStatusNoteCreatedAt,
-  getLeadsByAssignedUserIdBasic
+  getLeadsByAssignedUserIdBasic,
+  getLeadStatusNoteFast,
+  getLeadBasicInfoFast
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
 
@@ -48,6 +50,8 @@ router.post('/create-lead', verifyToken, createLead);
 router.get('/get-leads', verifyToken, getLeads);
 router.get('/get-leads-by-assigned-user/:assignedUserId', getLeadsByAssignedUserId);
 router.get('/get-leads-by-assigned-user-basic/:assignedUserId', getLeadsByAssignedUserIdBasic);
+router.get('/get-lead-status-note/:id', getLeadStatusNoteFast);
+router.get('/get-lead-basic-info/:id', getLeadBasicInfoFast);
 router.get('/get-lead/:id', verifyToken, getLead);
 router.get('/get-lead/:leadId/emails', verifyToken, getLeadEmails);
 router.put('/update-lead/:id', verifyToken ,  updateLead);
