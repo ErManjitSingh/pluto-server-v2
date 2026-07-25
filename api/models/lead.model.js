@@ -19,7 +19,7 @@ const leadSchema = new mongoose.Schema({
      seen: { type: Boolean, default: false },
      // Optional Google Calendar event id for this specific follow-up
      googleEventId: { type: String, required: false },
-    createdAt: { type: Date, default: Date.now }
+         createdAt: { type: Date, required: false }
    }],
 
   name: {
