@@ -847,34 +847,31 @@ export const getLeadStatusNoteFast = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
       return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
-
     const oid = new mongoose.Types.ObjectId(assignedUserId);
     const leads = await Lead.find({
       assignedUserId: oid,
       isAssignedLead: true
     })
-      .select({
-        leadStatus: 1,
-        assignedUserId: 1,
-        leadstatusnote: { $slice: -1 }
-      })
+      .select('leadStatus assignedUserId leadstatusnote')
       .populate({
         path: 'assignedUserId',
-        model: 'Maker',
+        model: Maker,
         select: 'firstName lastName email contactNo userType designation teamLeaderName teamLeaderId managerId managerName active'
       })
       .sort({ createdAt: -1 })
       .lean();
 
-    const result = leads.map((lead) => ({
-      _id: lead._id,
-      leadStatus: lead.leadStatus ?? null,
-      leadstatusnote:
-        Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
-          ? lead.leadstatusnote[0]
-          : null,
-      assignedUserId: lead.assignedUserId ?? null
-    }));
+    const result = leads.map((lead) => {
+      const notes = lead.leadstatusnote;
+      const lastNote =
+        Array.isArray(notes) && notes.length ? notes[notes.length - 1] : null;
+      return {
+        _id: lead._id,
+        leadStatus: lead.leadStatus ?? null,
+        leadstatusnote: lastNote,
+        assignedUserId: lead.assignedUserId ?? null
+      };
+    });
 
     return res.status(200).json(result);
   } catch (error) {
@@ -896,32 +893,31 @@ export const getLeadBasicInfoFast = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
       return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
-
     const oid = new mongoose.Types.ObjectId(assignedUserId);
     const leads = await Lead.find({
       assignedUserId: oid,
       isAssignedLead: true
     })
-      .select({
-        name: 1,
-        email: 1,
-        mobile: 1,
-        destination: 1,
-        days: 1,
-        nights: 1,
-        leadStatus: 1,
-        leadstatusnote: { $slice: -1 }
-      })
+      .select('name email mobile destination days nights leadStatus leadstatusnote')
       .sort({ createdAt: -1 })
       .lean();
 
-    const result = leads.map((lead) => ({
-      ...lead,
-      leadstatusnote:
-        Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
-          ? lead.leadstatusnote[0]
-          : null
-    }));
+    const result = leads.map((lead) => {
+      const notes = lead.leadstatusnote;
+      const lastNote =
+        Array.isArray(notes) && notes.length ? notes[notes.length - 1] : null;
+      return {
+        _id: lead._id,
+        name: lead.name,
+        email: lead.email,
+        mobile: lead.mobile,
+        destination: lead.destination,
+        days: lead.days,
+        nights: lead.nights,
+        leadStatus: lead.leadStatus ?? null,
+        leadstatusnote: lastNote
+      };
+    });
 
     return res.status(200).json(result);
   } catch (error) {
