@@ -881,7 +881,7 @@ export const getLeadStatusNoteFast = async (req, res, next) => {
 
 /**
  * GET leads basic trip/contact info by assignedUserId (fast):
- * name, email, mobile, destination, days, nights, leadStatus, last leadstatusnote
+ * name, email, mobile, destination, days, nights, leadStatus, all leadstatusnote
  * GET /get-lead-basic-info/:assignedUserId
  */
 export const getLeadBasicInfoFast = async (req, res, next) => {
@@ -895,31 +895,13 @@ export const getLeadBasicInfoFast = async (req, res, next) => {
     }
     const oid = new mongoose.Types.ObjectId(assignedUserId);
     const leads = await Lead.find({
-      assignedUserId: oid,
-      isAssignedLead: true
+      assignedUserId: oid
     })
       .select('name email mobile destination days nights leadStatus leadstatusnote')
       .sort({ createdAt: -1 })
       .lean();
 
-    const result = leads.map((lead) => {
-      const notes = lead.leadstatusnote;
-      const lastNote =
-        Array.isArray(notes) && notes.length ? notes[notes.length - 1] : null;
-      return {
-        _id: lead._id,
-        name: lead.name,
-        email: lead.email,
-        mobile: lead.mobile,
-        destination: lead.destination,
-        days: lead.days,
-        nights: lead.nights,
-        leadStatus: lead.leadStatus ?? null,
-        leadstatusnote: lastNote
-      };
-    });
-
-    return res.status(200).json(result);
+    return res.status(200).json(leads);
   } catch (error) {
     next(error);
   }
