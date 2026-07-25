@@ -833,6 +833,70 @@ export const getLeadsByAssignedUserIdBasic = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * GET lead status summary (fast): last leadstatusnote, leadStatus, assignedUserId (populated)
+ * GET /get-lead-status-note/:id
+ */
+export const getLeadStatusNoteFast = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const lead = await Lead.findById(id)
+      .select({
+        leadStatus: 1,
+        assignedUserId: 1,
+        leadstatusnote: { $slice: -1 }
+      })
+      .populate({
+        path: 'assignedUserId',
+        model: 'Maker',
+        select: 'firstName lastName email contactNo userType designation teamLeaderName teamLeaderId managerId managerName active'
+      })
+      .lean();
+
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+
+    const lastNote =
+      Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
+        ? lead.leadstatusnote[0]
+        : null;
+
+    return res.status(200).json({
+      leadStatus: lead.leadStatus ?? null,
+      leadstatusnote: lastNote,
+      assignedUserId: lead.assignedUserId ?? null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET lead basic trip/contact info (fast): name, email, mobile, destination, days, nights
+ * GET /get-lead-basic-info/:id
+ */
+export const getLeadBasicInfoFast = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid lead id' });
+    }
+
+    const lead = await Lead.findById(id)
+      .select('name email mobile destination days nights')
+      .lean();
+
+    if (!lead) return res.status(404).json({ message: 'Lead not found' });
+
+    return res.status(200).json(lead);
+  } catch (error) {
+    next(error);
+  }
+};
 /**
  * Get all emails for a specific lead (email timeline)
  * GET /api/leads/:leadId/emails
