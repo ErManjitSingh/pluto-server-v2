@@ -18,7 +18,8 @@ const leadSchema = new mongoose.Schema({
      managerid: { type: mongoose.Schema.Types.Mixed },
      seen: { type: Boolean, default: false },
      // Optional Google Calendar event id for this specific follow-up
-     googleEventId: { type: String, required: false }
+     googleEventId: { type: String, required: false },
+    createdAt: { type: Date, default: Date.now }
    }],
 
   name: {
