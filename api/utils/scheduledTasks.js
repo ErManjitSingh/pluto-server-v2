@@ -33,9 +33,9 @@ export const deleteOldNonConvertedOperations = async () => {
 };
 
 /**
- * Schedule Meta lead sync to run once, then again 4 minutes after each run.
+ * Schedule Meta lead sync to run once, then again 15 minutes after each run.
  */
-const META_LEAD_SYNC_INTERVAL_MS = 4 * 60 * 1000;
+const META_LEAD_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 
 const scheduleMetaLeadSync = () => {
   const scheduleNext = () => {
@@ -58,7 +58,7 @@ const scheduleMetaLeadSync = () => {
 export const initializeScheduledTasks = () => {
   let webmailPolling = false;
 
-  // Meta (FB/Instagram) lead sync — runs every 4 minutes after the previous run
+  // Meta (FB/Instagram) lead sync — runs every 15 minutes after the previous run
   scheduleMetaLeadSync();
 
   // Webmail IMAP poll — every 60 seconds (with overlap guard)
