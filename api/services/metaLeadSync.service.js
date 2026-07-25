@@ -1,6 +1,6 @@
 import Lead from '../models/lead.model.js';
 import mongoose from 'mongoose';
-import { getNextLeadIdAndPublish } from './leadId.service.js';
+import { getNextLeadIdAndPublishPrefer } from './leadId.service.js';
 import { initializeLeadRemainingAmount } from '../controllers/banktransactions.controller.js';
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v25.0';
@@ -273,7 +273,7 @@ export async function syncMetaLeads() {
         if (!existingPtw) {
           // Skip only PTW if same mobile+ptw exists within 10 days
           if (!(await shouldSkipByMobileAndPublish(payload.mobile, 'ptw', metaLead.created_time))) {
-            const { leadId } = await getNextLeadIdAndPublish();
+            const { leadId } = await getNextLeadIdAndPublishPrefer('ptw');
             const leadData = {
               ...payload,
               lead_meta_id: `${metaId}_ptw`,
@@ -301,7 +301,7 @@ export async function syncMetaLeads() {
         if (!existingDemand) {
           // Skip only Demand if same mobile+demand exists within 10 days
           if (!(await shouldSkipByMobileAndPublish(payload.mobile, 'demand', metaLead.created_time))) {
-            const { leadId } = await getNextLeadIdAndPublish();
+            const { leadId } = await getNextLeadIdAndPublishPrefer('demand');
             const leadData = {
               ...payload,
               lead_meta_id: `${metaId}_demand`,
