@@ -835,17 +835,24 @@ export const getLeadsByAssignedUserIdBasic = async (req, res, next) => {
 };
 
 /**
- * GET lead status summary (fast): last leadstatusnote, leadStatus, assignedUserId (populated)
- * GET /get-lead-status-note/:id
+ * GET lead status summary by assignedUserId (fast): last leadstatusnote, leadStatus, assignedUserId (populated)
+ * GET /get-lead-status-note/:assignedUserId
  */
 export const getLeadStatusNoteFast = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid lead id' });
+    const { assignedUserId } = req.params;
+    if (!assignedUserId) {
+      return res.status(400).json({ message: 'assignedUserId is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
+      return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
 
-    const lead = await Lead.findById(id)
+    const oid = new mongoose.Types.ObjectId(assignedUserId);
+    const leads = await Lead.find({
+      assignedUserId: oid,
+      isAssignedLead: true
+    })
       .select({
         leadStatus: 1,
         assignedUserId: 1,
@@ -856,37 +863,45 @@ export const getLeadStatusNoteFast = async (req, res, next) => {
         model: 'Maker',
         select: 'firstName lastName email contactNo userType designation teamLeaderName teamLeaderId managerId managerName active'
       })
+      .sort({ createdAt: -1 })
       .lean();
 
-    if (!lead) return res.status(404).json({ message: 'Lead not found' });
-
-    const lastNote =
-      Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
-        ? lead.leadstatusnote[0]
-        : null;
-
-    return res.status(200).json({
+    const result = leads.map((lead) => ({
+      _id: lead._id,
       leadStatus: lead.leadStatus ?? null,
-      leadstatusnote: lastNote,
+      leadstatusnote:
+        Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
+          ? lead.leadstatusnote[0]
+          : null,
       assignedUserId: lead.assignedUserId ?? null
-    });
+    }));
+
+    return res.status(200).json(result);
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * GET lead basic trip/contact info (fast): name, email, mobile, destination, days, nights, leadStatus, last leadstatusnote
- * GET /get-lead-basic-info/:id
+ * GET leads basic trip/contact info by assignedUserId (fast):
+ * name, email, mobile, destination, days, nights, leadStatus, last leadstatusnote
+ * GET /get-lead-basic-info/:assignedUserId
  */
 export const getLeadBasicInfoFast = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: 'Invalid lead id' });
+    const { assignedUserId } = req.params;
+    if (!assignedUserId) {
+      return res.status(400).json({ message: 'assignedUserId is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
+      return res.status(400).json({ message: 'Invalid assignedUserId' });
     }
 
-    const lead = await Lead.findById(id)
+    const oid = new mongoose.Types.ObjectId(assignedUserId);
+    const leads = await Lead.find({
+      assignedUserId: oid,
+      isAssignedLead: true
+    })
       .select({
         name: 1,
         email: 1,
@@ -895,19 +910,20 @@ export const getLeadBasicInfoFast = async (req, res, next) => {
         days: 1,
         nights: 1,
         leadStatus: 1,
-        leadstatusnote:1,
+        leadstatusnote: { $slice: -1 }
       })
+      .sort({ createdAt: -1 })
       .lean();
 
-    if (!lead) return res.status(404).json({ message: 'Lead not found' });
-
-    return res.status(200).json({
+    const result = leads.map((lead) => ({
       ...lead,
       leadstatusnote:
         Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
           ? lead.leadstatusnote[0]
           : null
-    });
+    }));
+
+    return res.status(200).json(result);
   } catch (error) {
     next(error);
   }
