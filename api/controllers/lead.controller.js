@@ -876,7 +876,7 @@ export const getLeadStatusNoteFast = async (req, res, next) => {
 };
 
 /**
- * GET lead basic trip/contact info (fast): name, email, mobile, destination, days, nights
+ * GET lead basic trip/contact info (fast): name, email, mobile, destination, days, nights, leadStatus, last leadstatusnote
  * GET /get-lead-basic-info/:id
  */
 export const getLeadBasicInfoFast = async (req, res, next) => {
@@ -887,12 +887,27 @@ export const getLeadBasicInfoFast = async (req, res, next) => {
     }
 
     const lead = await Lead.findById(id)
-      .select('name email mobile destination days nights')
+      .select({
+        name: 1,
+        email: 1,
+        mobile: 1,
+        destination: 1,
+        days: 1,
+        nights: 1,
+        leadStatus: 1,
+        leadstatusnote:1,
+      })
       .lean();
 
     if (!lead) return res.status(404).json({ message: 'Lead not found' });
 
-    return res.status(200).json(lead);
+    return res.status(200).json({
+      ...lead,
+      leadstatusnote:
+        Array.isArray(lead.leadstatusnote) && lead.leadstatusnote.length
+          ? lead.leadstatusnote[0]
+          : null
+    });
   } catch (error) {
     next(error);
   }
