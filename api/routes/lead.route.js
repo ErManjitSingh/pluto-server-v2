@@ -37,6 +37,7 @@ import {
   markLeadStatusNoteSeen,
   syncMetaLeadsController,
   getLeadsByAssignedUserId,
+  removeLeadStatusNoteCreatedAt,
   getLeadsByAssignedUserIdBasic
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
@@ -100,5 +101,6 @@ router.get('/get-lead-status-notifications-by-user/:userId', getLeadStatusNotifi
 router.get('/get-lead-status-notifications-by-teamleader/:teamLeaderId', getLeadStatusNotificationsByTeamLeaderId);
 router.get('/get-lead-status-notifications-by-manager/:managerId', getLeadStatusNotificationsByManagerId);
 router.delete('/delete-lead-status-notification/:id', deleteLeadStatusNotification);
+router.post('/remove-leadstatusnote-createdat', removeLeadStatusNoteCreatedAt);
 
 export default router;
