@@ -198,11 +198,16 @@ async function shouldSkipByMobileAndPublish(mobile, publish, metaLeadCreatedTime
 function transformMetaLeadToPayload(metaLead, formId) {
   const fieldData = metaLead.field_data || [];
   const name = getFieldValue(fieldData, 'full_name');
-  const mobile = getFieldValue(fieldData, 'phone_number');
+  const mobile =
+    getFieldValue(fieldData, 'phone_number') ||
+    getFieldValue(fieldData, 'phone');
   const email = getFieldValue(fieldData, 'email');
   const travelType = getFieldValue(fieldData, 'your_travel_type_');
   const lookingFor = getFieldValue(fieldData, 'what_you_are_looking_for_?');
-  const travelDateStr = getFieldValue(fieldData, 'your_travel_date_?');
+  const travelDateStr =
+    getFieldValue(fieldData, 'your_travel_date_?') ||
+    getFieldValue(fieldData, 'travel_date_?');
+  const persons = getFieldValue(fieldData, 'no_of_person_?');
   const formName = formId ? (FORM_ID_TO_NAME[formId] || formId) : '';
 
   return {
@@ -211,6 +216,7 @@ function transformMetaLeadToPayload(metaLead, formId) {
     email: email || '',
     packageType: travelType || lookingFor || undefined,
     destination: travelDateStr || undefined,
+    persons: persons || undefined,
     source: 'meta',
     sourceFormId: formId || undefined,
     sourceFormName: formName || undefined,
