@@ -7,6 +7,8 @@ const META_GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
 // Form ID -> Form name (from Meta Lead Ad forms)
 const FORM_ID_TO_NAME = {
+  '1903635730309193': 'Shimla Manali Tour package',
+  '1796326498004957': 'Rajasthan Tour Package',
   '2674038349644478': 'Hotel JK Dharamshala-copy',
   '1223842246538694': 'Hotel JK Dharamshala',
   '1471047764590067': 'Leh Tour Packages-copy-copy',
@@ -36,13 +38,14 @@ const FORM_ID_TO_NAME = {
 
 // Form IDs from Meta (FB/Instagram Lead Ads) - can override via env META_FORM_IDS (comma-separated)
 const DEFAULT_FORM_IDS = [
-  '2674038349644478', '1223842246538694', '1471047764590067', '740770488625534',
-  '1606772576983358', '803369272680705', '1382788463517327', '1595736464927418',
-  '1528098575144345', '1908365669781665', '1398680488634977', '1245471024064781',
-  '1367808738124925', '1393329672350546', '4254475408166247', '4078392495747198',
-  '814847136887082', '1981206252297495', '1616441215777324', '1415240969129159',
-  '1146314916381605', '1876547592761895', '2472954876232013', '409968121678852',
-  '463909945988547'
+  '1903635730309193', '1796326498004957', '2674038349644478', '1223842246538694',
+  '1471047764590067',
+  '740770488625534', '1606772576983358', '803369272680705', '1382788463517327',
+  '1595736464927418', '1528098575144345', '1908365669781665', '1398680488634977',
+  '1245471024064781', '1367808738124925', '1393329672350546', '4254475408166247',
+  '4078392495747198', '814847136887082', '1981206252297495', '1616441215777324',
+  '1415240969129159', '1146314916381605', '1876547592761895', '2472954876232013',
+  '409968121678852', '463909945988547'
 ];
 
 function getFormIds() {
@@ -53,14 +56,14 @@ function getFormIds() {
   return DEFAULT_FORM_IDS;
 }
 
-/** Min Meta `created_time` (inclusive). Only leads on or after this instant are posted. Override with META_LEAD_SYNC_MIN_CREATED_AT (ISO 8601, e.g. 2026-03-28T14:42:00+05:30). */
+/** Min Meta `created_time` (inclusive). Only leads on or after this instant are posted. Override with META_LEAD_SYNC_MIN_CREATED_AT (ISO 8601, e.g. 2026-07-22T14:00:00+05:30). */
 function getMetaLeadSyncMinCreatedAtMs() {
   const env = process.env.META_LEAD_SYNC_MIN_CREATED_AT;
   if (env && typeof env === 'string' && env.trim()) {
     const t = Date.parse(env.trim());
     if (!Number.isNaN(t)) return t;
   }
-  return Date.parse('2026-03-28T14:42:00+05:30');
+  return Date.parse('2026-07-22T14:00:00+05:30');
 }
 
 function isMetaLeadOnOrAfterMinCreated(metaLead) {
