@@ -1275,6 +1275,7 @@ export const updateLeadStatusNote = async (req, res, next) => {
       userid: userid || undefined,
       teamleaderid: teamleaderid || undefined,
       managerid: managerid || undefined,
+      createdAt: new Date(),
       // googleEventId will be filled after successful Calendar call
     };
 
@@ -1473,6 +1474,27 @@ export const deleteLeadStatusNotification = async (req, res, next) => {
     const deleted = await LeadStatusNotification.findByIdAndDelete(id);
     if (!deleted) return res.status(404).json({ message: 'Lead status notification not found' });
     res.status(200).json({ message: 'Lead status note deleted successfully', deleted });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * One-time cleanup: remove createdAt from every leadstatusnote subdocument.
+ * Does not delete notes — only unsets the createdAt field.
+ */
+export const removeLeadStatusNoteCreatedAt = async (req, res, next) => {
+  try {
+    const result = await Lead.updateMany(
+      { 'leadstatusnote.createdAt': { $exists: true } },
+      { $unset: { 'leadstatusnote.$[].createdAt': '' } }
+    );
+
+    res.status(200).json({
+      message: 'Removed createdAt from all leadstatusnote entries',
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
   } catch (error) {
     next(error);
   }
