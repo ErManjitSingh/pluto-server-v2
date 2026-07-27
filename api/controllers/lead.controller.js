@@ -214,7 +214,23 @@ export const crmCreateLead = async (req, res, next) => {
     }
 
     const newLead = new Lead(leadData);
-    const savedLead = await newLead.save();
+    let savedLead;
+    try {
+      savedLead = await newLead.save();
+    } catch (saveErr) {
+      // Race: another request created the same lead_meta_id first (unique index).
+      if (saveErr && saveErr.code === 11000 && lead_meta_id) {
+        const existing = await Lead.findOne({ lead_meta_id });
+        if (existing) {
+          return res.status(200).json({
+            message: 'Lead already exists with this lead_meta_id',
+            lead: existing,
+            created: false
+          });
+        }
+      }
+      throw saveErr;
+    }
 
     try {
       if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
@@ -897,7 +913,7 @@ export const getLeadBasicInfoFast = async (req, res, next) => {
     const leads = await Lead.find({
       assignedUserId: oid
     })
-      .select('name email mobile destination days nights leadStatus leadstatusnote')
+      .select('name email mobile destination guestlocation days nights leadStatus leadstatusnote')
       .sort({ createdAt: -1 })
       .lean();
 
