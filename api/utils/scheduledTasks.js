@@ -41,7 +41,10 @@ const scheduleMetaLeadSync = () => {
   const scheduleNext = () => {
     setTimeout(async () => {
       try {
-        await syncMetaLeads();
+        const result = await syncMetaLeads();
+        if (result?.reason === 'already_running' || result?.reason === 'lock_not_acquired') {
+          console.log(`⏭️  Scheduled Meta sync skipped: ${result.reason}`);
+        }
       } catch (err) {
         console.error('❌ Meta lead sync scheduled run error:', err);
       }
