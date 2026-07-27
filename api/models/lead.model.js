@@ -72,6 +72,7 @@ const leadSchema = new mongoose.Schema({
   EP: String,
   days: String,
   destination: String,
+  guestlocation: String,
   extraBeds: String,
   from: String,
   mealPlans: String,
