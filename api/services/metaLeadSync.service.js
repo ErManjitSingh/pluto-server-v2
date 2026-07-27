@@ -1,7 +1,107 @@
 import Lead from '../models/lead.model.js';
+import SystemLock from '../models/systemLock.model.js';
 import mongoose from 'mongoose';
 import { getNextLeadIdAndPublishPrefer } from './leadId.service.js';
 import { initializeLeadRemainingAmount } from '../controllers/banktransactions.controller.js';
+
+const META_SYNC_LOCK_ID = 'meta_lead_sync';
+/** Lock TTL — longer than a full sync so a crashed holder cannot block forever, but short enough to recover. */
+const META_SYNC_LOCK_TTL_MS = 25 * 60 * 1000;
+
+/** In-process guard (same Node process: scheduled + manual API). */
+let metaSyncInProgress = false;
+
+function isDuplicateKeyError(err) {
+  return Boolean(err && (err.code === 11000 || err.code === 11001));
+}
+
+/**
+ * Acquire Mongo advisory lock so only one instance (PM2/cluster/multi-server) runs sync.
+ * @returns {Promise<boolean>}
+ */
+async function acquireMetaSyncLock() {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + META_SYNC_LOCK_TTL_MS);
+  const holder = `pid:${process.pid}`;
+
+  try {
+    await SystemLock.create({
+      _id: META_SYNC_LOCK_ID,
+      expiresAt,
+      lockedAt: now,
+      holder
+    });
+    return true;
+  } catch (err) {
+    if (!isDuplicateKeyError(err)) throw err;
+
+    // Steal only if previous lock expired (crashed / stuck process).
+    const stolen = await SystemLock.findOneAndUpdate(
+      { _id: META_SYNC_LOCK_ID, expiresAt: { $lte: now } },
+      { $set: { expiresAt, lockedAt: now, holder } },
+      { new: true }
+    );
+    return Boolean(stolen);
+  }
+}
+
+async function releaseMetaSyncLock() {
+  try {
+    await SystemLock.deleteOne({ _id: META_SYNC_LOCK_ID });
+  } catch (err) {
+    console.error('Meta sync lock release error:', err.message);
+  }
+}
+
+/**
+ * Create one CRM lead for a publish type. Returns saved doc, or null if skipped / duplicate race lost.
+ */
+async function createMetaPublishLead({
+  payload,
+  metaId,
+  publish,
+  metaLeadCreatedTime,
+  fixedUserId
+}) {
+  const leadMetaId = `${metaId}_${publish}`;
+
+  const existing = await Lead.findOne({ lead_meta_id: leadMetaId }).select('_id').lean();
+  if (existing) return null;
+
+  if (await shouldSkipByMobileAndPublish(payload.mobile, publish, metaLeadCreatedTime)) {
+    return null;
+  }
+
+  const { leadId } = await getNextLeadIdAndPublishPrefer(publish);
+  const leadData = {
+    ...payload,
+    lead_meta_id: leadMetaId,
+    leadId,
+    publish,
+    isAssignedLead: true,
+    isCommonLead: true,
+    createdBy: fixedUserId
+  };
+
+  try {
+    const savedLead = await new Lead(leadData).save();
+    try {
+      if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
+        await initializeLeadRemainingAmount(savedLead._id);
+      }
+    } catch (err) {
+      console.error(`Error initializing remaining amount for meta lead (${publish}):`, err.message);
+    }
+    return savedLead;
+  } catch (err) {
+    // Another instance won the race — unique lead_meta_id blocked the insert.
+    if (isDuplicateKeyError(err)) {
+      console.warn(`⏭️  Meta lead skipped (duplicate lead_meta_id): ${leadMetaId}`);
+      return null;
+    }
+    throw err;
+  }
+}
 
 const META_GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
@@ -242,19 +342,34 @@ async function fetchLeadsForForm(formId, accessToken) {
 /**
  * Sync Meta leads: for each Meta lead, create TWO CRM leads (one ptw, one demand) if not already present.
  * Uses lead_meta_id "{metaId}_ptw" and "{metaId}_demand" to skip duplicates.
+ * Guarded by in-process + Mongo lock so parallel runs cannot create PTW/Demand duplicates.
  */
 export async function syncMetaLeads() {
+  if (metaSyncInProgress) {
+    console.log('⏭️  Meta lead sync skipped (already running in this process)');
+    return { success: false, reason: 'already_running', created: 0 };
+  }
+
   const accessToken = process.env.META_ACCESS_TOKEN;
   if (!accessToken) {
     console.warn('⚠️ Meta lead sync skipped: META_ACCESS_TOKEN not set');
     return { success: false, reason: 'META_ACCESS_TOKEN not set', created: 0 };
   }
 
-  const formIds = getFormIds();
-  const fixedUserId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
+  metaSyncInProgress = true;
+  let lockAcquired = false;
   let created = 0;
 
   try {
+    lockAcquired = await acquireMetaSyncLock();
+    if (!lockAcquired) {
+      console.log('⏭️  Meta lead sync skipped (another instance holds the lock)');
+      return { success: false, reason: 'lock_not_acquired', created: 0 };
+    }
+
+    const formIds = getFormIds();
+    const fixedUserId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
+
     for (const formId of formIds) {
       let leads;
       try {
@@ -273,62 +388,16 @@ export async function syncMetaLeads() {
         }
 
         const payload = transformMetaLeadToPayload(metaLead, formId);
+        const createArgs = {
+          payload,
+          metaId,
+          metaLeadCreatedTime: metaLead.created_time,
+          fixedUserId
+        };
 
-        // 1) PTW lead: create if lead_meta_id "{metaId}_ptw" does not exist
-        const existingPtw = await Lead.findOne({ lead_meta_id: `${metaId}_ptw` });
-        if (!existingPtw) {
-          // Skip only PTW if same mobile+ptw exists within 10 days
-          if (!(await shouldSkipByMobileAndPublish(payload.mobile, 'ptw', metaLead.created_time))) {
-            const { leadId } = await getNextLeadIdAndPublishPrefer('ptw');
-            const leadData = {
-              ...payload,
-              lead_meta_id: `${metaId}_ptw`,
-              leadId,
-              publish: 'ptw',
-              isAssignedLead: true,
-              isCommonLead: true,
-              createdBy: fixedUserId
-            };
-            const newLead = new Lead(leadData);
-            const savedLead = await newLead.save();
-            try {
-              if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
-                await initializeLeadRemainingAmount(savedLead._id);
-              }
-            } catch (err) {
-              console.error('Error initializing remaining amount for meta lead (ptw):', err.message);
-            }
-            created++;
-          }
-        }
-
-        // 2) Demand lead: create if lead_meta_id "{metaId}_demand" does not exist
-        const existingDemand = await Lead.findOne({ lead_meta_id: `${metaId}_demand` });
-        if (!existingDemand) {
-          // Skip only Demand if same mobile+demand exists within 10 days
-          if (!(await shouldSkipByMobileAndPublish(payload.mobile, 'demand', metaLead.created_time))) {
-            const { leadId } = await getNextLeadIdAndPublishPrefer('demand');
-            const leadData = {
-              ...payload,
-              lead_meta_id: `${metaId}_demand`,
-              leadId,
-              publish: 'demand',
-              isAssignedLead: true,
-              isCommonLead: true,
-              createdBy: fixedUserId
-            };
-            const newLead = new Lead(leadData);
-            const savedLead = await newLead.save();
-            try {
-              if (savedLead.totalAmount !== undefined && savedLead.totalAmount !== null) {
-                await initializeLeadRemainingAmount(savedLead._id);
-              }
-            } catch (err) {
-              console.error('Error initializing remaining amount for meta lead (demand):', err.message);
-            }
-            created++;
-          }
-        }
+        // 1) PTW then 2) Demand — same helpers + unique lead_meta_id for both
+        if (await createMetaPublishLead({ ...createArgs, publish: 'ptw' })) created++;
+        if (await createMetaPublishLead({ ...createArgs, publish: 'demand' })) created++;
       }
     }
 
@@ -339,5 +408,10 @@ export async function syncMetaLeads() {
   } catch (error) {
     console.error('❌ Meta lead sync error:', error);
     return { success: false, error: error.message, created };
+  } finally {
+    if (lockAcquired) {
+      await releaseMetaSyncLock();
+    }
+    metaSyncInProgress = false;
   }
 }
