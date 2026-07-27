@@ -72,6 +72,13 @@ addSchema.index({ createdAt: -1 }); // Index for sorting by creation date
 addSchema.index({ updatedAt: -1 }); // Index for sorting by update date
 addSchema.index({ "package.duration": 1 }); // Fast duration filtering
 addSchema.index({ "package.duration": 1, "package.state": 1 }); // Fast exact match combo
+// Testing filter API: duration + pickup / drop / places
+addSchema.index({ "package.duration": 1, "package.pickupLocation": 1 });
+addSchema.index({ "package.duration": 1, "package.dropLocation": 1 });
+addSchema.index({
+  "package.packagePlaces.placeCover": 1,
+  "package.packagePlaces.nights": 1,
+});
 addSchema.index(
   {
     "package.packageName": "text",
