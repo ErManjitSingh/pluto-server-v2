@@ -183,9 +183,9 @@ const leadSchema = new mongoose.Schema({
   },
   lead_meta_id: {
     type: String,
-    index: true,
+    unique: true,
     sparse: true
-    // External CRM meta id – used to avoid duplicate leads when creating via crm-create-lead
+    // Unique prevents race-condition duplicates from Meta sync / CRM create
   },
   gmailThreadId: {
     type: String,
