@@ -11,6 +11,7 @@ import {
   getPackagesByDurationAndState,
   getPackagesByDurationAndStateOnly,
   searchPackages,
+  getPackagesByDurationAndStateOnlytesting,
   searchPackagesOnly
 } from '../controllers/add.controller.js';
 
@@ -24,6 +25,7 @@ router.get('/packages/filter', getPackagesByDurationAndState);
 router.get('/packages/filter-only', getPackagesByDurationAndStateOnly);
 router.get('/packages/search', searchPackages);
 router.get('/packages/search-only', searchPackagesOnly);
+router.get('/packages/filter-only-testing', getPackagesByDurationAndStateOnlytesting);
 router.put('/update/:id', updateAdd);
 router.put('/update-media/:id', updateAddMediaAndCanonical);
 router.delete('/delete/:id', deleteAdd);
