@@ -83,6 +83,99 @@ const buildExactStateFilter = (state) => {
   };
 };
 
+/** Exact field match — case/space friendly (handles "Delhi " / "delhi" in DB). */
+const buildFlexibleExactFieldFilter = (fieldPath, value) => {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return null;
+  return {
+    [fieldPath]: {
+      $regex: new RegExp(`^\\s*${escapeRegex(normalized)}\\s*$`, "i"),
+    },
+  };
+};
+
+/**
+ * Parse places query:
+ * - "Bir Billing:1,Dalhousie:2"
+ * - ["Bir Billing:1", "Dalhousie:2"]
+ * - JSON: [{"placeCover":"Dalhousie","nights":2}]
+ */
+const parsePlaceToken = (token) => {
+  if (token && typeof token === "object") {
+    const placeCover = normalizeSearchText(
+      token.placeCover || token.place || token.name
+    );
+    if (!placeCover) return null;
+    const nightsRaw = token.nights;
+    const nights =
+      nightsRaw === "" || nightsRaw == null ? null : Number(nightsRaw);
+    return {
+      placeCover,
+      nights: Number.isFinite(nights) ? nights : null,
+    };
+  }
+
+  const str = String(token || "").trim();
+  if (!str) return null;
+
+  const lastColon = str.lastIndexOf(":");
+  if (lastColon > 0) {
+    const placeCover = normalizeSearchText(str.slice(0, lastColon));
+    const nights = Number(str.slice(lastColon + 1).trim());
+    if (!placeCover) return null;
+    return {
+      placeCover,
+      nights: Number.isFinite(nights) ? nights : null,
+    };
+  }
+
+  const placeCover = normalizeSearchText(str);
+  return placeCover ? { placeCover, nights: null } : null;
+};
+
+const parsePlacesFilter = (query) => {
+  const raw = query.places;
+  if (raw == null || raw === "") return [];
+
+  if (Array.isArray(raw)) {
+    return raw.map(parsePlaceToken).filter(Boolean);
+  }
+
+  const str = String(raw).trim();
+  if (str.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) {
+        return parsed.map(parsePlaceToken).filter(Boolean);
+      }
+    } catch {
+      // fall through to comma-separated
+    }
+  }
+
+  return str
+    .split(",")
+    .map((part) => parsePlaceToken(part))
+    .filter(Boolean);
+};
+
+/** Each place must exist in packagePlaces (placeCover + optional nights). */
+const buildPlacesFilter = (places) => {
+  if (!places.length) return null;
+
+  const conditions = places.map(({ placeCover, nights }) => {
+    const elemMatch = {
+      placeCover: {
+        $regex: new RegExp(`^\\s*${escapeRegex(placeCover)}\\s*$`, "i"),
+      },
+    };
+    if (nights != null) elemMatch.nights = nights;
+    return { "package.packagePlaces": { $elemMatch: elemMatch } };
+  });
+
+  return conditions.length === 1 ? conditions[0] : { $and: conditions };
+};
+
 const buildWildcardTextSearch = (value) => {
   const words = normalizeSearchText(value)
     .split(" ")
@@ -659,6 +752,69 @@ export const getPackagesByDurationAndStateOnly = async (req, res, next) => {
   }
 };
 
+export const getPackagesByDurationAndStateOnlytesting = async (req, res, next) => {
+  try {
+    const state = normalizeSearchText(req.query.state);
+    const duration = (req.query.duration || "").trim().toUpperCase();
+    const pickupLocation = normalizeSearchText(req.query.pickupLocation);
+    const dropLocation = normalizeSearchText(req.query.dropLocation);
+    const places = parsePlacesFilter(req.query);
+
+    if (!state || !duration) {
+      return next(
+        errorHandler(400, "Both query params are required: state and duration")
+      );
+    }
+
+    const placesKey = places
+      .map((p) => `${p.placeCover.toLowerCase()}:${p.nights ?? ""}`)
+      .join("|");
+    const cacheKey = `package_filter_only_testing_${duration}_${state.toLowerCase()}_${pickupLocation.toLowerCase()}_${dropLocation.toLowerCase()}_${placesKey}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const filter = {
+      "package.duration": duration,
+      ...buildExactStateFilter(state),
+    };
+
+    const pickupFilter = buildFlexibleExactFieldFilter(
+      "package.pickupLocation",
+      pickupLocation
+    );
+    if (pickupFilter) Object.assign(filter, pickupFilter);
+
+    const dropFilter = buildFlexibleExactFieldFilter(
+      "package.dropLocation",
+      dropLocation
+    );
+    if (dropFilter) Object.assign(filter, dropFilter);
+
+    const placesFilter = buildPlacesFilter(places);
+    if (placesFilter) Object.assign(filter, placesFilter);
+
+    const packages = await Add.find(filter, packageProjection)
+      .sort({ createdAt: -1 })
+      .lean()
+      .maxTimeMS(3000);
+
+    const data = {
+      query: {
+        state,
+        duration,
+        ...(pickupLocation && { pickupLocation }),
+        ...(dropLocation && { dropLocation }),
+        ...(places.length && { places }),
+      },
+      packages,
+    };
+    cacheSet(cacheKey, data);
+
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
 // --------------------------------------
 // SEARCH PACKAGES (PACKAGE-ONLY FIELDS — FAST)
 // --------------------------------------
