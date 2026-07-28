@@ -100,22 +100,31 @@ async function resolveImapBoxName(connection, folderKey) {
   const walk = (node, prefix = '') => {
     if (!node || typeof node !== 'object') return;
     for (const [name, meta] of Object.entries(node)) {
-      const full = prefix ? `${prefix}${meta?.delimiter || '.'}${name}` : name;
-      flat.push(full);
+      const delim = meta?.delimiter || '.';
+      const full = prefix ? `${prefix}${delim}${name}` : name;
+      flat.push({
+        name: full,
+        attribs: meta?.attribs || [],
+      });
       if (meta?.children) walk(meta.children, full);
     }
   };
   walk(boxes);
 
+  // Prefer special-use \Sent (Roundcube/cPanel often sets this)
+  const special = flat.find((b) =>
+    (b.attribs || []).some((a) => String(a).toLowerCase() === '\\sent')
+  );
+  if (special) return special.name;
+
   for (const candidate of SENT_FOLDER_CANDIDATES) {
-    const hit = flat.find((n) => n.toLowerCase() === candidate.toLowerCase());
-    if (hit) return hit;
+    const hit = flat.find((b) => b.name.toLowerCase() === candidate.toLowerCase());
+    if (hit) return hit.name;
   }
 
-  const fuzzy = flat.find((n) => /(^|[./])sent( items| messages)?$/i.test(n));
-  if (fuzzy) return fuzzy;
+  const fuzzy = flat.find((b) => /(^|[./])sent( items| messages)?$/i.test(b.name));
+  if (fuzzy) return fuzzy.name;
 
-  // Last resort — try opening "Sent"
   return 'Sent';
 }
 
@@ -284,28 +293,49 @@ async function fetchParsedByUid(cfg, uidNum, folderKey = 'inbox') {
 
 /**
  * After SMTP send, copy into IMAP Sent so it appears in /inbox?folder=sent
- * (Roundcube / API sends otherwise stay invisible in Sent).
+ * (Roundcube saves Sent itself; raw SMTP does not — we must IMAP APPEND).
  */
 async function appendToSentFolder(cfg, mailOptions) {
   let connection;
   try {
-    const raw = await new MailComposer(mailOptions).compile().build();
-    connection = await imaps.connect(buildImapConfig(cfg));
-    const sentBox = await resolveImapBoxName(connection, 'sent');
+    // MailComposer only wants MIME fields — strip SMTP transport-only keys
+    const {
+      envelope: _envelope,
+      sender: _sender,
+      ...composeOpts
+    } = mailOptions;
 
-    // Ensure box exists / is selectable
-    try {
-      await connection.openBox(sentBox);
-    } catch (_) {
-      // Some servers need INBOX.Sent
-      await connection.openBox('INBOX');
+    const raw = await new MailComposer({
+      ...composeOpts,
+      date: composeOpts.date || new Date(),
+    })
+      .compile()
+      .build();
+
+    connection = await imaps.connect(buildImapConfig(cfg));
+
+    // Prefer resolved Sent box, then common cPanel/HostGator names
+    const primary = await resolveImapBoxName(connection, 'sent');
+    const tryBoxes = [
+      ...new Set([primary, ...SENT_FOLDER_CANDIDATES]),
+    ];
+
+    let lastErr = null;
+    for (const sentBox of tryBoxes) {
+      try {
+        // Pass Buffer (not utf8 string) so attachments stay valid
+        await connection.append(raw, {
+          mailbox: sentBox,
+          flags: ['\\Seen'],
+        });
+        console.log(`[admin-mail] Saved sent copy → ${sentBox} (${cfg.user})`);
+        return { savedToSent: true, sentBox };
+      } catch (err) {
+        lastErr = err;
+      }
     }
 
-    await connection.append(raw.toString('utf8'), {
-      mailbox: sentBox,
-      flags: ['\\Seen'],
-    });
-    return { savedToSent: true, sentBox };
+    throw lastErr || new Error('No Sent folder accepted APPEND');
   } catch (err) {
     console.warn(`[admin-mail] Could not save copy to Sent for ${cfg.user}:`, err.message);
     return { savedToSent: false, sentError: err.message };
