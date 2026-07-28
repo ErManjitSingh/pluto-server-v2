@@ -224,7 +224,55 @@ function stripHtml(html) {
     .trim();
 }
 
-/** Metadata only — no file content (safe for inbox / message JSON). */
+/** True if MIME struct has a part with Content-Disposition: attachment */
+function structHasAttachment(struct) {
+  if (!struct) return false;
+  try {
+    const parts = imaps.getParts(struct) || [];
+    return parts.some((p) => {
+      const disp = p.disposition;
+      if (!disp) return false;
+      const type = typeof disp === 'string' ? disp : disp.type;
+      return String(type || '').toLowerCase() === 'attachment';
+    });
+  } catch (_) {
+    return false;
+  }
+}
+
+/** imap-simple HEADER body is already a parsed object: { from: ['..'], subject: ['..'] } */
+function headerField(headerObj, name) {
+  if (!headerObj || typeof headerObj !== 'object') return '';
+  const key = Object.keys(headerObj).find((k) => k.toLowerCase() === name.toLowerCase());
+  if (!key) return '';
+  const val = headerObj[key];
+  if (Array.isArray(val)) return val.filter(Boolean).join(', ');
+  if (val == null) return '';
+  return String(val);
+}
+
+function parseImapHeaderPart(headerBody) {
+  // Already-parsed object from imap-simple
+  if (headerBody && typeof headerBody === 'object' && !Buffer.isBuffer(headerBody)) {
+    const dateRaw = headerField(headerBody, 'date');
+    let date = null;
+    if (dateRaw) {
+      const d = new Date(dateRaw);
+      if (!Number.isNaN(d.getTime())) date = d;
+    }
+    return {
+      messageId: headerField(headerBody, 'message-id').trim(),
+      from: headerField(headerBody, 'from'),
+      to: headerField(headerBody, 'to'),
+      cc: headerField(headerBody, 'cc'),
+      subject: headerField(headerBody, 'subject'),
+      date,
+    };
+  }
+  return null;
+}
+
+/** Metadata only — no file content (safe for message open JSON). */
 function mapAttachmentMeta(attachments = []) {
   return (attachments || []).map((a, index) => ({
     index,
@@ -347,7 +395,8 @@ async function appendToSentFolder(cfg, mailOptions) {
 }
 
 /**
- * Live IMAP folder list (newest first).
+ * Lightweight list: HEADER + struct only (no full body / attachments bytes).
+ * Open mail via getMessageByUid for full html/text/attachments.
  * folder=inbox (default) | sent
  */
 export async function getInbox({
@@ -397,9 +446,10 @@ export async function getInbox({
       };
     }
 
+    // HEADER only — fast list like Gmail/Roundcube row view
     const fetched = await connection.search([`${seqLow}:${seqHigh}`], {
-      bodies: [''],
-      struct: false,
+      bodies: ['HEADER'],
+      struct: true,
       markSeen: false,
     });
 
@@ -407,38 +457,28 @@ export async function getInbox({
     for (const msg of fetched) {
       const uid = msg.attributes?.uid;
       const seq = msg.attributes?.seq || msg.seqno;
-      const rawPart = msg.parts?.find((p) => p.which === '');
-      if (!rawPart) continue;
+      const headerPart =
+        msg.parts?.find((p) => p.which === 'HEADER') ||
+        msg.parts?.find((p) => String(p.which || '').toUpperCase().includes('HEADER'));
+      if (!headerPart) continue;
 
-      let parsed;
-      try {
-        parsed = await simpleParser(rawPart.body);
-      } catch {
-        continue;
-      }
+      // imap-simple already parses HEADER into an object — do not simpleParser it
+      const headers = parseImapHeaderPart(headerPart.body);
+      if (!headers) continue;
 
-      const text = parsed.text || stripHtml(parsed.html || '');
       const flags = msg.attributes?.flags || [];
-      const attachmentMeta = mapAttachmentMeta(parsed.attachments);
 
       parsedRows.push({
         _seq: typeof seq === 'number' ? seq : 0,
         uid,
-        messageId: (parsed.messageId || '').trim(),
-        from: addrText(parsed.from),
-        to: addrText(parsed.to),
-        cc: addrText(parsed.cc),
-        subject: parsed.subject || '',
-        date: parsed.date || null,
-        snippet: text.slice(0, 180),
-        hasAttachments: attachmentMeta.length > 0,
-        attachments: attachmentMeta,
+        messageId: headers.messageId,
+        from: headers.from,
+        to: headers.to,
+        cc: headers.cc,
+        subject: headers.subject,
+        date: headers.date,
+        hasAttachments: structHasAttachment(msg.attributes?.struct),
         seen: flags.includes('\\Seen'),
-        references: parsed.references
-          ? Array.isArray(parsed.references)
-            ? parsed.references
-            : [parsed.references]
-          : [],
       });
     }
 
