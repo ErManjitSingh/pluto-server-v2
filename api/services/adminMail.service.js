@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
 
@@ -58,10 +59,64 @@ const MAILBOX_CONFIG = {
 const MAX_INBOX_LIMIT = 50;
 const DEFAULT_INBOX_LIMIT = 20;
 
+/** cPanel / HostGator / Roundcube common Sent folder names */
+const SENT_FOLDER_CANDIDATES = [
+  'Sent',
+  'INBOX.Sent',
+  'Sent Items',
+  'Sent Messages',
+  'INBOX.Sent Items',
+];
+
 function normalizeMailbox(mailbox) {
   return String(mailbox || '')
     .trim()
     .toLowerCase();
+}
+
+function normalizeFolderKey(folder) {
+  const f = String(folder || 'inbox')
+    .trim()
+    .toLowerCase();
+  if (f === 'sent' || f === 'sentmail' || f === 'outbox') return 'sent';
+  return 'inbox';
+}
+
+/**
+ * Resolve real IMAP box name for inbox|sent.
+ * Lists mailboxes once and picks best Sent match.
+ */
+async function resolveImapBoxName(connection, folderKey) {
+  if (folderKey === 'inbox') return 'INBOX';
+
+  let boxes = {};
+  try {
+    boxes = await connection.getBoxes();
+  } catch (_) {
+    boxes = {};
+  }
+
+  const flat = [];
+  const walk = (node, prefix = '') => {
+    if (!node || typeof node !== 'object') return;
+    for (const [name, meta] of Object.entries(node)) {
+      const full = prefix ? `${prefix}${meta?.delimiter || '.'}${name}` : name;
+      flat.push(full);
+      if (meta?.children) walk(meta.children, full);
+    }
+  };
+  walk(boxes);
+
+  for (const candidate of SENT_FOLDER_CANDIDATES) {
+    const hit = flat.find((n) => n.toLowerCase() === candidate.toLowerCase());
+    if (hit) return hit;
+  }
+
+  const fuzzy = flat.find((n) => /(^|[./])sent( items| messages)?$/i.test(n));
+  if (fuzzy) return fuzzy;
+
+  // Last resort — try opening "Sent"
+  return 'Sent';
 }
 
 function resolvePassword(cfg) {
@@ -185,13 +240,14 @@ function ensureReSubject(subject) {
 }
 
 /**
- * Shared: open INBOX, fetch one UID, parse full MIME.
+ * Shared: open folder, fetch one UID, parse full MIME.
  */
-async function fetchParsedByUid(cfg, uidNum) {
+async function fetchParsedByUid(cfg, uidNum, folderKey = 'inbox') {
   let connection;
   try {
     connection = await imaps.connect(buildImapConfig(cfg));
-    await connection.openBox('INBOX');
+    const boxName = await resolveImapBoxName(connection, normalizeFolderKey(folderKey));
+    await connection.openBox(boxName);
 
     const fetched = await connection.search([['UID', String(uidNum)]], {
       bodies: [''],
@@ -213,7 +269,12 @@ async function fetchParsedByUid(cfg, uidNum) {
     }
 
     const parsed = await simpleParser(rawPart.body);
-    return { parsed, flags: fetched[0].attributes?.flags || [] };
+    return {
+      parsed,
+      flags: fetched[0].attributes?.flags || [],
+      folder: normalizeFolderKey(folderKey),
+      boxName,
+    };
   } finally {
     try {
       if (connection) connection.end();
@@ -222,23 +283,66 @@ async function fetchParsedByUid(cfg, uidNum) {
 }
 
 /**
- * Live IMAP inbox (newest first).
- * Uses IMAP sequence ranges (reliable on HostGator/cPanel) instead of comma UID lists.
+ * After SMTP send, copy into IMAP Sent so it appears in /inbox?folder=sent
+ * (Roundcube / API sends otherwise stay invisible in Sent).
  */
-export async function getInbox({ mailbox, page = 1, limit = DEFAULT_INBOX_LIMIT }) {
+async function appendToSentFolder(cfg, mailOptions) {
+  let connection;
+  try {
+    const raw = await new MailComposer(mailOptions).compile().build();
+    connection = await imaps.connect(buildImapConfig(cfg));
+    const sentBox = await resolveImapBoxName(connection, 'sent');
+
+    // Ensure box exists / is selectable
+    try {
+      await connection.openBox(sentBox);
+    } catch (_) {
+      // Some servers need INBOX.Sent
+      await connection.openBox('INBOX');
+    }
+
+    await connection.append(raw.toString('utf8'), {
+      mailbox: sentBox,
+      flags: ['\\Seen'],
+    });
+    return { savedToSent: true, sentBox };
+  } catch (err) {
+    console.warn(`[admin-mail] Could not save copy to Sent for ${cfg.user}:`, err.message);
+    return { savedToSent: false, sentError: err.message };
+  } finally {
+    try {
+      if (connection) connection.end();
+    } catch (_) {}
+  }
+}
+
+/**
+ * Live IMAP folder list (newest first).
+ * folder=inbox (default) | sent
+ */
+export async function getInbox({
+  mailbox,
+  page = 1,
+  limit = DEFAULT_INBOX_LIMIT,
+  folder = 'inbox',
+}) {
   const cfg = getMailbox(mailbox);
+  const folderKey = normalizeFolderKey(folder);
   const pageNum = Math.max(1, Number(page) || 1);
   const pageSize = Math.min(MAX_INBOX_LIMIT, Math.max(1, Number(limit) || DEFAULT_INBOX_LIMIT));
 
   let connection;
   try {
     connection = await imaps.connect(buildImapConfig(cfg));
-    const box = await connection.openBox('INBOX');
+    const boxName = await resolveImapBoxName(connection, folderKey);
+    const box = await connection.openBox(boxName);
     const total = Number(box.messages?.total) || 0;
 
     if (total === 0) {
       return {
         mailbox: cfg.user,
+        folder: folderKey,
+        boxName,
         page: pageNum,
         limit: pageSize,
         total: 0,
@@ -254,6 +358,8 @@ export async function getInbox({ mailbox, page = 1, limit = DEFAULT_INBOX_LIMIT 
     if (seqHigh < 1) {
       return {
         mailbox: cfg.user,
+        folder: folderKey,
+        boxName,
         page: pageNum,
         limit: pageSize,
         total,
@@ -306,7 +412,6 @@ export async function getInbox({ mailbox, page = 1, limit = DEFAULT_INBOX_LIMIT 
       });
     }
 
-    // Newest first (highest sequence / date)
     parsedRows.sort((a, b) => {
       if (b._seq !== a._seq) return b._seq - a._seq;
       const bd = a.date ? new Date(a.date).getTime() : 0;
@@ -318,6 +423,8 @@ export async function getInbox({ mailbox, page = 1, limit = DEFAULT_INBOX_LIMIT 
 
     return {
       mailbox: cfg.user,
+      folder: folderKey,
+      boxName,
       page: pageNum,
       limit: pageSize,
       total,
@@ -332,8 +439,9 @@ export async function getInbox({ mailbox, page = 1, limit = DEFAULT_INBOX_LIMIT 
 
 /**
  * Fetch one message by IMAP UID (for reply UI / parent headers + attachment list).
+ * folder=inbox|sent
  */
-export async function getMessageByUid({ mailbox, uid }) {
+export async function getMessageByUid({ mailbox, uid, folder = 'inbox' }) {
   const cfg = getMailbox(mailbox);
   const uidNum = Number(uid);
   if (!Number.isFinite(uidNum) || uidNum < 1) {
@@ -342,11 +450,14 @@ export async function getMessageByUid({ mailbox, uid }) {
     throw err;
   }
 
-  const { parsed } = await fetchParsedByUid(cfg, uidNum);
+  const folderKey = normalizeFolderKey(folder);
+  const { parsed, boxName } = await fetchParsedByUid(cfg, uidNum, folderKey);
   const attachmentMeta = mapAttachmentMeta(parsed.attachments);
 
   return {
     mailbox: cfg.user,
+    folder: folderKey,
+    boxName,
     uid: uidNum,
     messageId: (parsed.messageId || '').trim(),
     from: addrText(parsed.from),
@@ -368,8 +479,9 @@ export async function getMessageByUid({ mailbox, uid }) {
 
 /**
  * Download one attachment by mailbox + uid + index (from attachments[] meta).
+ * folder=inbox|sent
  */
-export async function getAttachment({ mailbox, uid, index }) {
+export async function getAttachment({ mailbox, uid, index, folder = 'inbox' }) {
   const cfg = getMailbox(mailbox);
   const uidNum = Number(uid);
   const idx = Number(index);
@@ -385,7 +497,7 @@ export async function getAttachment({ mailbox, uid, index }) {
     throw err;
   }
 
-  const { parsed } = await fetchParsedByUid(cfg, uidNum);
+  const { parsed } = await fetchParsedByUid(cfg, uidNum, normalizeFolderKey(folder));
   const att = parsed.attachments?.[idx];
   if (!att || !att.content) {
     const err = new Error('Attachment not found');
@@ -395,6 +507,7 @@ export async function getAttachment({ mailbox, uid, index }) {
 
   return {
     mailbox: cfg.user,
+    folder: normalizeFolderKey(folder),
     uid: uidNum,
     index: idx,
     filename: att.filename || att.cid || `attachment-${idx + 1}`,
@@ -406,6 +519,7 @@ export async function getAttachment({ mailbox, uid, index }) {
 
 /**
  * Send a new email from the selected admin mailbox (SMTP).
+ * Also saves a copy into IMAP Sent folder.
  * attachments: multer files [{ originalname, buffer, mimetype }]
  */
 export async function sendMail({
@@ -445,17 +559,21 @@ export async function sendMail({
   };
 
   const info = await transporter.sendMail(mailOptions);
+  const sentSave = await appendToSentFolder(cfg, mailOptions);
+
   return {
     mailbox: cfg.user,
     messageId: info.messageId,
     response: info.response,
     attachmentCount: (attachments || []).length,
+    ...sentSave,
   };
 }
 
 /**
  * Reply to an existing message. Prefer uid (fetches parent via IMAP);
  * or pass replyToMessageId + to + subject manually.
+ * Also saves a copy into IMAP Sent folder.
  */
 export async function replyMail({
   mailbox,
@@ -468,6 +586,7 @@ export async function replyMail({
   replyToMessageId,
   references,
   attachments,
+  folder = 'inbox',
 }) {
   if (!html && !text) {
     const err = new Error('html|text is required');
@@ -479,7 +598,7 @@ export async function replyMail({
   let parent = null;
 
   if (uid != null && uid !== '') {
-    parent = await getMessageByUid({ mailbox, uid });
+    parent = await getMessageByUid({ mailbox, uid, folder });
   }
 
   const inReplyTo = (replyToMessageId || parent?.messageId || '').trim();
@@ -531,12 +650,15 @@ export async function replyMail({
   };
 
   const info = await transporter.sendMail(mailOptions);
+  const sentSave = await appendToSentFolder(cfg, mailOptions);
+
   return {
     mailbox: cfg.user,
     messageId: info.messageId,
     inReplyTo,
     response: info.response,
     attachmentCount: (attachments || []).length,
+    ...sentSave,
   };
 }
 
