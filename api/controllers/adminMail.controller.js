@@ -21,14 +21,15 @@ export const getMailboxes = async (req, res, next) => {
 };
 
 /**
- * GET /api/admin-mail/inbox?mailbox=&page=1&limit=20
+ * GET /api/admin-mail/inbox?mailbox=&page=1&limit=20&folder=inbox|sent
+ * folder=sent → mails you sent / replied (IMAP Sent folder)
  */
 export const getAdminInbox = async (req, res, next) => {
   try {
-    const { mailbox, page, limit } = req.query;
+    const { mailbox, page, limit, folder } = req.query;
     if (!mailbox) return next(errorHandler(400, 'mailbox query is required'));
 
-    const data = await getInbox({ mailbox, page, limit });
+    const data = await getInbox({ mailbox, page, limit, folder });
     res.json({ success: true, data });
   } catch (err) {
     if (err.statusCode) return next(errorHandler(err.statusCode, err.message));
@@ -37,17 +38,17 @@ export const getAdminInbox = async (req, res, next) => {
 };
 
 /**
- * GET /api/admin-mail/message?mailbox=&uid=
+ * GET /api/admin-mail/message?mailbox=&uid=&folder=inbox|sent
  * Full body + attachment metadata (index/filename/size) — no file bytes.
  */
 export const getAdminMessage = async (req, res, next) => {
   try {
-    const { mailbox, uid } = req.query;
+    const { mailbox, uid, folder } = req.query;
     if (!mailbox || !uid) {
       return next(errorHandler(400, 'mailbox and uid query are required'));
     }
 
-    const data = await getMessageByUid({ mailbox, uid });
+    const data = await getMessageByUid({ mailbox, uid, folder });
     res.json({ success: true, data });
   } catch (err) {
     if (err.statusCode) return next(errorHandler(err.statusCode, err.message));
@@ -56,17 +57,17 @@ export const getAdminMessage = async (req, res, next) => {
 };
 
 /**
- * GET /api/admin-mail/attachment?mailbox=&uid=&index=0
+ * GET /api/admin-mail/attachment?mailbox=&uid=&index=0&folder=inbox|sent
  * Streams the file (Content-Disposition: attachment).
  */
 export const downloadAdminAttachment = async (req, res, next) => {
   try {
-    const { mailbox, uid, index } = req.query;
+    const { mailbox, uid, index, folder } = req.query;
     if (!mailbox || uid == null || index == null) {
       return next(errorHandler(400, 'mailbox, uid and index query are required'));
     }
 
-    const file = await getAttachment({ mailbox, uid, index });
+    const file = await getAttachment({ mailbox, uid, index, folder });
     const safeName = String(file.filename).replace(/"/g, '');
 
     res.setHeader('Content-Type', file.contentType);
