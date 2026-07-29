@@ -122,7 +122,7 @@ async function fetchBuffer(url, timeoutMs, signal) {
   }
 }
 
-async function compressOnce(url, timeoutMs, signal) {
+async function compressOnce(url, timeoutMs, signal, maxWidth = MAX_WIDTH, quality = JPEG_QUALITY) {
   const raw = await fetchBuffer(url, timeoutMs, signal);
   if (!raw?.length || raw.length > 6 * 1024 * 1024) {
     throw new Error('empty or too large');
@@ -130,12 +130,12 @@ async function compressOnce(url, timeoutMs, signal) {
   const out = await sharp(raw, { failOn: 'none' })
     .rotate()
     .resize({
-      width: MAX_WIDTH,
-      height: Math.round(MAX_WIDTH * 0.75),
+      width: maxWidth,
+      height: Math.round(maxWidth * 0.7),
       fit: 'cover',
       withoutEnlargement: true,
     })
-    .jpeg({ quality: JPEG_QUALITY, progressive: false, optimizeScans: false })
+    .jpeg({ quality, progressive: false, optimizeScans: false })
     .toBuffer();
 
   return `data:image/jpeg;base64,${out.toString('base64')}`;
@@ -150,7 +150,13 @@ export async function compressImageToDataUri(url, opts = {}) {
 
   const timeoutMs = opts.timeoutMs || FETCH_TIMEOUT_MS;
   const signal = opts.signal;
-  const cacheKey = hotelCacheKey(url);
+  const maxWidth = opts.maxWidth || MAX_WIDTH;
+  const quality = opts.quality || JPEG_QUALITY;
+  const kind = opts.cacheKind || 'hotel';
+  const cacheKey =
+    kind === 'hotel' && maxWidth === MAX_WIDTH && quality === JPEG_QUALITY
+      ? hotelCacheKey(url)
+      : `${url}|${kind}|${maxWidth}|${quality}`;
 
   const cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
@@ -159,7 +165,7 @@ export async function compressImageToDataUri(url, opts = {}) {
 
   const job = (async () => {
     try {
-      const dataUri = await compressOnce(url, timeoutMs, signal);
+      const dataUri = await compressOnce(url, timeoutMs, signal, maxWidth, quality);
       remember(cacheKey, dataUri, CACHE_TTL_MS);
       return dataUri;
     } catch {
@@ -176,11 +182,15 @@ export async function compressImageToDataUri(url, opts = {}) {
 
 /**
  * Company logos: keep PNG, no crop, preserve aspect ratio + transparency.
+ * @param {string} url
+ * @param {number} [maxWidth=280]
+ * @param {{ removeBlackBg?: boolean }} [opts]
  */
-export async function embedLogoAsDataUri(url, maxWidth = 280) {
+export async function embedLogoAsDataUri(url, maxWidth = 280, opts = {}) {
   if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
 
-  const cacheKey = `${url}|logo|png|${maxWidth}`;
+  const removeBlackBg = opts.removeBlackBg === true;
+  const cacheKey = `${url}|logo|png|${maxWidth}|nobg=${removeBlackBg ? 1 : 0}`;
   const cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
 
@@ -191,20 +201,46 @@ export async function embedLogoAsDataUri(url, maxWidth = 280) {
       throw new Error('empty or too large');
     }
 
-    if (raw.length <= 80 * 1024 && raw[0] === 0x89 && raw[1] === 0x50) {
+    // Fast path only when we keep the file as-is (no black-bg strip).
+    if (
+      !removeBlackBg &&
+      raw.length <= 80 * 1024 &&
+      raw[0] === 0x89 &&
+      raw[1] === 0x50
+    ) {
       dataUri = `data:image/png;base64,${raw.toString('base64')}`;
     } else {
-      const out = await sharp(raw, { failOn: 'none' })
+      let pipeline = sharp(raw, { failOn: 'none' })
         .rotate()
         .resize({
           width: maxWidth,
-          height: Math.round(maxWidth * 0.6),
+          height: Math.round(maxWidth * 0.65),
           fit: 'inside',
           withoutEnlargement: true,
         })
-        .png({ compressionLevel: 6, palette: true })
-        .toBuffer();
-      dataUri = `data:image/png;base64,${out.toString('base64')}`;
+        .ensureAlpha();
+
+      if (removeBlackBg) {
+        const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          // Near-black → transparent (logo plate / baked black bg)
+          if (r <= 48 && g <= 48 && b <= 48) {
+            data[i + 3] = 0;
+          }
+        }
+        const out = await sharp(data, {
+          raw: { width: info.width, height: info.height, channels: 4 },
+        })
+          .png({ compressionLevel: 6 })
+          .toBuffer();
+        dataUri = `data:image/png;base64,${out.toString('base64')}`;
+      } else {
+        const out = await pipeline.png({ compressionLevel: 6, palette: true }).toBuffer();
+        dataUri = `data:image/png;base64,${out.toString('base64')}`;
+      }
     }
     remember(cacheKey, dataUri, CACHE_TTL_MS);
   } catch {
