@@ -5,13 +5,22 @@ import {
   inr,
   fmtDate,
   p2h,
+  itinDesc,
   formatOverviewBlocks,
   formatListBlocks,
   icons,
+  resolveDisplayTotal,
+  renderCityAreaHtml,
+  renderSimilarHotelsHtml,
+  renderPriceAmountHtml,
+  renderGrandTotalRows,
+  renderStateGalleryHtml,
+  renderMakerCardHtml,
 } from './finalcostingPdfShared.js';
+import { renderSocialIconsHtml } from './finalcostingPdfSocial.js';
 
 export const DEMANDSETU_LOGO_URL =
-  'https://www.demandsetutours.com/_next/image?url=%2Flogo.png&w=256&q=75';
+  'https://res.cloudinary.com/dcp1ev1uk/image/upload/v1749105174/demamnd_ki4tq1.png';
 
 const BRAND   = 'Demand Setu Tours';
 const TAGLINE = 'YOUR BRIDGE TO THE WORLD';
@@ -84,9 +93,7 @@ function renderItineraryHotelCard(hotel, travelDate) {
   const night = ordinalNight(hotel.day);
   const city = hotel.cityName || '';
   const checkIn = checkInLabel(travelDate, hotel.day);
-  const media = hotel.pdfImage
-    ? `<div class="stay-logo-box"><img src="${hotel.pdfImage}" alt="" class="stay-photo"/></div>`
-    : `<div class="stay-logo-box stay-icon-fallback">${ico('hotel', '#ffffff', 28)}</div>`;
+  const media = `<div class="stay-logo-box stay-icon-fallback">${ico('hotel', '#ffffff', 28)}</div>`;
   return `
     <div class="stay-card">
       <div class="stay-left">
@@ -137,19 +144,19 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .sans{font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;}
 .page-shell{background:linear-gradient(180deg,#ffedd5 0%,#fff7ed 50%,#fff4eb 100%);border:2px solid #fb923c;border-radius:14px;padding:12px;}
 .top-ribbon{height:8px;background:linear-gradient(90deg,#9a3412,#ea580c,#fb923c,#f97316);border-radius:8px 8px 0 0;margin:-12px -12px 0;}
-.brand-bar{display:flex;justify-content:space-between;align-items:center;padding:12px;margin:0 -12px 10px;background:linear-gradient(90deg,#7c2d12 0%,#c2410c 40%,#ea580c 100%);color:#fff;border-bottom:3px solid #fdba74;}
-.brand-left{display:flex;align-items:center;gap:12px;}
-.brand-logo{height:52px;width:auto;max-width:190px;object-fit:contain;display:block;background:#111;border-radius:6px;padding:4px 8px;}
+.brand-bar{display:flex;justify-content:space-between;align-items:center;padding:16px 16px;margin:0 -12px 10px;background:linear-gradient(90deg,#7c2d12 0%,#c2410c 40%,#ea580c 100%);color:#fff;border-bottom:3px solid #fdba74;}
+.brand-left{display:flex;align-items:center;gap:16px;}
+.brand-logo{height:96px;width:auto;max-width:340px;object-fit:contain;display:block;background:transparent;border:none;border-radius:0;padding:0;box-shadow:none;}
 .brand-name{font-family:'Segoe UI',Arial,sans-serif;}
-.brand-name strong{display:block;font-size:18px;color:#fff7ed;}
-.brand-name span{display:block;font-size:11px;color:#fdba74;letter-spacing:.12em;margin-top:2px;}
-.brand-contact{text-align:right;font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#ffedd5;line-height:1.65;max-width:250px;}
-.brand-contact b{color:#fff;font-size:12.5px;}
-.quote-masthead{margin-bottom:10px;padding:12px 14px;border-radius:12px;background:linear-gradient(135deg,#fff 0%,#ffedd5 100%);border:1px solid #fb923c;border-left:5px solid #ea580c;}
-.quote-label{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#c2410c;margin-bottom:4px;}
-.quote-title{font-size:26px;font-weight:700;line-height:1.2;color:var(--dark);margin-bottom:6px;}
-.quote-meta{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:var(--muted);}
-.quote-meta b{color:var(--dark);}
+.brand-name strong{display:block;font-size:22px;color:#fff;font-weight:800;}
+.brand-name span{display:block;font-size:12px;color:#ffedd5;letter-spacing:.12em;margin-top:3px;font-weight:700;}
+.brand-contact{text-align:right;font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#ffedd5;line-height:1.65;max-width:260px;font-weight:600;}
+.brand-contact b{color:#fff;font-size:13.5px;font-weight:800;}
+.quote-masthead{margin-bottom:10px;padding:14px 16px;border-radius:12px;background:linear-gradient(90deg,#9a3412 0%,#c2410c 35%,#ea580c 70%,#f97316 100%);border:1px solid #7c2d12;color:#fff;}
+.quote-label{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#ffedd5;margin-bottom:4px;}
+.quote-title{font-size:26px;font-weight:700;line-height:1.2;color:#fff;margin-bottom:6px;}
+.quote-meta{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#ffedd5;}
+.quote-meta b{color:#fff;}
 .price-band{background:linear-gradient(90deg,#9a3412 0%,#c2410c 35%,#ea580c 70%,#f97316 100%);color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;font-family:'Segoe UI',Arial,sans-serif;border:1px solid #7c2d12;}
 .price-band .pb-l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.95;}
 .price-band .pb-t{font-size:14px;margin-top:3px;}
@@ -162,6 +169,17 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .fact .fv{font-size:13.5px;font-weight:700;color:var(--dark);margin-top:3px;}
 .hello{font-size:13.5px;line-height:1.7;color:#374151;margin-bottom:10px;padding:12px;border-radius:10px;background:linear-gradient(135deg,#fff7ed,#ffedd5 60%,#fed7aa);border:1px solid #fb923c;border-left:5px solid #ea580c;}
 .hello strong{color:#c2410c;}
+.state-gallery{display:flex;gap:10px;margin:0 0 12px;page-break-inside:avoid;}
+.sg-cell{flex:1;min-width:0;height:140px;border-radius:12px;overflow:hidden;border:2px solid #fb923c;background:#ffedd5;box-shadow:0 2px 8px rgba(154,52,18,.14);}
+.sg-cell img{width:100%;height:100%;object-fit:cover;display:block;}
+.maker-card{margin:12px 0 8px;padding:12px 14px;border-radius:12px;border:1px solid #fb923c;border-left:5px solid #ea580c;background:linear-gradient(135deg,#fff7ed,#ffedd5);page-break-inside:avoid;font-family:'Segoe UI',Arial,sans-serif;}
+.maker-kicker{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#c2410c;margin-bottom:4px;}
+.maker-name{font-size:16px;font-weight:800;color:#9a3412;}
+.maker-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:12px;color:#78716c;font-weight:600;}
+.maker-contact{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:13px;font-weight:700;color:#c2410c;}
+.social-row{display:flex;justify-content:center;align-items:center;gap:14px;margin:10px 0 4px;}
+.social-ico{display:inline-flex;width:28px;height:28px;border-radius:50%;overflow:hidden;}
+.social-ico img{width:28px;height:28px;display:block;border:0;}
 .route-box{margin-bottom:10px;font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#9a3412,#ea580c);border-radius:12px;padding:12px;border:1px solid #7c2d12;}
 .route-h{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#ffedd5;margin-bottom:8px;}
 .route-pills{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
@@ -205,6 +223,24 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .tl-head .city{font-size:11.5px;color:#ffedd5;letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
 .tl-body{padding:10px;background:linear-gradient(180deg,#fff7ed,#ffedd5);}
 .tl-desc{font-size:13.5px;line-height:1.7;color:#374151;margin-bottom:8px;}
+.itin-lines{margin:0 0 8px 0;padding-left:0;list-style:none;}
+.itin-lines li{position:relative;padding:5px 8px 5px 22px;font-size:13.5px;line-height:1.6;color:#374151;border-bottom:1px dashed #fdba74;}
+.itin-lines li:last-child{border-bottom:none;}
+.itin-lines li::before{content:'›';position:absolute;left:6px;top:5px;color:#ea580c;font-weight:700;font-size:15px;}
+.ca-block{margin-top:8px;border:1px solid #fdba74;border-radius:10px;overflow:hidden;background:#fff;}
+.ca-title,.sh-title{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px;background:linear-gradient(90deg,#9a3412,#ea580c);color:#fff;}
+.ca-list,.sh-list{padding:8px;}
+.ca-item{padding:7px 8px;margin-bottom:6px;border-left:4px solid #ea580c;background:linear-gradient(90deg,#fff7ed,#fff);border-radius:6px;border:1px solid #fdba74;}
+.ca-item:last-child{margin-bottom:0;}
+.ca-name{font-size:13px;font-weight:800;color:#9a3412;}
+.ca-desc{font-size:12px;color:#44403c;line-height:1.5;margin-top:3px;}
+.sh-block{margin-top:8px;border:1px solid #fdba74;border-radius:10px;overflow:hidden;background:#fff;}
+.sh-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;margin-bottom:5px;background:linear-gradient(180deg,#fff,#fff7ed);border:1px solid #fdba74;border-radius:8px;}
+.sh-item:last-child{margin-bottom:0;}
+.sh-name{font-size:13px;font-weight:700;color:#9a3412;}
+.sh-rating{font-size:12px;font-weight:800;color:#c2410c;white-space:nowrap;}
+.price-was{font-size:12px;color:#9a3412;text-decoration:line-through;opacity:.75;margin-bottom:2px;}
+.bill-row:not(.tot){background:#fff7ed;color:#44403c;}
 .stay-card{display:flex;justify-content:space-between;align-items:stretch;gap:12px;background:linear-gradient(90deg,#fff,#ffedd5);border:1px solid #fb923c;border-radius:10px;padding:11px 12px;margin-top:4px;page-break-inside:avoid;font-family:'Segoe UI',Arial,sans-serif;}
 .stay-left{flex:1;min-width:0;}
 .stay-top{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;}
@@ -265,7 +301,8 @@ export function buildDemandSetuPdfHtml(operation) {
   const cab = transferDetails[0];
   const cabName = cab?.cabName || cab?.cabType || '—';
   const places = pkg.packagePlaces || [];
-  const finalTotal = Number(operation.finalTotal) || 0;
+  const pricingInfo = resolveDisplayTotal(operation);
+  const { displayTotal, finalTotal } = pricingInfo;
   const subtotal = Number(totals.grandTotal ?? operation.total) || 0;
   const marginAmt = Math.max(0, finalTotal - subtotal);
   const ref = quoteId(operation);
@@ -294,9 +331,7 @@ export function buildDemandSetuPdfHtml(operation) {
 
   const hotelCards = hotels
     .map((h) => {
-      const thumb = h.pdfImage
-        ? `<div class="hcard-thumb"><img src="${h.pdfImage}" alt=""/></div>`
-        : `<div class="hcard-thumb hcard-thumb-icon">${ico('hotel', '#ffffff', 30)}</div>`;
+      const thumb = `<div class="hcard-thumb hcard-thumb-icon">${ico('hotel', '#ffffff', 30)}</div>`;
       return `
     <div class="hcard">
       <div class="hcard-day"><div class="n">${esc(h.day)}</div><div class="l">Night</div></div>
@@ -355,6 +390,8 @@ export function buildDemandSetuPdfHtml(operation) {
       const it = dayEntry.selectedItinerary || {};
       const dayNum = dayEntry.day;
       const hotel = hotelMap.get(Number(dayNum));
+      const cityAreaHtml = renderCityAreaHtml(it.cityArea, 'demandsetu');
+      const similarHtml = renderSimilarHotelsHtml(dayEntry.similarhotel, 'demandsetu');
       return `
       <div class="tl-day">
         <div class="tl-dot">${esc(dayNum)}</div>
@@ -364,8 +401,10 @@ export function buildDemandSetuPdfHtml(operation) {
             <div class="city">${esc(it.cityName || '')}</div>
           </div>
           <div class="tl-body">
-            ${it.itineraryDescription ? `<div class="tl-desc">${p2h(it.itineraryDescription)}</div>` : ''}
+            ${it.itineraryDescription ? itinDesc(it.itineraryDescription) : ''}
+            ${cityAreaHtml}
             ${hotel ? renderItineraryHotelCard(hotel, lead.travelDate) : ''}
+            ${similarHtml}
           </div>
         </div>
       </div>`;
@@ -391,17 +430,17 @@ export function buildDemandSetuPdfHtml(operation) {
   const pricing = `
   <div class="sec-block"><div class="sec">Cost Summary</div>
   <div class="bill">
-   <div class="bill-row tot"><span>Grand Total (Included Gst)</span><span>${inr(finalTotal)}</span></div>
+   ${renderGrandTotalRows(pricingInfo)}
   </div></div>`;
 
   const incExc =
     pkg.packageInclusions || pkg.packageExclusions
-      ? `<div class="sec-block"><div class="sec">Inclusions &amp; Exclusions</div>
+      ? `${renderMakerCardHtml(operation.pdfMaker)}<div class="sec-block"><div class="sec">Inclusions &amp; Exclusions</div>
     <div class="ie">
       <div class="ie-col inc"><div class="ie-h inc">Inclusions</div>${formatContentBlocks(pkg.packageInclusions)}</div>
       <div class="ie-col exc"><div class="ie-h exc">Exclusions</div>${formatContentBlocks(pkg.packageExclusions)}</div>
     </div></div>`
-      : '';
+      : renderMakerCardHtml(operation.pdfMaker);
 
   const policiesSection = policies.length
     ? `<div class="sec-block"><div class="sec">Policies &amp; Terms</div>${policies
@@ -454,8 +493,7 @@ export function buildDemandSetuPdfHtml(operation) {
     <div>
       <div class="pb-l">TOTAL PRICE</div>
       <div class="pb-l">incl. GST</div> 
-      <div class="pb-v">${inr(finalTotal)}</div>
-      <div class="pb-n">All inclusive</div>
+      ${renderPriceAmountHtml(pricingInfo, { valueClass: 'pb-v', noteClass: 'pb-n' })}
     </div>
   </div>
 
@@ -466,8 +504,10 @@ export function buildDemandSetuPdfHtml(operation) {
     <div class="fact"><div class="fl">Travel date</div><div class="fv">${fmtDate(lead.travelDate)}</div></div>
     <div class="fact"><div class="fl">Duration</div><div class="fv">${esc(pkg.duration || `${lead.days || ''}D`)}</div></div>
     <div class="fact"><div class="fl">Rooms</div><div class="fv">${esc(lead.noOfRooms || '1')}</div></div>
+    <div class="fact"><div class="fl">Extra Beds</div><div class="fv">${esc(lead.extraBeds != null && lead.extraBeds !== '' ? lead.extraBeds : '0')}</div></div>
   </div>
 
+  ${renderStateGalleryHtml(operation.pdfStateGallery)}
   <div class="hello">
     Dear <strong>${esc(lead.name || 'Guest')}</strong>, thank you for choosing <strong>${BRAND}</strong>.
     This quotation is your bridge to an unforgettable ${esc(pkg.state || 'Himachal')} experience —
@@ -504,6 +544,7 @@ export function buildDemandSetuPdfHtml(operation) {
     <div class="fn">${BRAND}</div>
     <div class="fc">${PHONE} · ${EMAIL}</div>
     <div class="fc" style="font-size:8px;opacity:.7">${ADDRESS}</div>
+    ${renderSocialIconsHtml('demandsetu')}
     <div class="fl">
       Quote Ref: ${esc(ref)} · Generated: ${esc(generated)}<br/>
       Computer-generated quotation. Rates subject to availability at confirmation.
