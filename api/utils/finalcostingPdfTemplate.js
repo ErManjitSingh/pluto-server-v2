@@ -5,17 +5,26 @@ import {
   inr,
   fmtDate,
   p2h,
+  itinDesc,
   formatOverviewBlocks,
   formatListBlocks,
   icons,
+  resolveDisplayTotal,
+  renderCityAreaHtml,
+  renderSimilarHotelsHtml,
+  renderPriceAmountHtml,
+  renderGrandTotalRows,
+  renderStateGalleryHtml,
+  renderMakerCardHtml,
 } from './finalcostingPdfShared.js';
+import { renderSocialIconsHtml } from './finalcostingPdfSocial.js';
 
 const LOGO_URL  = 'https://ptwholidays.in/_next/image?url=%2FPTW-Holidays-logo.png&w=256&q=75';
 const BRAND     = 'PTW Holidays Pvt. Ltd.';
 const TAGLINE   = 'WORLD TOURS DMC';
 const PHONE     = '+91-9317258401';
 const EMAIL     = 'info@ptwholidays.com';
-const ADDRESS   = 'Sheryl Villa, 2nd Floor, Near Taste Buds Restaurant, Panthaghati, Shimla, HP 171009';
+const ADDRESS   = 'Dari, Dharamshala, Gabli Dar, Himachal Pradesh 176215';
 
 const BANK = {
   bank:   'STATE BANK OF INDIA',
@@ -56,9 +65,7 @@ function hotelByDay(hotels) {
 function renderHotelCard(hotel, opts = {}) {
   if (!hotel) return '';
   const forBreakdown = opts.breakdown === true;
-  const thumb = hotel.pdfImage
-    ? `<div class="hotel-thumb${forBreakdown ? ' hotel-thumb-lg' : ''}"><img src="${hotel.pdfImage}" alt=""/></div>`
-    : `<div class="hotel-badge">${ico('hotel', '#ffffff', 26)}</div>`;
+  const thumb = `<div class="hotel-badge">${ico('hotel', '#ffffff', 26)}</div>`;
 
   if (forBreakdown) {
     return `
@@ -139,7 +146,7 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .price-badge .pv{font-size:24px;font-weight:800;color:var(--gold);margin:4px 0;}
 .price-badge .pn{font-size:10px;color:var(--muted);}
 .guest-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
-.gs-cell{flex:1;min-width:105px;padding:10px 11px;border-radius:10px;background:linear-gradient(180deg,#fff,#dceaf8);border:1px solid #8fb4d9;border-top:3px solid var(--blue);}
+.gs-cell{width:calc(33.33% - 6px);padding:10px 11px;border-radius:10px;background:linear-gradient(180deg,#fff,#dceaf8);border:1px solid #8fb4d9;border-top:3px solid var(--blue);box-sizing:border-box;}
 .gs-cell:nth-child(even){background:linear-gradient(180deg,#fffbf3,#ffe9c8);border-color:#e0a04a;border-top-color:var(--gold);}
 .gs-lbl{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
 .gs-val{font-size:13.5px;font-weight:700;margin-top:3px;color:var(--navy);}
@@ -224,8 +231,37 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .doc-footer .fn{font-size:15.5px;font-weight:800;margin-bottom:4px;color:#ffd89a;}
 .doc-footer .fc{font-size:12px;color:#c5daf3;margin-bottom:6px;}
 .doc-footer .fl{font-size:11px;color:#b8d4f0;line-height:1.55;border-top:1px solid rgba(255,255,255,.2);padding-top:8px;margin-top:6px;}
+.social-row{display:flex;justify-content:center;align-items:center;gap:14px;margin:10px 0 4px;}
+.social-ico{display:inline-flex;width:28px;height:28px;border-radius:50%;overflow:hidden;}
+.social-ico img{width:28px;height:28px;display:block;border:0;}
+.maker-card{margin:12px 0 8px;padding:12px 14px;border-radius:12px;border:1px solid #7aa8d4;border-left:5px solid var(--gold);background:linear-gradient(135deg,#fff8ec,#e8f2fc);page-break-inside:avoid;}
+.maker-kicker{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+.maker-name{font-size:16px;font-weight:800;color:var(--navy);}
+.maker-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:12px;color:var(--muted);font-weight:600;}
+.maker-contact{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:13px;font-weight:700;color:var(--blue);}
 .greeting{background:linear-gradient(135deg,#fff8ec 0%,#ffe9c8 45%,#dceaf8 100%);border:1px solid #e0a04a;border-left:5px solid var(--gold);border-radius:10px;padding:12px;margin-bottom:10px;font-size:13.5px;line-height:1.7;color:#2c3e50;}
 .greeting strong{color:var(--navy);}
+.state-gallery{display:flex;gap:10px;margin:0 0 12px;page-break-inside:avoid;}
+.sg-cell{flex:1;min-width:0;height:140px;border-radius:12px;overflow:hidden;border:2px solid #7aa8d4;background:#c5daf0;box-shadow:0 2px 8px rgba(11,39,72,.12);}
+.sg-cell img{width:100%;height:100%;object-fit:cover;display:block;}
+.itin-lines{margin:0 0 8px 0;padding-left:0;list-style:none;}
+.itin-lines li{position:relative;padding:5px 8px 5px 22px;font-size:13.5px;line-height:1.6;color:#243447;border-bottom:1px dashed #c5daf0;}
+.itin-lines li:last-child{border-bottom:none;}
+.itin-lines li::before{content:'›';position:absolute;left:6px;top:5px;color:var(--blue);font-weight:700;font-size:15px;}
+.ca-block{margin-top:8px;border:1px solid #7aa8d4;border-radius:10px;overflow:hidden;background:#fff;}
+.ca-title,.sh-title{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:7px 10px;background:linear-gradient(90deg,#0b2748,#1a5fa8);color:#fff;}
+.ca-list,.sh-list{padding:8px;}
+.ca-item{padding:7px 8px;margin-bottom:6px;border-left:4px solid var(--gold);background:linear-gradient(90deg,#fff8ec,#fff);border-radius:6px;border:1px solid #e0a04a;}
+.ca-item:last-child{margin-bottom:0;}
+.ca-name{font-size:13px;font-weight:800;color:var(--navy);}
+.ca-desc{font-size:12px;color:#334155;line-height:1.5;margin-top:3px;}
+.sh-block{margin-top:8px;border:1px solid #7aa8d4;border-radius:10px;overflow:hidden;background:#fff;}
+.sh-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;margin-bottom:5px;background:linear-gradient(180deg,#fff,#e8f2fc);border:1px solid #9fc0e4;border-radius:8px;}
+.sh-item:last-child{margin-bottom:0;}
+.sh-name{font-size:13px;font-weight:700;color:var(--navy);}
+.sh-rating{font-size:12px;font-weight:800;color:var(--gold);white-space:nowrap;}
+.price-was{font-size:12px;color:var(--muted);text-decoration:line-through;margin-bottom:2px;}
+.bill-row:not(.total){background:#eef5fc;border-bottom:1px solid #c5daf0;color:var(--ink);}
 `;
 
 // ─── Main builder ─────────────────────────────────────────────────────────────
@@ -241,7 +277,8 @@ export function buildFinalCostingPdfHtml(operation) {
   const cabName  = cab?.cabName || cab?.cabType || '—';
   const cabSeats = cab?.seatingCapacity || cab?.cabSeatingCapacity || '—';
   const places   = pkg.packagePlaces || [];
-  const finalTotal = Number(operation.finalTotal) || 0;
+  const pricingInfo = resolveDisplayTotal(operation);
+  const { displayTotal, finalTotal } = pricingInfo;
   const subtotal   = Number(totals.grandTotal ?? operation.total) || 0;
   const marginAmt  = Math.max(0, finalTotal - subtotal);
   const ref        = quoteId(operation);
@@ -278,8 +315,7 @@ export function buildFinalCostingPdfHtml(operation) {
     <div class="price-badge">
       <div class="pl">TOTAL PRICE</div>
       <div class="pl">incl. GST</div>
-      <div class="pv">${inr(finalTotal)}</div>
-      <div class="pn">All inclusive</div>
+      ${renderPriceAmountHtml(pricingInfo, { valueClass: 'pv', noteClass: 'pn' })}
     </div>
     ${(pkg.tags || []).includes('trending') ? '<span class="cover-tag">Trending</span>' : '<span class="cover-tag">Custom Package</span>'}
     <div class="cover-title">${esc(pkg.packageName || 'Your Himachal Package')}</div>
@@ -301,10 +337,13 @@ export function buildFinalCostingPdfHtml(operation) {
     <div class="gs-cell"><div class="gs-lbl">Travel Date</div><div class="gs-val">${fmtDate(lead.travelDate)}</div></div>
     <div class="gs-cell"><div class="gs-lbl">Duration</div><div class="gs-val">${esc(pkg.duration || `${lead.days || ''}D`)}</div></div>
     <div class="gs-cell"><div class="gs-lbl">Rooms</div><div class="gs-val">${esc(lead.noOfRooms || '1')}</div></div>
+    <div class="gs-cell"><div class="gs-lbl">Extra Beds</div><div class="gs-val">${esc(lead.extraBeds != null && lead.extraBeds !== '' ? lead.extraBeds : '0')}</div></div>
   </div>`;
 
   // ── Greeting ─────────────────────────────────────────────────────────────
+  const stateGallery = renderStateGalleryHtml(operation.pdfStateGallery);
   const greeting = `
+  ${stateGallery}
   <div class="greeting">
     Dear <strong>${esc(lead.name || 'Guest')}</strong>,<br/><br/>
     Thank you for choosing <strong>${BRAND}</strong> for your upcoming ${esc(pkg.state || 'Himachal')} adventure.
@@ -347,6 +386,8 @@ export function buildFinalCostingPdfHtml(operation) {
     const dayNum  = dayEntry.day;
     const hotel   = hotelMap.get(Number(dayNum));
     const hotelHtml = hotel ? renderHotelCard(hotel) : '';
+    const cityAreaHtml = renderCityAreaHtml(it.cityArea, 'ptw');
+    const similarHtml = renderSimilarHotelsHtml(dayEntry.similarhotel, 'ptw');
 
     return `
     <div class="day-card">
@@ -366,23 +407,25 @@ export function buildFinalCostingPdfHtml(operation) {
           ${it.cityName ? `<span class="day-pill">Stay in ${esc(it.cityName)}</span>` : ''}
           ${hotel ? `<span class="day-pill">Hotel Confirmed</span>` : `<span class="day-pill">Leisure / Transit</span>`}
         </div>
-        ${it.itineraryDescription ? `<div class="day-desc">${p2h(it.itineraryDescription)}</div>` : ''}
+        ${it.itineraryDescription ? itinDesc(it.itineraryDescription) : ''}
+        ${cityAreaHtml}
         ${hotelHtml}
+        ${similarHtml}
       </div>
     </div>`;
   }).join('');
-
- 
 
   // ── Pricing ──────────────────────────────────────────────────────────────
   const pricing = `
   <div class="sec-head"><span class="ico">${ico('money', '#fff', 16)}</span><div><h2>Cost Summary</h2><div class="sub">Transparent pricing breakdown</div></div></div>
   <div class="bill-card">
-     <div class="bill-row total"><span>Grand Total (Included Gst)</span><span>${inr(finalTotal)}</span></div>
+     ${renderGrandTotalRows(pricingInfo)}
   </div>`;
 
   // ── Inclusions / Exclusions ──────────────────────────────────────────────
+  const makerCard = renderMakerCardHtml(operation.pdfMaker);
   const incExc = (pkg.packageInclusions || pkg.packageExclusions) ? `
+  ${makerCard}
   <div class="sec-head"><span class="ico">${ico('check', '#fff', 16)}</span><div><h2>Inclusions &amp; Exclusions</h2></div></div>
   <div class="sec-panel"><div class="ie-grid">
     <div class="ie-col inc">
@@ -393,7 +436,7 @@ export function buildFinalCostingPdfHtml(operation) {
       <div class="ie-head exc">Exclusions</div>
       ${formatContentBlocks(pkg.packageExclusions)}
     </div>
-  </div></div>` : '';
+  </div></div>` : `${makerCard}`;
 
   // ── Policies (customExclusions) ──────────────────────────────────────────
   const policyHtml = policies.map(p => `
@@ -433,6 +476,7 @@ export function buildFinalCostingPdfHtml(operation) {
     <div class="fn">${BRAND} — ${TAGLINE}</div>
     <div class="fc">${PHONE} &nbsp;|&nbsp; ${EMAIL}</div>
     <div class="fc" style="font-size:8px;opacity:.7">${ADDRESS}</div>
+    ${renderSocialIconsHtml('ptw')}
     <div class="fl">
       Quote Ref: ${esc(ref)} &nbsp;·&nbsp; Generated: ${esc(generated)}<br/>
       This is a computer-generated quotation. Rates are subject to availability at the time of booking confirmation.
