@@ -357,7 +357,7 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
       .lean()
       .maxTimeMS(20000)
       .select(
-        'id userId customerLeadId updatedAt finalTotal total totals hotels package transfer'
+        'id userId customerLeadId updatedAt createdAt finalTotal total discountPercentage totals hotels package transfer'
       );
 
     if (!operation) {
