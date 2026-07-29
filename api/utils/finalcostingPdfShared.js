@@ -36,6 +36,30 @@ export function p2h(text) {
   return esc(text).replace(/\n/g, '<br>');
 }
 
+/**
+ * Render itinerary description line-by-line, splitting on full stop (sentence per line).
+ * Newlines are treated as separators too. Empty/whitespace lines are skipped.
+ */
+export function itinDesc(text) {
+  if (!text) return '';
+
+  // Split on newlines first, then split each chunk on ". " boundaries
+  const raw = text
+    .split(/\n+/)
+    .flatMap((chunk) =>
+      chunk
+        .split(/(?<=\.)\s+/)  // split after each "." followed by whitespace
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+
+  if (!raw.length) return '';
+
+  return `<ul class="itin-lines">${raw
+    .map((line) => `<li>${esc(line)}</li>`)
+    .join('')}</ul>`;
+}
+
 export function decodeHtmlEntities(str) {
   return String(str || '')
     .replace(/&nbsp;/gi, ' ')
@@ -178,6 +202,123 @@ export function formatListBlocks(html, { numbered = false } = {}) {
     </div>`
     )
     .join('')}</div>`;
+}
+
+/** Apply discountPercentage to package finalTotal (TOTAL PRICE / Grand Total). */
+export function resolveDisplayTotal(operation) {
+  const finalTotal = Number(operation?.finalTotal) || 0;
+  const discountPercentage = Number(operation?.discountPercentage) || 0;
+  const hasDiscount = discountPercentage > 0;
+  const discountAmount = hasDiscount
+    ? Math.round((finalTotal * discountPercentage) / 100)
+    : 0;
+  const displayTotal = hasDiscount
+    ? Math.max(0, finalTotal - discountAmount)
+    : finalTotal;
+  return { finalTotal, discountPercentage, discountAmount, displayTotal, hasDiscount };
+}
+
+/** Sightseeing / cityArea places for a day (placeName + description). */
+export function renderCityAreaHtml(cityArea, theme = 'ptw') {
+  const items = (Array.isArray(cityArea) ? cityArea : []).filter(
+    (a) => a && (a.placeName || a.description)
+  );
+  if (!items.length) return '';
+
+  const rows = items
+    .map((a) => {
+      const title = esc(a.placeName || 'Place');
+      const desc = a.description ? `<div class="ca-desc">${p2h(a.description)}</div>` : '';
+      return `<div class="ca-item"><div class="ca-name">${title}</div>${desc}</div>`;
+    })
+    .join('');
+
+  return `
+  <div class="ca-block ca-${theme}">
+    <div class="ca-title">Places &amp; Sightseeing</div>
+    <div class="ca-list">${rows}</div>
+  </div>`;
+}
+
+/** Alternate hotels: propertyName + rating. */
+export function renderSimilarHotelsHtml(similarHotels, theme = 'ptw') {
+  const items = (Array.isArray(similarHotels) ? similarHotels : []).filter(
+    (h) => h && h.propertyName
+  );
+  if (!items.length) return '';
+
+  const rows = items
+    .map((h) => {
+      const rating =
+        h.rating != null && h.rating !== ''
+          ? `<span class="sh-rating">${esc(h.rating)}★</span>`
+          : '';
+      return `<div class="sh-item"><span class="sh-name">${esc(h.propertyName)}</span>${rating}</div>`;
+    })
+    .join('');
+
+  return `
+  <div class="sh-block sh-${theme}">
+    <div class="sh-title">Similar Hotels</div>
+    <div class="sh-list">${rows}</div>
+  </div>`;
+}
+
+/** Cover / cost-summary price HTML when discount may apply. */
+export function renderPriceAmountHtml(pricing, opts = {}) {
+  const { displayTotal, finalTotal, discountPercentage, hasDiscount } = pricing;
+  const valueClass = opts.valueClass || 'pv';
+  const noteClass = opts.noteClass || 'pn';
+  if (!hasDiscount) {
+    return `<div class="${valueClass}">${inr(displayTotal)}</div>
+      <div class="${noteClass}">${opts.note || 'All inclusive'}</div>`;
+  }
+  return `
+    <div class="price-was">${inr(finalTotal)}</div>
+    <div class="${valueClass}">${inr(displayTotal)}</div>
+    <div class="${noteClass}">${esc(discountPercentage)}% discount applied</div>`;
+}
+
+export function renderGrandTotalRows(pricing) {
+  const { displayTotal, finalTotal, discountPercentage, discountAmount, hasDiscount } =
+    pricing;
+  if (!hasDiscount) {
+    return `<div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
+  }
+  return `
+    <div class="bill-row"><span>Package Total (Included Gst)</span><span>${inr(finalTotal)}</span></div>
+    <div class="bill-row"><span>Discount (${esc(discountPercentage)}%)</span><span>− ${inr(discountAmount)}</span></div>
+    <div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
+}
+
+/** 3-up destination gallery above greeting (data URIs only). */
+export function renderStateGalleryHtml(images) {
+  const imgs = (Array.isArray(images) ? images : []).filter(Boolean);
+  if (!imgs.length) return '';
+  return `<div class="state-gallery">${imgs
+    .map((src) => `<div class="sg-cell"><img src="${src}" alt=""/></div>`)
+    .join('')}</div>`;
+}
+
+/** Executive / maker card shown above Inclusions & Exclusions. */
+export function renderMakerCardHtml(maker) {
+  if (!maker || typeof maker !== 'object') return '';
+  const name = [maker.firstName, maker.lastName].filter(Boolean).join(' ').trim();
+  if (!name && !maker.email && !maker.contactNo) return '';
+
+  return `
+  <div class="maker-card">
+    <div class="maker-kicker">Your Travel Executive</div>
+    <div class="maker-name">${esc(name || 'Travel Executive')}</div>
+    <div class="maker-meta">
+      ${maker.designation ? `<span>${esc(maker.designation)}</span>` : ''}
+      ${maker.companyName ? `<span>${esc(maker.companyName)}</span>` : ''}
+    </div>
+    <div class="maker-contact">
+      ${maker.contactNo ? `<span>${esc(maker.contactNo)}</span>` : ''}
+      ${maker.email ? `<span>${esc(maker.email)}</span>` : ''}
+    </div>
+  </div>`;
 }
 
 /** Inline SVG icons — emoji fonts are often missing on Linux Chrome for PDF. */
