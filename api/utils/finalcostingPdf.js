@@ -7,10 +7,10 @@ import {
 } from './finalcostingPdfDemandSetuTemplate.js';
 import { enqueuePdfJob } from './finalcostingPdfQueue.js';
 import { buildPdfCacheKey, getCachedPdf, setCachedPdf } from './finalcostingPdfCache.js';
-import {
-  attachOptimizedHotelImages,
-  embedLogoAsDataUri,
-} from './finalcostingPdfImages.js';
+import { embedLogoAsDataUri } from './finalcostingPdfImages.js';
+import { loadStateGalleryDataUris } from './finalcostingPdfStateImages.js';
+import { buildPdfFooterTemplate } from './finalcostingPdfSocial.js';
+import Maker from '../models/maker.model.js';
 
 const PTW_LOGO_URL =
   'https://ptwholidays.in/_next/image?url=%2FPTW-Holidays-logo.png&w=256&q=75';
@@ -27,6 +27,15 @@ const LAUNCH_ARGS = [
   '--no-first-run',
   '--font-render-hinting=none',
   '--disable-software-rasterizer',
+  '--disable-translate',
+  '--disable-sync',
+  '--disable-hang-monitor',
+  '--disable-component-update',
+  '--disable-domain-reliability',
+  '--disable-client-side-phishing-detection',
+  '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
+  '--run-all-compositor-stages-before-draw',
+  '--disable-checker-imaging',
 ];
 
 const IDLE_CLOSE_MS = 15 * 60 * 1000;
@@ -36,10 +45,26 @@ const MAX_RENDER_ATTEMPTS = 2;
 let browserInstance = null;
 let idleTimer = null;
 let launching = null;
+/** Reused across queued PDF jobs (queue is serial). */
+let pdfPage = null;
 
 /** @type {Map<string, string>} brand -> data URI logo */
 const logoDataUriByBrand = new Map();
 const logosWarmingByBrand = new Map();
+
+/** Prebuilt footer HTML per brand (avoid rebuilding every render). */
+const footerTemplateByBrand = {
+  ptw: null,
+  demandsetu: null,
+};
+
+function getFooterTemplate(brand) {
+  const key = brand === 'demandsetu' ? 'demandsetu' : 'ptw';
+  if (!footerTemplateByBrand[key]) {
+    footerTemplateByBrand[key] = buildPdfFooterTemplate(key);
+  }
+  return footerTemplateByBrand[key];
+}
 
 function systemChromePaths() {
   if (process.platform !== 'win32') return [];
@@ -54,6 +79,7 @@ function systemChromePaths() {
 function scheduleIdleClose() {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(async () => {
+    pdfPage = null;
     if (browserInstance) {
       try {
         await browserInstance.close();
@@ -89,6 +115,7 @@ async function resetBrowser() {
     idleTimer = null;
   }
   launching = null;
+  pdfPage = null;
   if (browserInstance) {
     try {
       await browserInstance.close();
@@ -109,9 +136,13 @@ async function getBrowser() {
       .then((b) => {
         browserInstance = b;
         launching = null;
+        pdfPage = null;
         scheduleIdleClose();
         b.on('disconnected', () => {
-          if (browserInstance === b) browserInstance = null;
+          if (browserInstance === b) {
+            browserInstance = null;
+            pdfPage = null;
+          }
         });
         return b;
       })
@@ -131,7 +162,10 @@ function logoUrlForBrand(brand) {
 async function ensureBrandLogo(brand) {
   if (logoDataUriByBrand.has(brand)) return;
   if (!logosWarmingByBrand.has(brand)) {
-    const p = embedLogoAsDataUri(logoUrlForBrand(brand), 280)
+    const isDemand = brand === 'demandsetu';
+    const p = embedLogoAsDataUri(logoUrlForBrand(brand), isDemand ? 640 : 280, {
+      removeBlackBg: isDemand,
+    })
       .then((uri) => {
         if (uri) logoDataUriByBrand.set(brand, uri);
         logosWarmingByBrand.delete(brand);
@@ -153,15 +187,31 @@ function injectLogoDataUri(html, brand) {
   return html.split(PTW_LOGO_URL).join(dataUri);
 }
 
-async function renderPdfBuffer(html) {
+async function getPdfPage() {
   const browser = await getBrowser();
+  if (pdfPage) {
+    try {
+      if (typeof pdfPage.isClosed === 'function' ? !pdfPage.isClosed() : true) {
+        return pdfPage;
+      }
+    } catch {
+      pdfPage = null;
+    }
+  }
   const page = await browser.newPage();
-  try {
-    page.setDefaultTimeout(PDF_TIMEOUT_MS);
-    page.setDefaultNavigationTimeout(PDF_TIMEOUT_MS);
+  page.setDefaultTimeout(PDF_TIMEOUT_MS);
+  page.setDefaultNavigationTimeout(PDF_TIMEOUT_MS);
+  // PDF HTML is static — JS off speeds setContent + layout
+  await page.setJavaScriptEnabled(false);
+  await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
+  pdfPage = page;
+  return page;
+}
 
+async function renderPdfBuffer(html, brand = 'ptw') {
+  const page = await getPdfPage();
+  try {
     // All assets are already inline data URIs — no network needed.
-    // Skip request interception (it adds overhead on every setContent).
     await page.setContent(html, {
       waitUntil: 'domcontentloaded',
       timeout: PDF_TIMEOUT_MS,
@@ -171,22 +221,31 @@ async function renderPdfBuffer(html) {
       format: 'A4',
       printBackground: true,
       preferCSSPageSize: false,
-      margin: { top: '14mm', right: '12mm', bottom: '16mm', left: '12mm' },
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate: getFooterTemplate(brand),
+      margin: { top: '10mm', right: '10mm', bottom: '18mm', left: '10mm' },
       timeout: PDF_TIMEOUT_MS,
     });
 
-    return Buffer.from(pdfUint8);
-  } finally {
-    await page.close().catch(() => {});
     scheduleIdleClose();
+    return Buffer.from(pdfUint8);
+  } catch (err) {
+    try {
+      await pdfPage?.close();
+    } catch {
+      /* ignore */
+    }
+    pdfPage = null;
+    throw err;
   }
 }
 
-async function renderPdfBufferWithRetry(html) {
+async function renderPdfBufferWithRetry(html, brand = 'ptw') {
   let lastError;
   for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
     try {
-      return await renderPdfBuffer(html);
+      return await renderPdfBuffer(html, brand);
     } catch (err) {
       lastError = err;
       console.error(
@@ -200,6 +259,40 @@ async function renderPdfBufferWithRetry(html) {
     }
   }
   throw lastError;
+}
+
+async function fetchMakerForPdf(userId, teamLeaderId) {
+  const ids = [...new Set([userId, teamLeaderId].filter(Boolean).map(String))];
+  for (const id of ids) {
+    try {
+      const maker = await Maker.findById(id)
+        .select('firstName lastName designation email contactNo companyName')
+        .lean()
+        .maxTimeMS(2500);
+      if (maker) {
+        console.log(`[pdf] maker hit id=${id} name=${maker.firstName || ''} ${maker.lastName || ''}`);
+        return maker;
+      }
+    } catch (err) {
+      console.error(`[pdf] maker fetch failed id=${id}:`, err?.message || err);
+    }
+  }
+  console.log(`[pdf] maker miss ids=${ids.join(',') || '(none)'}`);
+  return null;
+}
+
+function makerFromPackageFallback(pkg = {}) {
+  const name = String(pkg.teamLeader || '').trim();
+  if (!name) return null;
+  const parts = name.split(/\s+/);
+  return {
+    firstName: parts[0] || name,
+    lastName: parts.slice(1).join(' '),
+    designation: 'Travel Executive',
+    companyName: '',
+    email: '',
+    contactNo: '',
+  };
 }
 
 function clipText(str, max = 900) {
@@ -224,6 +317,7 @@ function slimOperationForPdf(operation) {
       travelDate: lead.travelDate,
       days: lead.days,
       noOfRooms: lead.noOfRooms,
+      extraBeds: lead.extraBeds,
     };
   };
 
@@ -243,15 +337,33 @@ function slimOperationForPdf(operation) {
     selectedLead: slimLead(h.selectedLead),
   }));
 
+  const slimCityArea = (areas) =>
+    (Array.isArray(areas) ? areas : [])
+      .filter((a) => a && (a.placeName || a.description))
+      .map((a) => ({
+        placeName: a.placeName,
+        description: clipText(a.description, 400),
+      }));
+
+  const slimSimilarHotels = (list) =>
+    (Array.isArray(list) ? list : [])
+      .filter((h) => h && h.propertyName)
+      .map((h) => ({
+        propertyName: h.propertyName,
+        rating: h.rating,
+      }));
+
   const pkg = operation.package || {};
   const itinDays = (pkg.itineraryDays || operation.transfer?.itineraryDays || []).map((d) => {
     const it = d.selectedItinerary || {};
     return {
       day: d.day,
+      similarhotel: slimSimilarHotels(d.similarhotel),
       selectedItinerary: {
         itineraryTitle: it.itineraryTitle,
         cityName: it.cityName,
         itineraryDescription: clipText(it.itineraryDescription, 1000),
+        cityArea: slimCityArea(it.cityArea),
       },
     };
   });
@@ -271,8 +383,10 @@ function slimOperationForPdf(operation) {
     userId: operation.userId,
     customerLeadId: operation.customerLeadId,
     updatedAt: operation.updatedAt,
+    createdAt: operation.createdAt,
     finalTotal: operation.finalTotal,
     total: operation.total,
+    discountPercentage: operation.discountPercentage,
     totals: operation.totals
       ? { grandTotal: operation.totals.grandTotal }
       : undefined,
@@ -289,6 +403,8 @@ function slimOperationForPdf(operation) {
       packageDescription: pkg.packageDescription,
       packageInclusions: pkg.packageInclusions,
       packageExclusions: pkg.packageExclusions,
+      teamLeader: pkg.teamLeader,
+      teamLeaderId: pkg.teamLeaderId,
       customExclusions: (pkg.customExclusions || []).map((p) => ({
         name: p.name,
         description: p.description,
@@ -318,27 +434,36 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
   }
 
   const hotelCount = slim.hotels?.length || 0;
-  // Large trips: shorter image wait so render starts sooner (icons for slow ones)
-  const imageBudgetMs = hotelCount >= 7 ? 2200 : 3200;
+  const stateName = slim.package?.state || '';
 
   const tImages = Date.now();
-  const [, withImages] = await Promise.all([
+  const [, stateGallery, makerDoc] = await Promise.all([
     Promise.all([getBrowser(), ensureBrandLogo(brand)]),
-    attachOptimizedHotelImages(slim, { budgetMs: imageBudgetMs }),
+    loadStateGalleryDataUris(stateName, { budgetMs: 1200 }),
+    fetchMakerForPdf(slim.userId, slim.package?.teamLeaderId),
   ]);
   const imagesMs = Date.now() - tImages;
+
+  const maker = makerDoc || makerFromPackageFallback(slim.package);
+
+  const enriched = {
+    ...slim,
+    pdfStateGallery: stateGallery,
+    pdfMaker: maker,
+    pdfBrand: brand,
+  };
 
   const tHtml = Date.now();
   let html =
     brand === 'demandsetu'
-      ? buildDemandSetuPdfHtml(withImages)
-      : buildFinalCostingPdfHtml(withImages);
+      ? buildDemandSetuPdfHtml(enriched)
+      : buildFinalCostingPdfHtml(enriched);
   html = injectLogoDataUri(html, brand);
   const htmlMs = Date.now() - tHtml;
   console.log(`[pdf] htmlBytes=${Buffer.byteLength(html, 'utf8')} hotels=${hotelCount}`);
 
   const tRender = Date.now();
-  const buffer = await enqueuePdfJob(() => renderPdfBufferWithRetry(html));
+  const buffer = await enqueuePdfJob(() => renderPdfBufferWithRetry(html, brand));
   const renderMs = Date.now() - tRender;
 
   setCachedPdf(cacheKey, buffer);
@@ -360,9 +485,10 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
 /** Call once on server boot to avoid cold-start delay on first PDF. */
 export async function warmPdfEngine() {
   await Promise.all([
-    getBrowser(),
+    getBrowser().then(() => getPdfPage()),
     ensureBrandLogo('ptw'),
     ensureBrandLogo('demandsetu'),
+    loadStateGalleryDataUris('Himachal Pradesh', { budgetMs: 4000 }),
   ]);
 }
 
