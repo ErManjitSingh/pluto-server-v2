@@ -7,7 +7,7 @@ import {
   p2h,
   itinDesc,
   formatOverviewBlocks,
-  formatListBlocks,
+  formatQuillContent,
   icons,
   resolveDisplayTotal,
   renderCityAreaHtml,
@@ -39,7 +39,7 @@ function formatPackageDescription(html) {
 }
 
 function formatContentBlocks(html) {
-  return formatListBlocks(html, { numbered: false });
+  return formatQuillContent(html, { numbered: false });
 }
 
 function ico(name, color = '#ffffff', size = 14) {
@@ -262,6 +262,11 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .sh-rating{font-size:12px;font-weight:800;color:var(--gold);white-space:nowrap;}
 .price-was{font-size:12px;color:var(--muted);text-decoration:line-through;margin-bottom:2px;}
 .bill-row:not(.total){background:#eef5fc;border-bottom:1px solid #c5daf0;color:var(--ink);}
+.quill-pdf{font-size:13.5px;line-height:1.65;color:#243447;}
+.quill-pdf p{margin:0 0 6px;}
+.quill-pdf ol,.quill-pdf ul{margin:0 0 6px;padding-left:18px;}
+.quill-pdf li{margin:0 0 4px;}
+.quill-pdf strong,.quill-pdf b{font-weight:800;}
 `;
 
 // ─── Main builder ─────────────────────────────────────────────────────────────
