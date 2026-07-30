@@ -1,5 +1,5 @@
 /** Bump when PDF HTML/layout changes so cached PDFs refresh */
-export const PDF_TEMPLATE_VERSION = 'v39';
+export const PDF_TEMPLATE_VERSION = 'v41';
 const TTL_MS = 60 * 60 * 1000;
 const MAX_ENTRIES = 80;
 
