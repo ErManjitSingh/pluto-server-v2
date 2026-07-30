@@ -26,12 +26,14 @@ const EMAIL     = 'info@ptwholidays.com';
 const ADDRESS   = 'Dari, Dharamshala, Gabli Dar, Himachal Pradesh 176215';
 
 const BANK = {
-  bank:   'STATE BANK OF INDIA',
-  acc:    '38207849663',
-  name:   'PT HOLIDAYS PVT. LTD.',
-  branch: 'PANTHAGHATI-SHIMLA',
-  ifsc:   'SBIN0021763',
+  bank:   'BANK OF INDIA',
+  acc:    '793120110000162',
+  name:   'WORLD DARSHAN',
+  ifsc:   'BKID0007931',
 };
+const BANK_SCANNER_URL =
+  'https://res.cloudinary.com/dcp1ev1uk/image/upload/v1785405723/world_darshan_scanner_mqjwsk.png';
+const BANK_NOTE = 'WORLD DARSHAN IS A UNIT OF PTW HOLIDAYS PVT LTD';
 
 function formatPackageDescription(html) {
   return formatOverviewBlocks(html, { numbered: false });
@@ -222,10 +224,16 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .bank-body{padding:10px;background:linear-gradient(165deg,#b8d4f0,#e8f2fc 50%,#fff);}
 .bank-single{background:linear-gradient(90deg,#fff8ec,#fff);border:1px solid #e0a04a;border-left:5px solid var(--gold);border-radius:10px;padding:10px 12px;}
 .bank-single .bank-name{font-size:14.5px;font-weight:800;color:var(--navy);margin-bottom:8px;}
+.bank-layout{display:flex;gap:14px;align-items:stretch;}
+.bank-layout .bank-info{flex:1;min-width:0;}
+.bank-scanner{flex:0 0 220px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;border:1px solid #9fc0e4;border-radius:10px;padding:10px;}
+.bank-scanner img{width:200px;height:auto;display:block;border-radius:6px;}
+.bank-scanner .scan-lbl{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:8px;}
 .bank-grid{display:flex;gap:8px;flex-wrap:wrap;}
 .bk{width:calc(50% - 4px);background:#dceaf8;border-radius:8px;padding:8px 10px;border:1px solid #9fc0e4;}
 .bk .bl{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
 .bk .bv{font-size:13.5px;font-weight:700;color:var(--navy);margin-top:2px;}
+.bank-note{margin-top:10px;padding:8px 10px;border-radius:8px;background:linear-gradient(90deg,#0b2748,#1a5fa8);color:#ffd89a;font-size:12px;font-weight:800;letter-spacing:.03em;text-align:center;}
 .doc-footer{background:linear-gradient(135deg,#071c36,#134878);color:#fff;border-radius:12px;padding:14px 16px;text-align:center;margin-top:12px;border:1px solid #0a2a4f;}
 .doc-footer .fn{font-size:15.5px;font-weight:800;margin-bottom:4px;color:#ffd89a;}
 .doc-footer .fc{font-size:12px;color:#c5daf3;margin-bottom:6px;}
@@ -458,13 +466,21 @@ export function buildFinalCostingPdfHtml(operation) {
     </div>
     <div class="bank-body">
       <div class="bank-single">
-        <div class="bank-name">${BANK.bank}</div>
-        <div class="bank-grid">
-          <div class="bk"><div class="bl">A/C No</div><div class="bv">${BANK.acc}</div></div>
-          <div class="bk"><div class="bl">A/C Name</div><div class="bv">${BANK.name}</div></div>
-          <div class="bk"><div class="bl">Branch</div><div class="bv">${BANK.branch}</div></div>
-          <div class="bk"><div class="bl">IFSC Code</div><div class="bv">${BANK.ifsc}</div></div>
+        <div class="bank-layout">
+          <div class="bank-info">
+            <div class="bank-name">${BANK.bank}</div>
+            <div class="bank-grid">
+              <div class="bk"><div class="bl">A/C No</div><div class="bv">${BANK.acc}</div></div>
+              <div class="bk"><div class="bl">A/C Name</div><div class="bv">${BANK.name}</div></div>
+              <div class="bk"><div class="bl">IFSC Code</div><div class="bv">${BANK.ifsc}</div></div>
+            </div>
+          </div>
+          <div class="bank-scanner">
+            <img src="${BANK_SCANNER_URL}" alt="Scan &amp; Pay QR"/>
+            <div class="scan-lbl">Scan &amp; Pay</div>
+          </div>
         </div>
+        <div class="bank-note">${BANK_NOTE}</div>
       </div>
     </div>
   </div>`;
