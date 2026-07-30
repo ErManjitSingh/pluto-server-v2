@@ -439,7 +439,7 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
   const tImages = Date.now();
   const [, stateGallery, makerDoc] = await Promise.all([
     Promise.all([getBrowser(), ensureBrandLogo(brand)]),
-    loadStateGalleryDataUris(stateName, { budgetMs: 1200 }),
+    loadStateGalleryDataUris(stateName, { budgetMs: 5500 }),
     fetchMakerForPdf(slim.userId, slim.package?.teamLeaderId),
   ]);
   const imagesMs = Date.now() - tImages;
