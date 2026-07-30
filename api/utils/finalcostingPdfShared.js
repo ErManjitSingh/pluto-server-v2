@@ -319,18 +319,18 @@ export function formatQuillContent(html, { numbered = false } = {}) {
     .join('')}</div>`;
 }
 
-/** Apply discountPercentage to package finalTotal (TOTAL PRICE / Grand Total). */
+/** finalTotal already includes discount from frontend — only expose % for display. */
 export function resolveDisplayTotal(operation) {
   const finalTotal = Number(operation?.finalTotal) || 0;
   const discountPercentage = Number(operation?.discountPercentage) || 0;
   const hasDiscount = discountPercentage > 0;
-  const discountAmount = hasDiscount
-    ? Math.round((finalTotal * discountPercentage) / 100)
-    : 0;
-  const displayTotal = hasDiscount
-    ? Math.max(0, finalTotal - discountAmount)
-    : finalTotal;
-  return { finalTotal, discountPercentage, discountAmount, displayTotal, hasDiscount };
+  return {
+    finalTotal,
+    discountPercentage,
+    discountAmount: 0,
+    displayTotal: finalTotal,
+    hasDiscount,
+  };
 }
 
 /** Sightseeing / cityArea places for a day (placeName + description). */
@@ -379,29 +379,25 @@ export function renderSimilarHotelsHtml(similarHotels, theme = 'ptw') {
   </div>`;
 }
 
-/** Cover / cost-summary price HTML when discount may apply. */
+/** Cover / cost-summary: show finalTotal as-is; discountPercentage is display-only. */
 export function renderPriceAmountHtml(pricing, opts = {}) {
-  const { displayTotal, finalTotal, discountPercentage, hasDiscount } = pricing;
+  const { displayTotal, discountPercentage, hasDiscount } = pricing;
   const valueClass = opts.valueClass || 'pv';
   const noteClass = opts.noteClass || 'pn';
-  if (!hasDiscount) {
-    return `<div class="${valueClass}">${inr(displayTotal)}</div>
-      <div class="${noteClass}">${opts.note || 'All inclusive'}</div>`;
-  }
-  return `
-    <div class="price-was">${inr(finalTotal)}</div>
-    <div class="${valueClass}">${inr(displayTotal)}</div>
-    <div class="${noteClass}">${esc(discountPercentage)}% discount applied</div>`;
+  const note = hasDiscount
+    ? `${esc(discountPercentage)}% discount`
+    : opts.note || 'All inclusive';
+  return `<div class="${valueClass}">${inr(displayTotal)}</div>
+    <div class="${noteClass}">${note}</div>`;
 }
 
 export function renderGrandTotalRows(pricing) {
-  const { displayTotal, finalTotal, discountPercentage, hasDiscount } = pricing;
-  if (!hasDiscount) {
-    return `<div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
-  }
+  const { displayTotal, discountPercentage, hasDiscount } = pricing;
+  const discountRow = hasDiscount
+    ? `<div class="bill-row"><span>Discount</span><span>${esc(discountPercentage)}%</span></div>`
+    : '';
   return `
-    <div class="bill-row"><span>Package Total (Included Gst)</span><span>${inr(finalTotal)}</span></div>
-    <div class="bill-row"><span>Discount</span><span>${esc(discountPercentage)}%</span></div>
+    ${discountRow}
     <div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
 }
 
