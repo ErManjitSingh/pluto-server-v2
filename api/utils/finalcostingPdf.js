@@ -8,7 +8,6 @@ import {
 import { enqueuePdfJob } from './finalcostingPdfQueue.js';
 import { buildPdfCacheKey, getCachedPdf, setCachedPdf } from './finalcostingPdfCache.js';
 import { embedLogoAsDataUri } from './finalcostingPdfImages.js';
-import { loadStateGalleryDataUris } from './finalcostingPdfStateImages.js';
 import { buildPdfFooterTemplate } from './finalcostingPdfSocial.js';
 import Maker from '../models/maker.model.js';
 
@@ -434,21 +433,18 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
   }
 
   const hotelCount = slim.hotels?.length || 0;
-  const stateName = slim.package?.state || '';
 
-  const tImages = Date.now();
-  const [, stateGallery, makerDoc] = await Promise.all([
+  const tPrep = Date.now();
+  const [, makerDoc] = await Promise.all([
     Promise.all([getBrowser(), ensureBrandLogo(brand)]),
-    loadStateGalleryDataUris(stateName, { budgetMs: 5500 }),
     fetchMakerForPdf(slim.userId, slim.package?.teamLeaderId),
   ]);
-  const imagesMs = Date.now() - tImages;
+  const prepMs = Date.now() - tPrep;
 
   const maker = makerDoc || makerFromPackageFallback(slim.package);
 
   const enriched = {
     ...slim,
-    pdfStateGallery: stateGallery,
     pdfMaker: maker,
     pdfBrand: brand,
   };
@@ -470,13 +466,13 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
 
   const timings = {
     cacheHit: false,
-    imagesMs,
+    prepMs,
     htmlMs,
     renderMs,
     totalMs: Date.now() - t0,
   };
   console.log(
-    `[pdf] ${brand} generated in ${timings.totalMs}ms (images=${imagesMs} html=${htmlMs} render=${renderMs})`
+    `[pdf] ${brand} generated in ${timings.totalMs}ms (prep=${prepMs} html=${htmlMs} render=${renderMs})`
   );
 
   return { buffer, cacheHit: false, timings };
@@ -488,7 +484,6 @@ export async function warmPdfEngine() {
     getBrowser().then(() => getPdfPage()),
     ensureBrandLogo('ptw'),
     ensureBrandLogo('demandsetu'),
-    loadStateGalleryDataUris('Himachal Pradesh', { budgetMs: 4000 }),
   ]);
 }
 
