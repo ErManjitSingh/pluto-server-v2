@@ -88,9 +88,52 @@ export function stripTags(str) {
     .trim();
 }
 
+/** True when content looks like React Quill / rich HTML blocks. */
+export function looksLikeQuillHtml(raw) {
+  return /<(?:p|li|ol|ul|br\s*\/?|h[1-6]|div)\b/i.test(String(raw || ''));
+}
+
+/**
+ * Plain text (no Quill): split by newlines, then by full stop / ? / !
+ * so each sentence becomes its own PDF line.
+ */
+export function splitPlainTextLines(text) {
+  const src = decodeHtmlEntities(String(text || ''))
+    .replace(/\u00a0/g, ' ')
+    .trim();
+  if (!src) return [];
+
+  return src
+    .split(/\r?\n+/)
+    .flatMap((chunk) =>
+      chunk
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+}
+
 /** Split Quill HTML into clean day/overview lines (handles &nbsp; + concatenated Day N). */
 export function extractQuillLines(html) {
   if (!html) return [];
+
+  // No Quill → newlines + full stops (and Day N if present)
+  if (!looksLikeQuillHtml(html)) {
+    const plain = decodeHtmlEntities(String(html))
+      .replace(/\u00a0/g, ' ')
+      .trim();
+    if (!plain) return [];
+
+    const daySplit = plain
+      .split(/(?=Day\s*\d+\b)/gi)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (daySplit.length > 1) {
+      return daySplit.flatMap((chunk) => splitPlainTextLines(chunk));
+    }
+    return splitPlainTextLines(plain);
+  }
+
   const cleaned = safeHtml(html);
   const items = [];
 
@@ -181,61 +224,77 @@ export function sanitizeQuillHtml(html) {
 }
 
 /**
- * Render React Quill HTML (inclusions / exclusions / customExclusions) for PDF.
- * Prefers structured list cards; falls back to sanitized Quill HTML block.
+ * Render inclusions / exclusions / customExclusions for PDF.
+ * Quill HTML → list/paragraph structure.
+ * Plain text → newlines, then full stops, each as its own line/card.
  */
 export function formatQuillContent(html, { numbered = false } = {}) {
-  const cleaned = sanitizeQuillHtml(html);
-  if (!cleaned) {
+  const raw = String(html || '');
+  if (!raw.trim()) {
     return numbered
       ? '<div class="ov-item"><span class="ov-text">—</span></div>'
       : '<div class="pkg-desc-item"><div class="pkg-desc-item-text">—</div></div>';
   }
 
-  const items = [];
+  let items = [];
 
-  // Quill ordered/unordered lists
-  const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-  let match;
-  while ((match = liRegex.exec(cleaned)) !== null) {
-    const text = stripTags(match[1]);
-    if (text) items.push(text);
-  }
+  if (!looksLikeQuillHtml(raw)) {
+    items = splitPlainTextLines(raw);
+  } else {
+    const cleaned = sanitizeQuillHtml(raw);
 
-  // Quill often uses <p>…</p> lines instead of <li>
-  if (!items.length) {
-    const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-    while ((match = pRegex.exec(cleaned)) !== null) {
+    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+    let match;
+    while ((match = liRegex.exec(cleaned)) !== null) {
       const text = stripTags(match[1]);
       if (text) items.push(text);
     }
-  }
 
-  // Headings as separate items
-  if (!items.length) {
-    const hRegex = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi;
-    while ((match = hRegex.exec(cleaned)) !== null) {
-      const text = stripTags(match[1]);
-      if (text) items.push(text);
+    if (!items.length) {
+      const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+      while ((match = pRegex.exec(cleaned)) !== null) {
+        const text = stripTags(match[1]);
+        if (text) items.push(text);
+      }
     }
+
+    if (!items.length) {
+      const hRegex = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+      while ((match = hRegex.exec(cleaned)) !== null) {
+        const text = stripTags(match[1]);
+        if (text) items.push(text);
+      }
+    }
+
+    if (!items.length) {
+      const parts = cleaned
+        .split(/<br\s*\/?>/i)
+        .map((p) => stripTags(p))
+        .filter(Boolean);
+      if (parts.length) items.push(...parts);
+    }
+
+    if (!items.length) {
+      const fallback = stripTags(cleaned);
+      if (fallback) items.push(fallback);
+    }
+
+    // Quill text may still carry real newlines inside a single node
+    items = items.flatMap((item) =>
+      String(item)
+        .split(/\r?\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
   }
 
   if (!items.length) {
-    const parts = cleaned
-      .split(/<br\s*\/?>/i)
-      .map((p) => stripTags(p))
-      .filter(Boolean);
-    if (parts.length) items.push(...parts);
-  }
-
-  if (!items.length) {
-    const fallback = stripTags(cleaned);
-    if (fallback) items.push(fallback);
-  }
-
-  if (!items.length) {
-    // Last resort: embed sanitized Quill HTML as-is
-    return `<div class="quill-pdf">${cleaned}</div>`;
+    const cleaned = sanitizeQuillHtml(raw);
+    return cleaned
+      ? `<div class="quill-pdf">${cleaned}</div>`
+      : numbered
+        ? '<div class="ov-item"><span class="ov-text">—</span></div>'
+        : '<div class="pkg-desc-item"><div class="pkg-desc-item-text">—</div></div>';
   }
 
   if (numbered) {
