@@ -14,7 +14,6 @@ import {
   renderSimilarHotelsHtml,
   renderPriceAmountHtml,
   renderGrandTotalRows,
-  renderStateGalleryHtml,
   renderMakerCardHtml,
 } from './finalcostingPdfShared.js';
 import { renderSocialIconsHtml } from './finalcostingPdfSocial.js';
@@ -241,9 +240,6 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .maker-contact{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:13px;font-weight:700;color:var(--blue);}
 .greeting{background:linear-gradient(135deg,#fff8ec 0%,#ffe9c8 45%,#dceaf8 100%);border:1px solid #e0a04a;border-left:5px solid var(--gold);border-radius:10px;padding:12px;margin-bottom:10px;font-size:13.5px;line-height:1.7;color:#2c3e50;}
 .greeting strong{color:var(--navy);}
-.state-gallery{display:flex;gap:10px;margin:0 0 12px;page-break-inside:avoid;}
-.sg-cell{flex:1;min-width:0;height:140px;border-radius:12px;overflow:hidden;border:2px solid #7aa8d4;background:#c5daf0;box-shadow:0 2px 8px rgba(11,39,72,.12);}
-.sg-cell img{width:100%;height:100%;object-fit:cover;display:block;}
 .itin-lines{margin:0 0 8px 0;padding-left:0;list-style:none;}
 .itin-lines li{position:relative;padding:5px 8px 5px 22px;font-size:13.5px;line-height:1.6;color:#243447;border-bottom:1px dashed #c5daf0;}
 .itin-lines li:last-child{border-bottom:none;}
@@ -346,9 +342,7 @@ export function buildFinalCostingPdfHtml(operation) {
   </div>`;
 
   // ── Greeting ─────────────────────────────────────────────────────────────
-  const stateGallery = renderStateGalleryHtml(operation.pdfStateGallery);
   const greeting = `
-  ${stateGallery}
   <div class="greeting">
     Dear <strong>${esc(lead.name || 'Guest')}</strong>,<br/><br/>
     Thank you for choosing <strong>${BRAND}</strong> for your upcoming ${esc(pkg.state || 'Himachal')} adventure.
