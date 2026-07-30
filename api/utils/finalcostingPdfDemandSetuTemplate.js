@@ -7,7 +7,7 @@ import {
   p2h,
   itinDesc,
   formatOverviewBlocks,
-  formatListBlocks,
+  formatQuillContent,
   icons,
   resolveDisplayTotal,
   renderCityAreaHtml,
@@ -66,7 +66,7 @@ function formatPackageDescription(html) {
 }
 
 function formatContentBlocks(html) {
-  return formatListBlocks(html, { numbered: true });
+  return formatQuillContent(html, { numbered: true });
 }
 
 function ordinalNight(n) {
@@ -180,6 +180,11 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .social-row{display:flex;justify-content:center;align-items:center;gap:14px;margin:10px 0 4px;}
 .social-ico{display:inline-flex;width:28px;height:28px;border-radius:50%;overflow:hidden;}
 .social-ico img{width:28px;height:28px;display:block;border:0;}
+.quill-pdf{font-size:13.5px;line-height:1.65;color:#44403c;font-family:'Segoe UI',Arial,sans-serif;}
+.quill-pdf p{margin:0 0 6px;}
+.quill-pdf ol,.quill-pdf ul{margin:0 0 6px;padding-left:18px;}
+.quill-pdf li{margin:0 0 4px;}
+.quill-pdf strong,.quill-pdf b{font-weight:800;}
 .route-box{margin-bottom:10px;font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#9a3412,#ea580c);border-radius:12px;padding:12px;border:1px solid #7c2d12;}
 .route-h{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#ffedd5;margin-bottom:8px;}
 .route-pills{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
