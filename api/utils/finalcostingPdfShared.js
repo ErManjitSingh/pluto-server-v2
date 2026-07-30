@@ -346,15 +346,6 @@ export function renderGrandTotalRows(pricing) {
     <div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
 }
 
-/** 3-up destination gallery above greeting (data URIs only). */
-export function renderStateGalleryHtml(images) {
-  const imgs = (Array.isArray(images) ? images : []).filter(Boolean);
-  if (!imgs.length) return '';
-  return `<div class="state-gallery">${imgs
-    .map((src) => `<div class="sg-cell"><img src="${src}" alt=""/></div>`)
-    .join('')}</div>`;
-}
-
 /** Executive / maker card shown above Inclusions & Exclusions. */
 export function renderMakerCardHtml(maker) {
   if (!maker || typeof maker !== 'object') return '';
