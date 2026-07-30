@@ -14,7 +14,6 @@ import {
   renderSimilarHotelsHtml,
   renderPriceAmountHtml,
   renderGrandTotalRows,
-  renderStateGalleryHtml,
   renderMakerCardHtml,
 } from './finalcostingPdfShared.js';
 import { renderSocialIconsHtml } from './finalcostingPdfSocial.js';
@@ -169,9 +168,6 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .fact .fv{font-size:13.5px;font-weight:700;color:var(--dark);margin-top:3px;}
 .hello{font-size:13.5px;line-height:1.7;color:#374151;margin-bottom:10px;padding:12px;border-radius:10px;background:linear-gradient(135deg,#fff7ed,#ffedd5 60%,#fed7aa);border:1px solid #fb923c;border-left:5px solid #ea580c;}
 .hello strong{color:#c2410c;}
-.state-gallery{display:flex;gap:10px;margin:0 0 12px;page-break-inside:avoid;}
-.sg-cell{flex:1;min-width:0;height:140px;border-radius:12px;overflow:hidden;border:2px solid #fb923c;background:#ffedd5;box-shadow:0 2px 8px rgba(154,52,18,.14);}
-.sg-cell img{width:100%;height:100%;object-fit:cover;display:block;}
 .maker-card{margin:12px 0 8px;padding:12px 14px;border-radius:12px;border:1px solid #fb923c;border-left:5px solid #ea580c;background:linear-gradient(135deg,#fff7ed,#ffedd5);page-break-inside:avoid;font-family:'Segoe UI',Arial,sans-serif;}
 .maker-kicker{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#c2410c;margin-bottom:4px;}
 .maker-name{font-size:16px;font-weight:800;color:#9a3412;}
@@ -512,7 +508,6 @@ export function buildDemandSetuPdfHtml(operation) {
     <div class="fact"><div class="fl">Extra Beds</div><div class="fv">${esc(lead.extraBeds != null && lead.extraBeds !== '' ? lead.extraBeds : '0')}</div></div>
   </div>
 
-  ${renderStateGalleryHtml(operation.pdfStateGallery)}
   <div class="hello">
     Dear <strong>${esc(lead.name || 'Guest')}</strong>, thank you for choosing <strong>${BRAND}</strong>.
     This quotation is your bridge to an unforgettable ${esc(pkg.state || 'Himachal')} experience —
