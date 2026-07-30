@@ -5,11 +5,11 @@ export const stateImages = {
   'Andhra Pradesh': [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   'Arunachal Pradesh': [
-    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1544735716-392fe2489ffa?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1544735716-392fe2489ffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80',
   ],
   Assam: [
@@ -20,12 +20,12 @@ export const stateImages = {
   Bihar: [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Chhattisgarh: [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Goa: [
     'https://images.pexels.com/photos/4429333/pexels-photo-4429333.jpeg',
@@ -35,17 +35,17 @@ export const stateImages = {
   Gujarat: [
     'https://media.istockphoto.com/id/171145722/photo/champaner-india.jpg?b=1&s=612x612&w=0&k=20&c=Ltu0y9L29SRtaTiJqNPujHydMnOVGt6ekqbAfHNgJuY=',
     'https://media.istockphoto.com/id/1340310484/photo/a-beautiful-gira-waterfall-in-rainy-day-in-waghai-saputara-gujarat-india.jpg?b=1&s=612x612&w=0&k=20&c=GF2oPSEg3sL6X0efZRcqgakbfg0eavx_nXn96zyp474=',
-    'https://media.istockphoto.com/id/1340310484/photo/a-beautiful-gira-waterfall-in-rainy-day-in-waghai-saputara-gujarat-india.jpg?b=1&s=612x612&w=0&k=20&c=GF2oPSEg3sL6X0efZRcqgakbfg0eavx_nXn96zyp474=',
+    'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Haryana: [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   'Himachal Pradesh': [
     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1544735716-392fe2489ffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1626621341517-bbf3d9990a23?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Jharkhand: [
     'https://images.pexels.com/photos/17971796/pexels-photo-17971796.jpeg',
@@ -75,7 +75,7 @@ export const stateImages = {
   Manipur: [
     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1544735716-392fe2489ffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Meghalaya: [
     'https://images.pexels.com/photos/1403036/pexels-photo-1403036.jpeg',
@@ -125,12 +125,12 @@ export const stateImages = {
   Tripura: [
     'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1544735716-392fe2489ffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   'Uttar Pradesh': [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Uttarakhand: [
     'https://images.pexels.com/photos/954646/pexels-photo-954646.jpeg',
@@ -150,22 +150,22 @@ export const stateImages = {
   Chandigarh: [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   'Dadra and Nagar Haveli': [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   'Daman and Diu': [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   Delhi: [
     'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
   'Jammu and Kashmir': [
     'https://images.pexels.com/photos/10975803/pexels-photo-10975803.jpeg',
@@ -193,9 +193,9 @@ export const stateImages = {
     'https://images.pexels.com/photos/1998438/pexels-photo-1998438.jpeg',
   ],
   default: [
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
+    'https://images.unsplash.com/photo-1544735716-392fe2489ffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
     'https://images.unsplash.com/photo-1587474260584-136574528ed5?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
-    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=2070&q=80',
   ],
 };
 
@@ -220,43 +220,73 @@ export function getStateImageUrls(state) {
   return stateImages.default.slice(0, 3);
 }
 
-const STATE_BUDGET_MS = 1200;
-const STATE_FETCH_TIMEOUT_MS = 1200;
-const STATE_WIDTH = 300;
-const STATE_QUALITY = 38;
+const STATE_FETCH_TIMEOUT_MS = 4000;
+const STATE_WIDTH = 320;
+const STATE_QUALITY = 42;
+
+async function compressOne(url) {
+  if (!url) return null;
+  try {
+    // No shared AbortController — one slow image must not kill the other two.
+    return await compressImageToDataUri(url, {
+      timeoutMs: STATE_FETCH_TIMEOUT_MS,
+      maxWidth: STATE_WIDTH,
+      quality: STATE_QUALITY,
+      cacheKind: 'state',
+    });
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Compress 3 state gallery images to data URIs (hard budget — never stalls PDF).
- * @returns {Promise<string[]>} data URIs (length 0–3)
+ * Compress 3 state gallery images to data URIs.
+ * Reliable: unique URLs, no shared abort, fallback to default images, soft deadline.
+ * @returns {Promise<string[]>} data URIs (aim for 3)
  */
 export async function loadStateGalleryDataUris(state, opts = {}) {
-  const urls = getStateImageUrls(state);
-  if (!urls.length) return [];
-
-  const budgetMs = typeof opts.budgetMs === 'number' ? opts.budgetMs : STATE_BUDGET_MS;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), budgetMs);
+  const softDeadlineMs =
+    typeof opts.budgetMs === 'number' ? opts.budgetMs : 5500;
   const t0 = Date.now();
 
-  try {
-    const results = await Promise.all(
-      urls.map(async (url) => {
-        if (ctrl.signal.aborted) return null;
-        return compressImageToDataUri(url, {
-          timeoutMs: STATE_FETCH_TIMEOUT_MS,
-          signal: ctrl.signal,
-          maxWidth: STATE_WIDTH,
-          quality: STATE_QUALITY,
-          cacheKind: 'state',
-        });
-      })
-    );
-    const ok = results.filter(Boolean);
-    console.log(
-      `[pdf-state] ${Date.now() - t0}ms state="${state || ''}" urls=${urls.length} ok=${ok.length}`
-    );
-    return ok;
-  } finally {
-    clearTimeout(timer);
+  const primary = getStateImageUrls(state);
+  const defaults = getStateImageUrls('default');
+  // Unique URLs, prefer primary then defaults to fill up to 3
+  const queue = [];
+  const seen = new Set();
+  for (const u of [...primary, ...defaults]) {
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    queue.push(u);
+    if (queue.length >= 6) break; // a few extras for retries/fallback
   }
+
+  const ok = [];
+  // First wave: first 3 URLs in parallel
+  const firstBatch = queue.slice(0, 3);
+  const firstResults = await Promise.all(firstBatch.map(compressOne));
+  for (const uri of firstResults) {
+    if (uri) ok.push(uri);
+  }
+
+  // Fill missing slots from remaining URLs while under soft deadline
+  let idx = 3;
+  while (ok.length < 3 && idx < queue.length && Date.now() - t0 < softDeadlineMs) {
+    const uri = await compressOne(queue[idx++]);
+    if (uri) ok.push(uri);
+  }
+
+  // One retry pass on failures from first batch if still short
+  if (ok.length < 3 && Date.now() - t0 < softDeadlineMs) {
+    for (const url of firstBatch) {
+      if (ok.length >= 3 || Date.now() - t0 >= softDeadlineMs) break;
+      const uri = await compressOne(url);
+      if (uri && !ok.includes(uri)) ok.push(uri);
+    }
+  }
+
+  console.log(
+    `[pdf-state] ${Date.now() - t0}ms state="${state || ''}" ok=${ok.length}/3 tried=${Math.min(idx, queue.length)}`
+  );
+  return ok.slice(0, 3);
 }
