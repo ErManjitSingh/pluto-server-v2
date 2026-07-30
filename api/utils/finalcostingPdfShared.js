@@ -148,7 +148,44 @@ export function formatOverviewBlocks(html, { numbered = false } = {}) {
 }
 
 export function formatListBlocks(html, { numbered = false } = {}) {
-  const cleaned = safeHtml(html);
+  return formatQuillContent(html, { numbered });
+}
+
+/**
+ * Sanitize React Quill HTML for safe PDF embedding.
+ * Keeps lists / paragraphs / basic inline formatting from Quill.
+ */
+export function sanitizeQuillHtml(html) {
+  if (!html) return '';
+  let h = String(html);
+
+  h = h.replace(/<script[\s\S]*?<\/script>/gi, '');
+  h = h.replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+  h = h.replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Drop event handlers / dangerous attrs
+  h = h.replace(/\s+on\w+\s*=\s*(['"]).*?\1/gi, '');
+  h = h.replace(/\s+(?:style|class|id|contenteditable|data-[\w-]+)\s*=\s*(['"]).*?\1/gi, '');
+
+  // Remove disallowed tags but keep their text content
+  h = h.replace(
+    /<\/?(?!\/?(?:p|br|ol|ul|li|strong|b|em|i|u|s|span|h[1-6]|sub|sup)\b)[a-zA-Z][^>]*>/gi,
+    ''
+  );
+
+  h = safeHtml(h);
+  // Empty Quill paragraphs
+  h = h.replace(/<p>(?:\s|&nbsp;|<br\s*\/?\s*>)*<\/p>/gi, '');
+  h = h.replace(/(?:&nbsp;|\u00a0)/gi, ' ');
+  return h.trim();
+}
+
+/**
+ * Render React Quill HTML (inclusions / exclusions / customExclusions) for PDF.
+ * Prefers structured list cards; falls back to sanitized Quill HTML block.
+ */
+export function formatQuillContent(html, { numbered = false } = {}) {
+  const cleaned = sanitizeQuillHtml(html);
   if (!cleaned) {
     return numbered
       ? '<div class="ov-item"><span class="ov-text">—</span></div>'
@@ -156,6 +193,8 @@ export function formatListBlocks(html, { numbered = false } = {}) {
   }
 
   const items = [];
+
+  // Quill ordered/unordered lists
   const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
   let match;
   while ((match = liRegex.exec(cleaned)) !== null) {
@@ -163,9 +202,27 @@ export function formatListBlocks(html, { numbered = false } = {}) {
     if (text) items.push(text);
   }
 
+  // Quill often uses <p>…</p> lines instead of <li>
+  if (!items.length) {
+    const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+    while ((match = pRegex.exec(cleaned)) !== null) {
+      const text = stripTags(match[1]);
+      if (text) items.push(text);
+    }
+  }
+
+  // Headings as separate items
+  if (!items.length) {
+    const hRegex = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi;
+    while ((match = hRegex.exec(cleaned)) !== null) {
+      const text = stripTags(match[1]);
+      if (text) items.push(text);
+    }
+  }
+
   if (!items.length) {
     const parts = cleaned
-      .split(/<\/p>|<br\s*\/?>/i)
+      .split(/<br\s*\/?>/i)
       .map((p) => stripTags(p))
       .filter(Boolean);
     if (parts.length) items.push(...parts);
@@ -177,9 +234,8 @@ export function formatListBlocks(html, { numbered = false } = {}) {
   }
 
   if (!items.length) {
-    return numbered
-      ? '<div class="ov-item"><span class="ov-text">—</span></div>'
-      : '<div class="pkg-desc-item"><div class="pkg-desc-item-text">—</div></div>';
+    // Last resort: embed sanitized Quill HTML as-is
+    return `<div class="quill-pdf">${cleaned}</div>`;
   }
 
   if (numbered) {
@@ -280,14 +336,13 @@ export function renderPriceAmountHtml(pricing, opts = {}) {
 }
 
 export function renderGrandTotalRows(pricing) {
-  const { displayTotal, finalTotal, discountPercentage, discountAmount, hasDiscount } =
-    pricing;
+  const { displayTotal, finalTotal, discountPercentage, hasDiscount } = pricing;
   if (!hasDiscount) {
     return `<div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
   }
   return `
     <div class="bill-row"><span>Package Total (Included Gst)</span><span>${inr(finalTotal)}</span></div>
-    <div class="bill-row"><span>Discount (${esc(discountPercentage)}%)</span><span>− ${inr(discountAmount)}</span></div>
+    <div class="bill-row"><span>Discount</span><span>${esc(discountPercentage)}%</span></div>
     <div class="bill-row total tot"><span>Grand Total (Included Gst)</span><span>${inr(displayTotal)}</span></div>`;
 }
 
