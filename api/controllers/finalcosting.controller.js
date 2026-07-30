@@ -353,7 +353,13 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
   try {
     const t0 = Date.now();
     const { id, userId, customerLeadId } = req.params;
-    const operation = await Operation.findOne({ id, userId, customerLeadId })
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid operation ID format' });
+    }
+
+    // Lookup by finalcosting MongoDB _id (not package id)
+    const operation = await Operation.findOne({ _id: id, userId, customerLeadId })
       .lean()
       .maxTimeMS(20000)
       .select(
