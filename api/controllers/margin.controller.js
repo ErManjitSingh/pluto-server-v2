@@ -230,6 +230,32 @@ export const deleteEditDiscount = async (req, res) => {
     }
 };
 
+export const deleteAllEditDiscount = async (req, res) => {
+    try {
+        const result = await Margin.updateMany(
+            {},
+            { $set: { 'minimumQuoteMargins.editDiscount': [] } }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(404).json({
+                message: 'No margin settings found'
+            });
+        }
+
+        return res.status(200).json({
+            status: 'success',
+            message: `Successfully deleted all editDiscount from ${result.modifiedCount} state(s)`,
+            data: {
+                matchedCount: result.matchedCount,
+                modifiedCount: result.modifiedCount
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
 export const updateGlobalMargin = async (req, res) => {
     try {
         const { firstQuoteMargins, minimumQuoteMargins } = req.body;
