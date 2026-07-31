@@ -16,6 +16,9 @@ router.put('/update-edit-discount-field/:state', marginController.updateEditDisc
 // Route to delete a specific editDiscount object
 router.delete('/delete-edit-discount/:state', marginController.deleteEditDiscount);
 
+// Route to delete all editDiscount across all states (no state/id required)
+router.delete('/delete-all-edit-discount', marginController.deleteAllEditDiscount);
+
 // Route to get margin(s)
 router.get('/get-margin', marginController.getMargin);
 
