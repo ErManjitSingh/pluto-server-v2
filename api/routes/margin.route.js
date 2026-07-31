@@ -9,16 +9,6 @@ router.post('/create', marginController.createMargin);
 // Route to update existing margin
 router.put('/update/:state', marginController.updateMargin);
 
-// Route to update only editDiscount for a state
-router.put('/update-edit-discount/:state', marginController.updateEditDiscount);
-router.put('/update-edit-discount-field/:state', marginController.updateEditDiscountField);
-
-// Route to delete a specific editDiscount object
-router.delete('/delete-edit-discount/:state', marginController.deleteEditDiscount);
-
-// Route to delete all editDiscount across all states (no state/id required)
-router.delete('/delete-all-edit-discount', marginController.deleteAllEditDiscount);
-
 // Route to get margin(s)
 router.get('/get-margin', marginController.getMargin);
 
