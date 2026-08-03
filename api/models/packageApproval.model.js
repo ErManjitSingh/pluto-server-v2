@@ -25,8 +25,14 @@ type:String
   }],
   sightseeing: [{
     type: Object
-  }]
+  }],
+  uniqueSignature: {
+    type: String,
+    default: "",
+  },
 }, { timestamps: true });
+
+packageapproval.index({ uniqueSignature: 1 });
 
 const approval = mongoose.model('packageapproval', packageapproval);
 export default approval;
