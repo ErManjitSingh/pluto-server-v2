@@ -1,6 +1,27 @@
 import mongoose from "mongoose";
 import Add from "../models/add.model.js";
 import { errorHandler } from "../utils/error.js";
+import { generatePackageSignature } from "../utils/packageSignature.js";
+
+const findDuplicatePackage = async (uniqueSignature, excludeId = null) => {
+  if (!uniqueSignature) return null;
+
+  const query = { uniqueSignature };
+  if (excludeId) {
+    query._id = { $ne: excludeId };
+  }
+
+  return Add.findOne(query).select("_id package.packageName").lean();
+};
+
+const buildDuplicateResponse = (existing) => ({
+  success: false,
+  message: "Duplicate package found",
+  duplicatePackage: {
+    id: existing._id,
+    packageName: existing.package?.packageName || "Unknown",
+  },
+});
 
 // --------------------------------------
 // SUPER FAST IN-MEMORY CACHE + HELPERS
@@ -225,10 +246,33 @@ const packageProjection = {
 // --------------------------------------
 export const createAdd = async (req, res, next) => {
   try {
-    const add = await Add.create(req.body);
+    const pkg = req.body.package;
+    if (!pkg) {
+      return next(errorHandler(400, "Package data is required"));
+    }
+
+    const uniqueSignature = generatePackageSignature(pkg);
+    const existing = await findDuplicatePackage(uniqueSignature);
+
+    if (existing) {
+      return res.status(400).json(buildDuplicateResponse(existing));
+    }
+
+    const add = await Add.create({
+      ...req.body,
+      uniqueSignature,
+    });
     cacheClear();
     return res.status(201).json(add.toObject ? add.toObject() : add);
   } catch (error) {
+    if (error.code === 11000 && req.body?.package) {
+      const existing = await findDuplicatePackage(
+        generatePackageSignature(req.body.package)
+      );
+      if (existing) {
+        return res.status(400).json(buildDuplicateResponse(existing));
+      }
+    }
     next(error);
   }
 };
@@ -299,7 +343,20 @@ export const updateAdd = async (req, res, next) => {
       return next(errorHandler(400, "Invalid package id"));
     }
 
-    const add = await Add.findByIdAndUpdate(id, req.body, {
+    const updateData = { ...req.body };
+
+    if (req.body.package) {
+      const uniqueSignature = generatePackageSignature(req.body.package);
+      const existing = await findDuplicatePackage(uniqueSignature, id);
+
+      if (existing) {
+        return res.status(400).json(buildDuplicateResponse(existing));
+      }
+
+      updateData.uniqueSignature = uniqueSignature;
+    }
+
+    const add = await Add.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: false,
     }).lean();
@@ -308,6 +365,85 @@ export const updateAdd = async (req, res, next) => {
 
     cacheClear();
     return res.status(200).json(add);
+  } catch (error) {
+    if (error.code === 11000 && req.body?.package) {
+      const existing = await findDuplicatePackage(
+        generatePackageSignature(req.body.package),
+        req.params.id
+      );
+      if (existing) {
+        return res.status(400).json(buildDuplicateResponse(existing));
+      }
+    }
+    next(error);
+  }
+};
+
+// --------------------------------------
+// MIGRATE PACKAGE SIGNATURES (one-time)
+// --------------------------------------
+export const migratePackageSignatures = async (req, res, next) => {
+  try {
+    const packages = await Add.find().select("package").lean();
+
+    const bulkOps = [];
+    let skipped = 0;
+
+    for (const doc of packages) {
+      const signature = generatePackageSignature(doc.package);
+      if (!signature) {
+        skipped++;
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: doc._id },
+          update: { $set: { uniqueSignature: signature } },
+        },
+      });
+    }
+
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < bulkOps.length; i += BATCH_SIZE) {
+      const batch = bulkOps.slice(i, i + BATCH_SIZE);
+      await Add.bulkWrite(batch, { ordered: false });
+    }
+
+    const duplicateGroups = await Add.aggregate([
+      { $match: { uniqueSignature: { $ne: "" } } },
+      {
+        $group: {
+          _id: "$uniqueSignature",
+          count: { $sum: 1 },
+          packages: {
+            $push: {
+              id: "$_id",
+              packageName: "$package.packageName",
+            },
+          },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ]);
+
+    cacheClear();
+
+    return res.status(200).json({
+      success: true,
+      message: "Package signatures migrated successfully",
+      stats: {
+        total: packages.length,
+        updated: bulkOps.length,
+        skipped,
+        duplicateGroups: duplicateGroups.length,
+      },
+      duplicates: duplicateGroups.map((group) => ({
+        signature: group._id,
+        count: group.count,
+        packages: group.packages,
+      })),
+    });
   } catch (error) {
     next(error);
   }
