@@ -25,6 +25,32 @@ function normalizePublishForLeadCheck(publish) {
   return p;
 }
 
+function normalizeAssignedUserId(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object') {
+    const id = value._id ?? value.id ?? null;
+    return id == null || id === '' ? null : String(id);
+  }
+  return String(value);
+}
+
+/** Only touch assignedAt when assignedUserId is present and actually changed. */
+function applyAssignedAtWhenUserChanges(setPayload, leadBefore, body) {
+  if (body.assignedUserId === undefined) return;
+
+  const prev = normalizeAssignedUserId(leadBefore?.assignedUserId);
+  const next = normalizeAssignedUserId(body.assignedUserId);
+
+  if (next === prev) {
+    delete setPayload.assignedAt;
+    return;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(body, 'assignedAt')) {
+    setPayload.assignedAt = next ? new Date() : null;
+  }
+}
+
 async function findLatestLeadByMobileDigits(mobile, publishOrNull = null) {
   const normalizedMobile = normalizeMobileForLeadCheck(mobile);
   if (!normalizedMobile) return null;
@@ -316,7 +342,7 @@ export const updateLead = async (req, res, next) => {
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
     const setPayload = { ...req.body };
-    if (req.body.assignedUserId !== undefined) setPayload.assignedAt = new Date();
+    applyAssignedAtWhenUserChanges(setPayload, leadBefore, req.body);
 
     const updatedLead = await Lead.findOneAndUpdate(
        {
@@ -519,7 +545,7 @@ export const updateLeadPublic = async (req, res, next) => {
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
     const setPayload = { ...req.body };
-    if (req.body.assignedUserId !== undefined) setPayload.assignedAt = new Date();
+    applyAssignedAtWhenUserChanges(setPayload, leadBefore, req.body);
 
     const updatedLead = await Lead.findByIdAndUpdate(
       req.params.id,
@@ -1154,7 +1180,7 @@ export const updateAssignedLead = async (req, res, next) => {
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
     const setPayload = { ...req.body };
-    if (req.body.assignedUserId !== undefined) setPayload.assignedAt = new Date();
+    applyAssignedAtWhenUserChanges(setPayload, leadBefore, req.body);
 
     const updatedLead = await Lead.findOneAndUpdate(
       {
@@ -1238,18 +1264,38 @@ export const bulkUpdateAssignedUserId = async (req, res, next) => {
       .select('_id assignedUserId leadStatus name mobile email leadId')
       .lean();
 
-    const result = await Lead.updateMany(
-      { _id: { $in: leadIds } },
-      { $set: { assignedUserId, isAssignedLead: true, assignedAt: new Date() } }
-    );
+    const assignedUserIdStr = normalizeAssignedUserId(assignedUserId);
+    const bulkAssignedAt = Object.prototype.hasOwnProperty.call(req.body, 'assignedAt')
+      ? req.body.assignedAt
+      : new Date();
+    const foundIds = new Set((beforeLeads || []).map((l) => String(l._id)));
+    const bulkOps = (beforeLeads || []).map((l) => {
+      const prev = normalizeAssignedUserId(l.assignedUserId);
+      const userChanged = prev !== assignedUserIdStr;
+      const $set = { assignedUserId, isAssignedLead: true };
+      if (userChanged) {
+        $set.assignedAt = bulkAssignedAt;
+      }
+      return { updateOne: { filter: { _id: l._id }, update: { $set } } };
+    });
+    for (const id of leadIds) {
+      if (!foundIds.has(String(id))) {
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: id },
+            update: { $set: { assignedUserId, isAssignedLead: true, assignedAt: bulkAssignedAt } }
+          }
+        });
+      }
+    }
+    const result = bulkOps.length ? await Lead.bulkWrite(bulkOps) : { modifiedCount: 0, matchedCount: 0 };
 
     // Create immediate Calendar events for leads that actually changed assignee
     try {
       const makerForCalendar = await Maker.findById(assignedUserId);
       if (makerForCalendar?.googleRefreshToken) {
-        const assignedUserIdStr = assignedUserId.toString();
         const changed = (beforeLeads || []).filter((l) => {
-          const prev = l.assignedUserId ? l.assignedUserId.toString() : null;
+          const prev = normalizeAssignedUserId(l.assignedUserId);
           return prev !== assignedUserIdStr;
         });
 
