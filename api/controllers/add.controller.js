@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Add from "../models/add.model.js";
 import { errorHandler } from "../utils/error.js";
-import { generatePackageSignature, findDuplicatePackageAnywhere, buildDuplicateResponse } from "../utils/packageSignature.js";
+import { generatePackageSignature, findDuplicateInAdd, buildDuplicateResponse } from "../utils/packageSignature.js";
 
 // --------------------------------------
 // SUPER FAST IN-MEMORY CACHE + HELPERS
@@ -232,7 +232,7 @@ export const createAdd = async (req, res, next) => {
     }
 
     const uniqueSignature = generatePackageSignature(pkg);
-    const existing = await findDuplicatePackageAnywhere(uniqueSignature);
+    const existing = await findDuplicateInAdd(uniqueSignature);
 
     if (existing) {
       return res.status(400).json(buildDuplicateResponse(existing));
@@ -246,7 +246,7 @@ export const createAdd = async (req, res, next) => {
     return res.status(201).json(add.toObject ? add.toObject() : add);
   } catch (error) {
     if (error.code === 11000 && req.body?.package) {
-      const existing = await findDuplicatePackageAnywhere(
+      const existing = await findDuplicateInAdd(
         generatePackageSignature(req.body.package)
       );
       if (existing) {
@@ -327,9 +327,7 @@ export const updateAdd = async (req, res, next) => {
 
     if (req.body.package) {
       const uniqueSignature = generatePackageSignature(req.body.package);
-      const existing = await findDuplicatePackageAnywhere(uniqueSignature, {
-        excludeAddId: id,
-      });
+      const existing = await findDuplicateInAdd(uniqueSignature, id);
 
       if (existing) {
         return res.status(400).json(buildDuplicateResponse(existing));
@@ -349,9 +347,9 @@ export const updateAdd = async (req, res, next) => {
     return res.status(200).json(add);
   } catch (error) {
     if (error.code === 11000 && req.body?.package) {
-      const existing = await findDuplicatePackageAnywhere(
+      const existing = await findDuplicateInAdd(
         generatePackageSignature(req.body.package),
-        { excludeAddId: req.params.id }
+        req.params.id
       );
       if (existing) {
         return res.status(400).json(buildDuplicateResponse(existing));
