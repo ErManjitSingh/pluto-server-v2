@@ -1,10 +1,104 @@
 import approval from '../models/packageApproval.model.js';
 import { errorHandler } from '../utils/error.js';
+import {
+  generatePackageSignature,
+  findDuplicatePackageAnywhere,
+  buildDuplicateResponse,
+} from '../utils/packageSignature.js';
 
 export const createAddd = async (req, res, next) => {
   try {
-    const add = await approval.create(req.body);
+    const pkg = req.body.package;
+    if (!pkg) {
+      return next(errorHandler(400, 'Package data is required'));
+    }
+
+    const uniqueSignature = generatePackageSignature(pkg);
+    const existing = await findDuplicatePackageAnywhere(uniqueSignature);
+
+    if (existing) {
+      return res.status(400).json(buildDuplicateResponse(existing));
+    }
+
+    const add = await approval.create({
+      ...req.body,
+      uniqueSignature,
+    });
     return res.status(201).json(add);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const migrateApprovalSignatures = async (req, res, next) => {
+  try {
+    try {
+      await approval.collection.dropIndex('uniqueSignature_1');
+    } catch (_) {
+      // index may not exist yet
+    }
+    await approval.collection.createIndex({ uniqueSignature: 1 });
+
+    const packages = await approval.find().select('package').lean();
+
+    const bulkOps = [];
+    let updated = 0;
+    let skipped = 0;
+
+    for (const doc of packages) {
+      const signature = generatePackageSignature(doc.package);
+      if (!signature) {
+        skipped++;
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: doc._id },
+          update: { $set: { uniqueSignature: signature } },
+        },
+      });
+      updated++;
+    }
+
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < bulkOps.length; i += BATCH_SIZE) {
+      const batch = bulkOps.slice(i, i + BATCH_SIZE);
+      await approval.bulkWrite(batch, { ordered: false });
+    }
+
+    const duplicateGroups = await approval.aggregate([
+      { $match: { uniqueSignature: { $ne: '' } } },
+      {
+        $group: {
+          _id: '$uniqueSignature',
+          count: { $sum: 1 },
+          packages: {
+            $push: {
+              id: '$_id',
+              packageName: '$package.packageName',
+            },
+          },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Unique signatures created for all approval packages',
+      stats: {
+        total: packages.length,
+        updated,
+        skipped,
+        duplicateGroups: duplicateGroups.length,
+      },
+      duplicates: duplicateGroups.map((group) => ({
+        signature: group._id,
+        count: group.count,
+        packages: group.packages,
+      })),
+    });
   } catch (error) {
     next(error);
   }
@@ -44,11 +138,23 @@ export const getAddd = async (req, res, next) => {
 
 export const updateAddd = async (req, res, next) => {
   try {
-    const add = await approval.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    const { id } = req.params;
+    const updateData = { ...req.body };
+
+    if (req.body.package) {
+      const uniqueSignature = generatePackageSignature(req.body.package);
+      const existing = await findDuplicatePackageAnywhere(uniqueSignature, {
+        excludeApprovalId: id,
+      });
+
+      if (existing) {
+        return res.status(400).json(buildDuplicateResponse(existing));
+      }
+
+      updateData.uniqueSignature = uniqueSignature;
+    }
+
+    const add = await approval.findByIdAndUpdate(id, updateData, { new: true });
     if (!add) return next(errorHandler(404, 'Add not found!'));
     return res.status(200).json(add);
   } catch (error) {
@@ -68,13 +174,13 @@ export const deleteAddd = async (req, res, next) => {
 
 export const deleteMultipleAddds = async (req, res, next) => {
   try {
-    const { ids } = req.body; // Expect an array of ids in the request body
+    const { ids } = req.body;
     
     if (!Array.isArray(ids)) {
       return next(errorHandler(400, 'ids should be an array'));
     }
 
-    const result = await Add.deleteMany({ _id: { $in: ids } });
+    const result = await approval.deleteMany({ _id: { $in: ids } });
     
     if (result.deletedCount === 0) {
       return next(errorHandler(404, 'No adds found to delete!'));
@@ -151,4 +257,3 @@ export const getPackagesOnly = async (req, res, next) => {
     next(error);
   }
 };
-
