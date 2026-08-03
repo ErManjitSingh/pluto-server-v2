@@ -1,27 +1,7 @@
 import mongoose from "mongoose";
 import Add from "../models/add.model.js";
 import { errorHandler } from "../utils/error.js";
-import { generatePackageSignature } from "../utils/packageSignature.js";
-
-const findDuplicatePackage = async (uniqueSignature, excludeId = null) => {
-  if (!uniqueSignature) return null;
-
-  const query = { uniqueSignature };
-  if (excludeId) {
-    query._id = { $ne: excludeId };
-  }
-
-  return Add.findOne(query).select("_id package.packageName").lean();
-};
-
-const buildDuplicateResponse = (existing) => ({
-  success: false,
-  message: "Duplicate package found",
-  duplicatePackage: {
-    id: existing._id,
-    packageName: existing.package?.packageName || "Unknown",
-  },
-});
+import { generatePackageSignature, findDuplicatePackageAnywhere, buildDuplicateResponse } from "../utils/packageSignature.js";
 
 // --------------------------------------
 // SUPER FAST IN-MEMORY CACHE + HELPERS
@@ -252,7 +232,7 @@ export const createAdd = async (req, res, next) => {
     }
 
     const uniqueSignature = generatePackageSignature(pkg);
-    const existing = await findDuplicatePackage(uniqueSignature);
+    const existing = await findDuplicatePackageAnywhere(uniqueSignature);
 
     if (existing) {
       return res.status(400).json(buildDuplicateResponse(existing));
@@ -266,7 +246,7 @@ export const createAdd = async (req, res, next) => {
     return res.status(201).json(add.toObject ? add.toObject() : add);
   } catch (error) {
     if (error.code === 11000 && req.body?.package) {
-      const existing = await findDuplicatePackage(
+      const existing = await findDuplicatePackageAnywhere(
         generatePackageSignature(req.body.package)
       );
       if (existing) {
@@ -347,7 +327,9 @@ export const updateAdd = async (req, res, next) => {
 
     if (req.body.package) {
       const uniqueSignature = generatePackageSignature(req.body.package);
-      const existing = await findDuplicatePackage(uniqueSignature, id);
+      const existing = await findDuplicatePackageAnywhere(uniqueSignature, {
+        excludeAddId: id,
+      });
 
       if (existing) {
         return res.status(400).json(buildDuplicateResponse(existing));
@@ -367,9 +349,9 @@ export const updateAdd = async (req, res, next) => {
     return res.status(200).json(add);
   } catch (error) {
     if (error.code === 11000 && req.body?.package) {
-      const existing = await findDuplicatePackage(
+      const existing = await findDuplicatePackageAnywhere(
         generatePackageSignature(req.body.package),
-        req.params.id
+        { excludeAddId: req.params.id }
       );
       if (existing) {
         return res.status(400).json(buildDuplicateResponse(existing));
