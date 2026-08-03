@@ -12,12 +12,14 @@ import {
   getPackagesByDurationAndStateOnly,
   searchPackages,
   getPackagesByDurationAndStateOnlytesting,
-  searchPackagesOnly
+  searchPackagesOnly,
+  migratePackageSignatures
 } from '../controllers/add.controller.js';
 
 const router = express.Router();
 
 router.post('/create', createAdd);
+router.post('/migrate-signatures', migratePackageSignatures);
 router.get('/get', getAdds);
 router.get('/get/:id', getAdd);
 router.get('/packages', getPackageOnly);
