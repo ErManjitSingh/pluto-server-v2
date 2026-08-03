@@ -141,15 +141,12 @@ export const updateAddd = async (req, res, next) => {
     const { id } = req.params;
     const updateData = { ...req.body };
 
+    // Edit pe sirf signature refresh — duplicate check nahi (create pe hi check hota hai)
     if (req.body.package) {
       const uniqueSignature = generatePackageSignature(req.body.package);
-      const existing = await findDuplicateInAdd(uniqueSignature);
-
-      if (existing) {
-        return res.status(400).json(buildDuplicateResponse(existing));
+      if (uniqueSignature) {
+        updateData.uniqueSignature = uniqueSignature;
       }
-
-      updateData.uniqueSignature = uniqueSignature;
     }
 
     const add = await approval.findByIdAndUpdate(id, updateData, { new: true });
