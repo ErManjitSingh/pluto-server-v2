@@ -325,15 +325,12 @@ export const updateAdd = async (req, res, next) => {
 
     const updateData = { ...req.body };
 
+    // Edit pe sirf signature refresh — duplicate check nahi (create pe hi check hota hai)
     if (req.body.package) {
       const uniqueSignature = generatePackageSignature(req.body.package);
-      const existing = await findDuplicateInAdd(uniqueSignature, id);
-
-      if (existing) {
-        return res.status(400).json(buildDuplicateResponse(existing));
+      if (uniqueSignature) {
+        updateData.uniqueSignature = uniqueSignature;
       }
-
-      updateData.uniqueSignature = uniqueSignature;
     }
 
     const add = await Add.findByIdAndUpdate(id, updateData, {
@@ -346,15 +343,6 @@ export const updateAdd = async (req, res, next) => {
     cacheClear();
     return res.status(200).json(add);
   } catch (error) {
-    if (error.code === 11000 && req.body?.package) {
-      const existing = await findDuplicateInAdd(
-        generatePackageSignature(req.body.package),
-        req.params.id
-      );
-      if (existing) {
-        return res.status(400).json(buildDuplicateResponse(existing));
-      }
-    }
     next(error);
   }
 };
