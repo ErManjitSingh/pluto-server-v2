@@ -384,9 +384,18 @@ export const updateAdd = async (req, res, next) => {
 // --------------------------------------
 export const migratePackageSignatures = async (req, res, next) => {
   try {
+    // Drop old unique index so same signature can exist on existing duplicate packages
+    try {
+      await Add.collection.dropIndex("uniqueSignature_1");
+    } catch (_) {
+      // index may not exist yet
+    }
+    await Add.collection.createIndex({ uniqueSignature: 1 });
+
     const packages = await Add.find().select("package").lean();
 
     const bulkOps = [];
+    let updated = 0;
     let skipped = 0;
 
     for (const doc of packages) {
@@ -402,6 +411,7 @@ export const migratePackageSignatures = async (req, res, next) => {
           update: { $set: { uniqueSignature: signature } },
         },
       });
+      updated++;
     }
 
     const BATCH_SIZE = 500;
@@ -431,10 +441,10 @@ export const migratePackageSignatures = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: "Package signatures migrated successfully",
+      message: "Unique signatures created for all packages",
       stats: {
         total: packages.length,
-        updated: bulkOps.length,
+        updated,
         skipped,
         duplicateGroups: duplicateGroups.length,
       },
