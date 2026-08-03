@@ -64,7 +64,11 @@ const addSchema = new mongoose.Schema({
   }],
   sightseeing: [{
     type: Object
-  }]
+  }],
+  uniqueSignature: {
+    type: String,
+    default: "",
+  },
 }, { timestamps: true });
 
 // Add indexes for better query performance
@@ -79,6 +83,7 @@ addSchema.index({
   "package.packagePlaces.placeCover": 1,
   "package.packagePlaces.nights": 1,
 });
+addSchema.index({ uniqueSignature: 1 }, { unique: true, sparse: true });
 addSchema.index(
   {
     "package.packageName": "text",
