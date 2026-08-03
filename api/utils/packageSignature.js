@@ -1,5 +1,4 @@
 import Add from "../models/add.model.js";
-import approval from "../models/packageApproval.model.js";
 
 export const generatePackageSignature = (pkg) => {
   if (!pkg) return "";
@@ -19,36 +18,21 @@ export const generatePackageSignature = (pkg) => {
   return `${pickup}|${drop}|${duration}|${places}`;
 };
 
-export const findDuplicatePackageAnywhere = async (
-  uniqueSignature,
-  { excludeAddId = null, excludeApprovalId = null } = {}
-) => {
+export const findDuplicateInAdd = async (uniqueSignature, excludeAddId = null) => {
   if (!uniqueSignature) return null;
 
-  const addQuery = { uniqueSignature };
-  const approvalQuery = { uniqueSignature };
+  const query = { uniqueSignature };
+  if (excludeAddId) query._id = { $ne: excludeAddId };
 
-  if (excludeAddId) addQuery._id = { $ne: excludeAddId };
-  if (excludeApprovalId) approvalQuery._id = { $ne: excludeApprovalId };
-
-  const [existingAdd, existingApproval] = await Promise.all([
-    Add.findOne(addQuery).select("_id package.packageName").lean(),
-    approval.findOne(approvalQuery).select("_id package.packageName").lean(),
-  ]);
+  const existingAdd = await Add.findOne(query)
+    .select("_id package.packageName")
+    .lean();
 
   if (existingAdd) {
     return {
       id: existingAdd._id,
       packageName: existingAdd.package?.packageName || "Unknown",
       source: "package",
-    };
-  }
-
-  if (existingApproval) {
-    return {
-      id: existingApproval._id,
-      packageName: existingApproval.package?.packageName || "Unknown",
-      source: "approval",
     };
   }
 
