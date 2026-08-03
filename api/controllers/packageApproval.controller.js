@@ -2,7 +2,7 @@ import approval from '../models/packageApproval.model.js';
 import { errorHandler } from '../utils/error.js';
 import {
   generatePackageSignature,
-  findDuplicatePackageAnywhere,
+  findDuplicateInAdd,
   buildDuplicateResponse,
 } from '../utils/packageSignature.js';
 
@@ -14,7 +14,7 @@ export const createAddd = async (req, res, next) => {
     }
 
     const uniqueSignature = generatePackageSignature(pkg);
-    const existing = await findDuplicatePackageAnywhere(uniqueSignature);
+    const existing = await findDuplicateInAdd(uniqueSignature);
 
     if (existing) {
       return res.status(400).json(buildDuplicateResponse(existing));
@@ -143,9 +143,7 @@ export const updateAddd = async (req, res, next) => {
 
     if (req.body.package) {
       const uniqueSignature = generatePackageSignature(req.body.package);
-      const existing = await findDuplicatePackageAnywhere(uniqueSignature, {
-        excludeApprovalId: id,
-      });
+      const existing = await findDuplicateInAdd(uniqueSignature);
 
       if (existing) {
         return res.status(400).json(buildDuplicateResponse(existing));
