@@ -8,12 +8,13 @@ import {
   deleteMultipleAddds,
    getAdddsByState,
    getPackagesByTeamLeaderId,
-   getPackagesOnly
-} from '../controllers/packageApproval.controller.js';
+   getPackagesOnly,
+   migrateApprovalSignatures} from '../controllers/packageApproval.controller.js';
 
 const router = express.Router();
 
 router.post('/createapproval', createAddd);
+router.post('/migrate-signatures', migrateApprovalSignatures);
 router.get('/getapproval', getAddds);
 router.get('/getpackagesonly', getPackagesOnly);
 router.get('/getapproval/:id', getAddd);
