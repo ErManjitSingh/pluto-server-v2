@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Add from "../models/add.model.js";
 
 export const generatePackageSignature = (pkg) => {
@@ -22,21 +23,27 @@ export const findDuplicateInAdd = async (uniqueSignature, excludeAddId = null) =
   if (!uniqueSignature) return null;
 
   const query = { uniqueSignature };
-  if (excludeAddId) query._id = { $ne: excludeAddId };
+
+  if (excludeAddId && mongoose.Types.ObjectId.isValid(excludeAddId)) {
+    query._id = { $ne: new mongoose.Types.ObjectId(String(excludeAddId)) };
+  }
 
   const existingAdd = await Add.findOne(query)
     .select("_id package.packageName")
     .lean();
 
-  if (existingAdd) {
-    return {
-      id: existingAdd._id,
-      packageName: existingAdd.package?.packageName || "Unknown",
-      source: "package",
-    };
+  if (!existingAdd) return null;
+
+  // Safety: never treat the package being edited as its own duplicate
+  if (excludeAddId && String(existingAdd._id) === String(excludeAddId)) {
+    return null;
   }
 
-  return null;
+  return {
+    id: existingAdd._id,
+    packageName: existingAdd.package?.packageName || "Unknown",
+    source: "package",
+  };
 };
 
 export const buildDuplicateResponse = (existing) => ({
