@@ -5,7 +5,11 @@ import Property from '../models/packagemaker.model.js';
 import nodemailer from 'nodemailer';
 import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount } from './banktransactions.controller.js';
-import { generateFinalCostingPdfBuffer } from '../utils/finalcostingPdf.js';
+import {
+  ensurePdfReady,
+  onFinalCostingSaved,
+} from '../utils/finalcostingPdfPersist.js';
+import { deleteAllStoredPdfs } from '../utils/finalcostingPdfStore.js';
 
 // Helper function to find lead by identifier (supports both ObjectId and leadId)
 async function findLeadByIdentifier(leadIdentifier) {
@@ -289,6 +293,8 @@ async function updatePropertyNightsBooked() {
 export const createOperation = async (req, res, next) => {
   try {
     const operation = await Operation.create(req.body);
+    // Background: build + store PDFs so download is instant
+    onFinalCostingSaved(operation._id).catch(() => {});
     res.status(201).json(operation);
   } catch (error) {
     next(error);
@@ -362,50 +368,8 @@ export const getOperationByIdLessData = async (req, res, next) => {
     next(error);
   }
 };
-/** Projection: never pull itinerary selectedHotel (50–440KB/day × package+transfer) into PDF path. */
-const PDF_OPERATION_PROJECTION = {
-  id: 1,
-  userId: 1,
-  customerLeadId: 1,
-  updatedAt: 1,
-  createdAt: 1,
-  finalTotal: 1,
-  total: 1,
-  discountPercentage: 1,
-  totals: 1,
-  'hotels.day': 1,
-  'hotels.propertyName': 1,
-  'hotels.cityName': 1,
-  'hotels.roomName': 1,
-  'hotels.mealPlan': 1,
-  'hotels.roomcount': 1,
-  'hotels.selectedLead': 1,
-  'package.packageName': 1,
-  'package.state': 1,
-  'package.duration': 1,
-  'package.packageType': 1,
-  'package.tags': 1,
-  'package.pickupLocation': 1,
-  'package.dropLocation': 1,
-  'package.packagePlaces': 1,
-  'package.packageDescription': 1,
-  'package.packageInclusions': 1,
-  'package.packageExclusions': 1,
-  'package.teamLeader': 1,
-  'package.teamLeaderId': 1,
-  'package.customExclusions': 1,
-  'package.itineraryDays.day': 1,
-  'package.itineraryDays.similarhotel': 1,
-  'package.itineraryDays.selectedItinerary': 1,
-  'transfer.selectedLead': 1,
-  'transfer.details': 1,
-  'transfer.itineraryDays.day': 1,
-  'transfer.itineraryDays.similarhotel': 1,
-  'transfer.itineraryDays.selectedItinerary': 1,
-};
-
 async function sendOperationPdf(req, res, next, brand = 'ptw') {
-  // Cloudflare proxy cuts ~60s without CORS → browser shows fake CORS. Stay under that.
+  // Prefer disk-ready PDF. If still generating after save, joins same in-flight job.
   req.setTimeout(55000);
   res.setTimeout(55000);
   req.headers['x-no-compression'] = '1';
@@ -424,32 +388,31 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
       return res.status(400).json({ message: 'Invalid operation ID format' });
     }
 
-    // Lookup by finalcosting MongoDB _id (not package id)
-    const operation = await Operation.findOne({ _id: id, userId, customerLeadId })
-      .select(PDF_OPERATION_PROJECTION)
+    const exists = await Operation.findOne({ _id: id, userId, customerLeadId })
+      .select('_id id package.packageName')
       .lean()
-      .maxTimeMS(12000);
+      .maxTimeMS(8000);
 
-    if (!operation) {
+    if (!exists) {
       return res.status(404).json({ message: 'Operation not found' });
     }
 
-    const dbMs = Date.now() - t0;
-    const sanitized = sanitizeOperationForOutput(operation);
-    const { buffer: pdfBuffer, cacheHit, timings } =
-      await generateFinalCostingPdfBuffer(sanitized, brand);
+    const { buffer: pdfBuffer, cacheHit, source, timings } = await ensurePdfReady(
+      id,
+      brand
+    );
 
     const brandTag = brand === 'demandsetu' ? 'DemandSetu' : 'PTW';
-    const rawName =
-      sanitized.package?.packageName ||
-      sanitized.id ||
-      'quotation';
+    const rawName = exists.package?.packageName || exists.id || 'quotation';
     const safeName = `${brandTag}-${String(rawName).replace(/[^\w\-]+/g, '-').slice(0, 70)}`;
+
+    const cacheLabel =
+      source === 'disk' ? 'DISK' : cacheHit ? 'HIT' : source === 'generated' ? 'GEN' : 'MISS';
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Length', pdfBuffer.length);
     res.setHeader('Cache-Control', 'private, max-age=300');
-    res.setHeader('X-PDF-Cache', cacheHit ? 'HIT' : 'MISS');
+    res.setHeader('X-PDF-Cache', cacheLabel);
     if (timings?.totalMs != null) {
       res.setHeader('X-PDF-Time', String(timings.totalMs));
     }
@@ -458,7 +421,7 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
       `attachment; filename="${safeName}.pdf"`
     );
     console.log(
-      `[pdf] ${brand} ${cacheHit ? 'HIT' : 'MISS'} db=${dbMs}ms gen=${timings?.totalMs ?? '?'}ms total=${Date.now() - t0}ms bytes=${pdfBuffer.length}`
+      `[pdf] ${brand} ${cacheLabel} total=${Date.now() - t0}ms bytes=${pdfBuffer.length} source=${source}`
     );
     res.end(pdfBuffer);
   } catch (error) {
@@ -523,6 +486,8 @@ export const deleteOperation = async (req, res, next) => {
     if (!deletedOperation) {
       return res.status(404).json({ message: 'Operation not found' });
     }
+
+    deleteAllStoredPdfs(req.params.id).catch(() => {});
     
     res.status(200).json('Operation has been deleted!');
   } catch (error) {
@@ -789,6 +754,9 @@ export const updateEntireOperation = async (req, res, next) => {
     }
     
     res.status(200).json(updatedOperation);
+
+    // Rebuild stored PDFs in background (download serves disk when ready)
+    onFinalCostingSaved(updatedOperation._id).catch(() => {});
   } catch (error) {
     next(error);
   }
@@ -1859,6 +1827,7 @@ export const updateOperationFields = async (req, res, next) => {
     }
     
     res.status(200).json(updatedOperation);
+    onFinalCostingSaved(updatedOperation._id).catch(() => {});
   } catch (error) {
     next(error);
   }
@@ -2611,6 +2580,9 @@ export const convertOperationWithCategory = async (req, res, next) => {
         { $set: updates },
         { new: true, runValidators: false }
       );
+      if (updatedOperation) {
+        onFinalCostingSaved(updatedOperation._id).catch(() => {});
+      }
       return res.status(200).json(updatedOperation);
     }
 
@@ -2666,6 +2638,7 @@ export const convertOperationWithCategory = async (req, res, next) => {
     }
 
     res.status(200).json(updatedOperation);
+    onFinalCostingSaved(updatedOperation._id).catch(() => {});
   } catch (error) {
     next(error);
   }
