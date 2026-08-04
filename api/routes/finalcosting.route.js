@@ -1,13 +1,14 @@
 import express from 'express';
-import {getOperationByMongoId,getOperationByMongoIdBase64,getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,getConvertedOperationsWithoutTransferByLead,getConvertedOperationsWithoutHotelsByLead,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory, getConvertedOperationsByUserIdLite, initializePropertyNightsBooked, downloadOperationPdf, downloadOperationPdfDemandSetu } from '../controllers/finalcosting.controller.js';
+import {getOperationByMongoId,getOperationByMongoIdBase64,getOperationByIdLessData,
+  getConvertedOperationByIdAllData,updateEditdetail,getConvertedOperationsWithoutTransfer, getConvertedOperationsWithoutHotels,getConvertedOperationsWithoutTransferByLead,getConvertedOperationsWithoutHotelsByLead,deleteEditdetail,getConvertedOperationById,createOperation,updateOperationFields,getOperationById, getOperations,getConvertedOperations, getConvertedOperationsWithDetails, deleteOperation, updateOperation, updateEntireOperation, updateTransfer, sendOperationEmail, sendGroupHotelEmail, handleEmailResponse, handleGroupEmailResponse, handleEmailWebhook, updateNotedata, updateTransferDetailAtIndex, updateHotelAtIndex, updateLeadData, deleteOldNonConvertedOperations, updateOperationAssignReportId, getOperationByAssignReportId, getConvertedOperationsByCustomerLeadId, updateConvertedOperationByCustomerLeadId, getOperationSpecificFields, updateOperationSpecificFields, trackOperationOpened, convertOperationWithCategory, getConvertedOperationsByUserIdLite, initializePropertyNightsBooked, downloadOperationPdf, downloadOperationPdfDemandSetu } from '../controllers/finalcosting.controller.js';
 
 const router = express.Router();
 
-/** Large PDFs can take >60s; keep socket open + always send CORS (proxy errors look like CORS in browser). */
+/** Cloudflare cuts ~60s without CORS (browser shows fake CORS). Keep under that. */
 function pdfDownloadMiddleware(req, res, next) {
   req.headers['x-no-compression'] = '1';
-  req.setTimeout(180000);
-  res.setTimeout(180000);
+  req.setTimeout(55000);
+  res.setTimeout(55000);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader(
@@ -21,6 +22,7 @@ function pdfDownloadMiddleware(req, res, next) {
 router.post('/create', createOperation);
 router.get('/get', getOperations);
 router.get('/get/:id/:userId/:customerLeadId', getOperationById);
+router.get('/get-less-data/:id/:userId/:customerLeadId', getOperationByIdLessData);
 router.get('/pdf/:id/:userId/:customerLeadId', pdfDownloadMiddleware, downloadOperationPdf);
 router.get(
   '/pdf-demandsetu/:id/:userId/:customerLeadId',
