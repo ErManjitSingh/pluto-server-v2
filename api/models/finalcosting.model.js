@@ -261,7 +261,34 @@ const operationSchema = new mongoose.Schema({
       type: Date,
       default: null
     }
-  }
+  },
+  /** Pre-generated PDF metadata (file lives on disk under uploads/finalcosting-pdfs) */
+  pdfArtifacts: {
+    ptw: {
+      status: {
+        type: String,
+        enum: ['none', 'generating', 'ready', 'failed'],
+        default: 'none',
+      },
+      fileName: { type: String, default: null },
+      bytes: { type: Number, default: null },
+      generatedAt: { type: Date, default: null },
+      updatedAtSnapshot: { type: String, default: null },
+      error: { type: String, default: null },
+    },
+    demandsetu: {
+      status: {
+        type: String,
+        enum: ['none', 'generating', 'ready', 'failed'],
+        default: 'none',
+      },
+      fileName: { type: String, default: null },
+      bytes: { type: Number, default: null },
+      generatedAt: { type: Date, default: null },
+      updatedAtSnapshot: { type: String, default: null },
+      error: { type: String, default: null },
+    },
+  },
 }, { timestamps: true });
 
 // Indexes for performance optimization
