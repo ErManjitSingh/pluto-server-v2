@@ -343,12 +343,78 @@ export const getOperationById = async (req, res, next) => {
     next(error);
   }
 };
+export const getOperationByIdLessData = async (req, res, next) => {
+  try {
+    const { id, userId, customerLeadId } = req.params;
+    // Use lean() for faster queries (returns plain JS objects instead of Mongoose documents)
+    // Use findOne if only one result is expected, or find with lean for multiple
+    const operations = await Operation.find({ id, userId, customerLeadId })
+      .lean() // Faster - returns plain objects
+      .maxTimeMS(70000); // Set timeout to prevent hanging queries
+    
+    if (!operations || operations.length === 0) {
+      return res.status(404).json({ message: 'Operation not found' });
+    }
+    
+    const sanitizedOperations = operations.map(sanitizeOperationForOutput);
+    res.status(200).json(sanitizedOperations);
+  } catch (error) {
+    next(error);
+  }
+};
+/** Projection: never pull itinerary selectedHotel (50–440KB/day × package+transfer) into PDF path. */
+const PDF_OPERATION_PROJECTION = {
+  id: 1,
+  userId: 1,
+  customerLeadId: 1,
+  updatedAt: 1,
+  createdAt: 1,
+  finalTotal: 1,
+  total: 1,
+  discountPercentage: 1,
+  totals: 1,
+  'hotels.day': 1,
+  'hotels.propertyName': 1,
+  'hotels.cityName': 1,
+  'hotels.roomName': 1,
+  'hotels.mealPlan': 1,
+  'hotels.roomcount': 1,
+  'hotels.selectedLead': 1,
+  'package.packageName': 1,
+  'package.state': 1,
+  'package.duration': 1,
+  'package.packageType': 1,
+  'package.tags': 1,
+  'package.pickupLocation': 1,
+  'package.dropLocation': 1,
+  'package.packagePlaces': 1,
+  'package.packageDescription': 1,
+  'package.packageInclusions': 1,
+  'package.packageExclusions': 1,
+  'package.teamLeader': 1,
+  'package.teamLeaderId': 1,
+  'package.customExclusions': 1,
+  'package.itineraryDays.day': 1,
+  'package.itineraryDays.similarhotel': 1,
+  'package.itineraryDays.selectedItinerary': 1,
+  'transfer.selectedLead': 1,
+  'transfer.details': 1,
+  'transfer.itineraryDays.day': 1,
+  'transfer.itineraryDays.similarhotel': 1,
+  'transfer.itineraryDays.selectedItinerary': 1,
+};
 
 async function sendOperationPdf(req, res, next, brand = 'ptw') {
-  req.setTimeout(180000);
-  res.setTimeout(180000);
+  // Cloudflare proxy cuts ~60s without CORS → browser shows fake CORS. Stay under that.
+  req.setTimeout(55000);
+  res.setTimeout(55000);
   req.headers['x-no-compression'] = '1';
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader(
+    'Access-Control-Expose-Headers',
+    'Content-Disposition, Content-Length, Content-Type, X-PDF-Cache, X-PDF-Time'
+  );
 
   try {
     const t0 = Date.now();
@@ -360,11 +426,9 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
 
     // Lookup by finalcosting MongoDB _id (not package id)
     const operation = await Operation.findOne({ _id: id, userId, customerLeadId })
+      .select(PDF_OPERATION_PROJECTION)
       .lean()
-      .maxTimeMS(20000)
-      .select(
-        'id userId customerLeadId updatedAt createdAt finalTotal total discountPercentage totals hotels package transfer'
-      );
+      .maxTimeMS(12000);
 
     if (!operation) {
       return res.status(404).json({ message: 'Operation not found' });
@@ -409,10 +473,27 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
           'Chrome for PDF is not installed. Run: npm run install-chrome — or install Google Chrome on this PC.',
       });
     }
-    if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('aborted')) {
+    if (
+      msg.includes('timeout') ||
+      msg.includes('Timeout') ||
+      msg.includes('aborted') ||
+      msg.includes('PDF generation timeout') ||
+      msg.includes('PDF queue job timeout')
+    ) {
       return res.status(504).json({
         success: false,
         message: 'PDF took too long. Please try again in a few seconds.',
+      });
+    }
+    if (
+      msg.includes('Target closed') ||
+      msg.includes('Session closed') ||
+      msg.includes('Protocol error') ||
+      msg.includes('browser has disconnected')
+    ) {
+      return res.status(503).json({
+        success: false,
+        message: 'PDF engine restarted. Please try again.',
       });
     }
     return res.status(500).json({
