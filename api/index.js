@@ -40,6 +40,7 @@ import hotelFormRouter from './routes/hotelform.route.js';
 import packageApprovalRouter from './routes/packageApproval.route.js';
 import percentageRouter from './routes/percentage.route.js';
 import marginRouter from './routes/margin.route.js';
+import discountApprovalRouter from './routes/discountapproval.route.js';
 import finalcostingRouter from './routes/finalcosting.route.js';
 import updateHotelRouter from './routes/updatehotel.route.js';
 import hotelBookingRouter from './routes/hotelbooking.route.js';
@@ -69,7 +70,6 @@ import seoListingRouter from './routes/seoListing.route.js';
 import attendanceRouter from './routes/attendance.route.js';
 import websitePartnerRouter from './routes/websitepartner.route.js';
 import adminMailRouter from './routes/adminMail.route.js';
-import discountApprovalRouter from './routes/discountapproval.route.js';
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -176,6 +176,7 @@ app.use("/api/payment", paymentRouter);
 app.use("/api/hotelform", hotelFormRouter);
 app.use("/api/packageapproval", packageApprovalRouter);
 app.use("/api/margin", marginRouter);
+app.use("/api/discountapproval", discountApprovalRouter);
 app.use("/api/finalcosting", finalcostingRouter);
 app.use("/api/updatehotel", updateHotelRouter);
 app.use("/api/hotelbooking", hotelBookingRouter);
@@ -198,7 +199,7 @@ app.use("/api/targetmanagement", targetManagementRouter);
 app.use("/api/inventorybooking", inventoryBookingRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/admin-mail", adminMailRouter);
-app.use("/api/discountapproval", discountApprovalRouter);
+
 // -------------------------------------------------------------
 //  GLOBAL ERROR HANDLER
 // -------------------------------------------------------------
@@ -223,10 +224,10 @@ server.listen(port, () => {
   warmPdfEngine().catch(() => {});
 });
 
-// Large PDF downloads (9D/8N) need longer than default limits
-server.timeout = 180000;
-server.keepAliveTimeout = 120000;
-server.headersTimeout = 185000;
+// Stay under Cloudflare ~60s proxy limit (dropped sockets look like CORS in browser)
+server.timeout = 58000;
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 60000;
 if (typeof server.requestTimeout !== "undefined") {
-  server.requestTimeout = 180000;
+  server.requestTimeout = 58000;
 }
