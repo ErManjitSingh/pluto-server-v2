@@ -1,7 +1,7 @@
 /** Bump when PDF HTML/layout changes so cached PDFs refresh */
-export const PDF_TEMPLATE_VERSION = 'v44';
-const TTL_MS = 60 * 60 * 1000;
-const MAX_ENTRIES = 80;
+export const PDF_TEMPLATE_VERSION = 'v46';
+const TTL_MS = 2 * 60 * 60 * 1000;
+const MAX_ENTRIES = 100;
 
 /** @type {Map<string, { buffer: Buffer, expires: number }>} */
 const store = new Map();
