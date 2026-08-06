@@ -8,6 +8,9 @@ const operationSchema = new mongoose.Schema({
   operationAssignReportId:{
     type: String,
   },
+  companyName: {
+    type: String,
+  },
   customerLeadId: {
    type: String,
   },
