@@ -218,10 +218,11 @@ export const deleteMaker = async (req, res, next) => {
   }
 };
 
-// Sends OTP via backend provider (console/MSG91). Firebase idToken login also supported.
+// Maker exist check. For Firebase auth, client sends SMS; set authProvider: 'firebase'.
+// Without that, backend also generates OTP (console/MSG91) for fallback testing.
 export const sendMakerLoginOtp = async (req, res, next) => {
   try {
-    const { contactNo, mobile, phone } = req.body;
+    const { contactNo, mobile, phone, authProvider } = req.body;
     const { mobile: normalizedMobile, maker } = await findMakerByMobile(
       contactNo || mobile || phone
     );
@@ -236,6 +237,17 @@ export const sendMakerLoginOtp = async (req, res, next) => {
 
     if (maker.active === false) {
       return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+    }
+
+    const useFirebase = String(authProvider || '').toLowerCase() === 'firebase';
+
+    if (useFirebase) {
+      return res.status(200).json({
+        success: true,
+        mobile: normalizedMobile,
+        provider: 'firebase',
+        message: 'Maker found. Send OTP with Firebase Phone Auth on client.',
+      });
     }
 
     const response = await createAndSendOtp(normalizedMobile);
