@@ -2,6 +2,9 @@ import Maker from '../models/maker.model.js';
 import Lead from '../models/lead.model.js';
 import { errorHandler } from '../utils/error.js';
 import bcryptjs from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { normalizeMobile } from '../utils/guestAuth.js';
+import { verifyFirebaseIdToken } from '../config/firebase.js';
 
 const BCRYPT_HASH_REGEX = /^\$2[aby]\$\d+\$.{53}$/;
 
@@ -9,6 +12,50 @@ const stripPasswordFromResponse = (maker) => {
   const obj = maker.toObject ? maker.toObject() : { ...maker };
   delete obj.password;
   return obj;
+};
+
+const findMakerByMobile = async (mobileInput) => {
+  const mobile = normalizeMobile(mobileInput);
+  if (!mobile) return { mobile: null, maker: null };
+
+  const maker = await Maker.findOne({
+    $or: [
+      { contactNo: mobile },
+      { contactNo: `91${mobile}` },
+      { contactNo: `+91${mobile}` },
+      { contactNo: { $regex: `${mobile}$` } },
+    ],
+  });
+
+  return { mobile, maker };
+};
+
+const sendMakerAuthResponse = (res, maker) => {
+  const token = jwt.sign(
+    { id: maker._id, isMaker: true },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  const data = {
+    ...stripPasswordFromResponse(maker),
+    isMaker: true,
+    token,
+  };
+
+  return res
+    .cookie('access_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000,
+    })
+    .status(200)
+    .json({
+      success: true,
+      message: 'Login successful',
+      data,
+    });
 };
 
 const applyPasswordUpdate = (updateData) => {
@@ -165,6 +212,68 @@ export const deleteMaker = async (req, res, next) => {
       return next(errorHandler(404, 'Maker not found'));
     }
     return res.status(200).json({ message: 'Maker deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Pre-check only — OTP is sent by Firebase Phone Auth on the client
+export const sendMakerLoginOtp = async (req, res, next) => {
+  try {
+    const { contactNo, mobile, phone } = req.body;
+    const { mobile: normalizedMobile, maker } = await findMakerByMobile(
+      contactNo || mobile || phone
+    );
+
+    if (!normalizedMobile) {
+      return next(errorHandler(400, 'Please enter a valid 10-digit mobile number'));
+    }
+
+    if (!maker) {
+      return next(errorHandler(404, 'No maker found with this mobile number'));
+    }
+
+    if (maker.active === false) {
+      return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+    }
+
+    return res.status(200).json({
+      success: true,
+      mobile: normalizedMobile,
+      message:
+        'Maker found. Send OTP with Firebase Phone Auth on client, then call /api/maker/login-otp with idToken',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const loginMakerWithOtp = async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return next(errorHandler(400, 'Firebase idToken is required'));
+    }
+
+    const firebaseUser = await verifyFirebaseIdToken(idToken);
+    const signInProvider = firebaseUser.firebase?.sign_in_provider || '';
+
+    if (signInProvider !== 'phone') {
+      return next(errorHandler(400, 'Use Firebase Phone Authentication token only'));
+    }
+
+    const { maker } = await findMakerByMobile(firebaseUser.phone_number);
+
+    if (!maker) {
+      return next(errorHandler(404, 'No maker found with this mobile number'));
+    }
+
+    if (maker.active === false) {
+      return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+    }
+
+    return sendMakerAuthResponse(res, maker);
   } catch (error) {
     next(error);
   }
