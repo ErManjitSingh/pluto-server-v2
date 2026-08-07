@@ -1,9 +1,19 @@
 import express from 'express';
-import { createMaker, getMakers, getMakerById, updateMaker, deleteMaker } from '../controllers/maker.controller.js';
+import {
+  createMaker,
+  getMakers,
+  getMakerById,
+  updateMaker,
+  deleteMaker,
+  sendMakerLoginOtp,
+  loginMakerWithOtp,
+} from '../controllers/maker.controller.js';
 
 const router = express.Router();
 
 router.post('/post-maker', createMaker);
+router.post('/send-otp', sendMakerLoginOtp);
+router.post('/login-otp', loginMakerWithOtp);
 router.get('/get-maker', getMakers);
 router.get('/:id', getMakerById);
 router.put('/update-maker/:id', updateMaker);
