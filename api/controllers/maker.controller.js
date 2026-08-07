@@ -5,6 +5,7 @@ import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { normalizeMobile } from '../utils/guestAuth.js';
 import { verifyFirebaseIdToken } from '../config/firebase.js';
+import { createAndSendOtp, verifyOtpCode } from '../services/otp.service.js';
 
 const BCRYPT_HASH_REGEX = /^\$2[aby]\$\d+\$.{53}$/;
 
@@ -217,7 +218,7 @@ export const deleteMaker = async (req, res, next) => {
   }
 };
 
-// Pre-check only — OTP is sent by Firebase Phone Auth on the client
+// Sends OTP via backend provider (console/MSG91). Firebase idToken login also supported.
 export const sendMakerLoginOtp = async (req, res, next) => {
   try {
     const { contactNo, mobile, phone } = req.body;
@@ -237,44 +238,69 @@ export const sendMakerLoginOtp = async (req, res, next) => {
       return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
     }
 
+    const response = await createAndSendOtp(normalizedMobile);
+
     return res.status(200).json({
       success: true,
-      mobile: normalizedMobile,
-      message:
-        'Maker found. Send OTP with Firebase Phone Auth on client, then call /api/maker/login-otp with idToken',
+      mobile: response.mobile,
+      message: response.message,
+      provider: process.env.OTP_PROVIDER || 'console',
     });
   } catch (error) {
+    if (error.statusCode) {
+      return next(errorHandler(error.statusCode, error.message));
+    }
     next(error);
   }
 };
 
 export const loginMakerWithOtp = async (req, res, next) => {
   try {
-    const { idToken } = req.body;
+    const { idToken, contactNo, mobile, phone, otp } = req.body;
 
-    if (!idToken) {
-      return next(errorHandler(400, 'Firebase idToken is required'));
+    // Path 1: Firebase Phone Auth idToken
+    if (idToken) {
+      const firebaseUser = await verifyFirebaseIdToken(idToken);
+      const signInProvider = firebaseUser.firebase?.sign_in_provider || '';
+
+      if (signInProvider !== 'phone') {
+        return next(errorHandler(400, 'Use Firebase Phone Authentication token only'));
+      }
+
+      const { maker } = await findMakerByMobile(firebaseUser.phone_number);
+
+      if (!maker) {
+        return next(errorHandler(404, 'No maker found with this mobile number'));
+      }
+
+      if (maker.active === false) {
+        return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+      }
+
+      return sendMakerAuthResponse(res, maker);
     }
 
-    const firebaseUser = await verifyFirebaseIdToken(idToken);
-    const signInProvider = firebaseUser.firebase?.sign_in_provider || '';
+    // Path 2: Backend OTP (console / MSG91) — works when Firebase reCAPTCHA fails locally
+    if (otp) {
+      const verifiedMobile = await verifyOtpCode(contactNo || mobile || phone, otp);
+      const { maker } = await findMakerByMobile(verifiedMobile);
 
-    if (signInProvider !== 'phone') {
-      return next(errorHandler(400, 'Use Firebase Phone Authentication token only'));
+      if (!maker) {
+        return next(errorHandler(404, 'No maker found with this mobile number'));
+      }
+
+      if (maker.active === false) {
+        return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
+      }
+
+      return sendMakerAuthResponse(res, maker);
     }
 
-    const { maker } = await findMakerByMobile(firebaseUser.phone_number);
-
-    if (!maker) {
-      return next(errorHandler(404, 'No maker found with this mobile number'));
-    }
-
-    if (maker.active === false) {
-      return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
-    }
-
-    return sendMakerAuthResponse(res, maker);
+    return next(errorHandler(400, 'Provide Firebase idToken or contactNo + otp'));
   } catch (error) {
+    if (error.statusCode) {
+      return next(errorHandler(error.statusCode, error.message));
+    }
     next(error);
   }
 };
