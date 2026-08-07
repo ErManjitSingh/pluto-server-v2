@@ -218,8 +218,8 @@ export const deleteMaker = async (req, res, next) => {
   }
 };
 
-// Maker exist check. For Firebase auth, client sends SMS; set authProvider: 'firebase'.
-// Without that, backend also generates OTP (console/MSG91) for fallback testing.
+// Production default: Firebase Phone Auth on client.
+// Optional backend OTP only when authProvider === 'backend' (local/dev fallback).
 export const sendMakerLoginOtp = async (req, res, next) => {
   try {
     const { contactNo, mobile, phone, authProvider } = req.body;
@@ -239,24 +239,25 @@ export const sendMakerLoginOtp = async (req, res, next) => {
       return next(errorHandler(403, 'Your account is deactivated. Please contact support.'));
     }
 
-    const useFirebase = String(authProvider || '').toLowerCase() === 'firebase';
+    const provider = String(authProvider || 'firebase').toLowerCase();
 
-    if (useFirebase) {
+    // Explicit backend/console OTP path (local testing only)
+    if (provider === 'backend' || provider === 'console') {
+      const response = await createAndSendOtp(normalizedMobile);
       return res.status(200).json({
         success: true,
-        mobile: normalizedMobile,
-        provider: 'firebase',
-        message: 'Maker found. Send OTP with Firebase Phone Auth on client.',
+        mobile: response.mobile,
+        message: response.message,
+        provider: process.env.OTP_PROVIDER || 'console',
       });
     }
 
-    const response = await createAndSendOtp(normalizedMobile);
-
+    // Default / production: Firebase — client sends SMS
     return res.status(200).json({
       success: true,
-      mobile: response.mobile,
-      message: response.message,
-      provider: process.env.OTP_PROVIDER || 'console',
+      mobile: normalizedMobile,
+      provider: 'firebase',
+      message: 'Maker found. Send OTP with Firebase Phone Auth on client.',
     });
   } catch (error) {
     if (error.statusCode) {
@@ -270,7 +271,7 @@ export const loginMakerWithOtp = async (req, res, next) => {
   try {
     const { idToken, contactNo, mobile, phone, otp } = req.body;
 
-    // Path 1: Firebase Phone Auth idToken
+    // Production path: Firebase Phone Auth idToken
     if (idToken) {
       const firebaseUser = await verifyFirebaseIdToken(idToken);
       const signInProvider = firebaseUser.firebase?.sign_in_provider || '';
@@ -292,7 +293,7 @@ export const loginMakerWithOtp = async (req, res, next) => {
       return sendMakerAuthResponse(res, maker);
     }
 
-    // Path 2: Backend OTP (console / MSG91) — works when Firebase reCAPTCHA fails locally
+    // Optional backend OTP verify (local/dev fallback)
     if (otp) {
       const verifiedMobile = await verifyOtpCode(contactNo || mobile || phone, otp);
       const { maker } = await findMakerByMobile(verifiedMobile);
@@ -308,7 +309,7 @@ export const loginMakerWithOtp = async (req, res, next) => {
       return sendMakerAuthResponse(res, maker);
     }
 
-    return next(errorHandler(400, 'Provide Firebase idToken or contactNo + otp'));
+    return next(errorHandler(400, 'Firebase idToken is required'));
   } catch (error) {
     if (error.statusCode) {
       return next(errorHandler(error.statusCode, error.message));
