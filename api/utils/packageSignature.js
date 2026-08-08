@@ -16,7 +16,18 @@ export const generatePackageSignature = (pkg) => {
     .map((p) => `${p.place}-${p.nights}`)
     .join("|");
 
-  return `${pickup}|${drop}|${duration}|${places}`;
+  const itineraryTitles = (pkg.itineraryDays || [])
+    .slice()
+    .sort((a, b) => Number(a.day || 0) - Number(b.day || 0))
+    .map((d) =>
+      String(d?.selectedItinerary?.itineraryTitle || "")
+        .trim()
+        .toLowerCase()
+    )
+    .filter(Boolean)
+    .join("|");
+
+  return `${pickup}|${drop}|${duration}|${places}|${itineraryTitles}`;
 };
 
 export const findDuplicateInAdd = async (uniqueSignature, excludeAddId = null) => {
