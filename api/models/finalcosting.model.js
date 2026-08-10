@@ -68,6 +68,11 @@ const operationSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Set from frontend when converting (converted: true)
+  convertedDate: {
+    type: Date,
+    default: null
+  },
       package: {
     type: mongoose.Schema.Types.Mixed
   },
