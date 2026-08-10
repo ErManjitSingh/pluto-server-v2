@@ -82,6 +82,9 @@ const leadSchema = new mongoose.Schema({
   nights: String,
   noOfRooms: String,
   packageCategory: String,
+  customerlastpackagecategory: String,
+  laststaytype: String,
+  lasttraveldestination: String,
   tourType: String,
   packageType: String,
   persons: String,
@@ -124,6 +127,10 @@ const leadSchema = new mongoose.Schema({
   submittedAt: {
     type: Date,
     default: Date.now
+  },
+  convertedDate: {
+    type: Date,
+    default: null
   },
   travelDate: Date,
   createdBy: {
