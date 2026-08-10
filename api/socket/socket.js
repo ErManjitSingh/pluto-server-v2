@@ -220,6 +220,43 @@ export const initializeSocket = (server) => {
       socket.emit("whatsapp:exec-notifications:subscribed", { room });
     });
 
+    // Same data as GET /api/task-notifications/get-by-user/:userId
+    // After user:connect → emit tasknotification:subscribe → listen tasknotification:list
+    socket.on("tasknotification:subscribe", async (payload = {}) => {
+      try {
+        if (!socket.userId) {
+          socket.emit("error", { message: "Connect using user:connect first" });
+          return;
+        }
+        const userId = String(socket.userId);
+        const unseenOnly =
+          payload?.unseenOnly === true ||
+          String(payload?.unseenOnly).toLowerCase() === "true";
+
+        const room = `tasknotification:user:${userId}`;
+        socket.join(room);
+
+        const { fetchTaskNotificationsForUser } = await import(
+          "../controllers/taskNotification.controller.js"
+        );
+        const listPayload = await fetchTaskNotificationsForUser(userId, { unseenOnly });
+
+        socket.emit("tasknotification:subscribed", { room, userId, unseenOnly });
+        socket.emit("tasknotification:list", { userId, ...listPayload });
+      } catch (err) {
+        console.error("tasknotification:subscribe error:", err);
+        socket.emit("error", {
+          message: err?.message || "Failed to load task notifications",
+        });
+      }
+    });
+
+    socket.on("tasknotification:unsubscribe", () => {
+      if (!socket.userId) return;
+      socket.leave(`tasknotification:user:${socket.userId}`);
+      socket.emit("tasknotification:unsubscribed", { userId: socket.userId });
+    });
+
     // Real-time list: all messages — initial snapshot + live updates via whatsapp:message:new
     socket.on("whatsapp:subscribe:all", async () => {
       try {
@@ -505,6 +542,7 @@ export const initializeSocket = (server) => {
 
       if (socket.userId) {
         socket.leave(`user:${socket.userId}`);
+        socket.leave(`tasknotification:user:${socket.userId}`);
         io.emit("user:offline", { userId: socket.userId });
       }
     });
@@ -512,6 +550,7 @@ export const initializeSocket = (server) => {
     // Manual disconnect
     socket.on("user:disconnect", (userId) => {
       socket.leave(`user:${userId}`);
+      socket.leave(`tasknotification:user:${userId}`);
       io.emit("user:offline", { userId });
     });
   });
