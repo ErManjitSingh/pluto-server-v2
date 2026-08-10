@@ -70,6 +70,7 @@ import seoListingRouter from './routes/seoListing.route.js';
 import attendanceRouter from './routes/attendance.route.js';
 import websitePartnerRouter from './routes/websitepartner.route.js';
 import adminMailRouter from './routes/adminMail.route.js';
+import taskNotificationRouter from './routes/taskNotification.route.js';
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -199,6 +200,7 @@ app.use("/api/targetmanagement", targetManagementRouter);
 app.use("/api/inventorybooking", inventoryBookingRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/admin-mail", adminMailRouter);
+app.use("/api/task-notifications", taskNotificationRouter);
 
 // -------------------------------------------------------------
 //  GLOBAL ERROR HANDLER
