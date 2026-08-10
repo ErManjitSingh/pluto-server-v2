@@ -23,6 +23,66 @@ const emitToUsers = (userIds, event, payload) => {
   }
 };
 
+/** Same response shape as GET /get-by-user/:userId */
+export async function fetchTaskNotificationsForUser(userId, { unseenOnly = false } = {}) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+    throw errorHandler(400, 'Valid userId is required');
+  }
+
+  const oid = new mongoose.Types.ObjectId(userId);
+  const match = unseenOnly
+    ? { recipients: { $elemMatch: { userId: oid, seen: false } } }
+    : { 'recipients.userId': oid };
+
+  const notifications = await TaskNotification.find(match)
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const result = notifications.map((n) => {
+    const me = (n.recipients || []).find((r) => String(r.userId) === String(userId));
+    return {
+      _id: n._id,
+      title: n.title,
+      message: n.message,
+      targetType: n.targetType,
+      company: n.company,
+      createdBy: n.createdBy,
+      createdByName: n.createdByName,
+      createdByUserType: n.createdByUserType,
+      seen: me?.seen ?? false,
+      seenAt: me?.seenAt ?? null,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt
+    };
+  });
+
+  return {
+    notifications: result,
+    count: result.length,
+    unseenCount: result.filter((n) => !n.seen).length
+  };
+}
+
+/** Push get-by-user list live to connected users */
+export async function emitTaskNotificationListToUsers(userIds, { unseenOnly = false } = {}) {
+  const io = getIO();
+  if (!io || !userIds?.length) return;
+
+  const uniqueIds = [...new Set(userIds.map((id) => String(id)).filter(Boolean))];
+  await Promise.all(
+    uniqueIds.map(async (userId) => {
+      try {
+        const listPayload = await fetchTaskNotificationsForUser(userId, { unseenOnly });
+        const payload = { userId, ...listPayload };
+        io.to(`user:${userId}`).emit('tasknotification:list', payload);
+        io.to(`tasknotification:user:${userId}`).emit('tasknotification:list', payload);
+      } catch (err) {
+        console.error('emitTaskNotificationListToUsers error:', userId, err?.message || err);
+      }
+    })
+  );
+}
+
 const normalizeCompanyKey = (value) => {
   if (value == null) return null;
   const key = String(value).trim().toLowerCase();
@@ -165,11 +225,9 @@ export const createTaskNotification = async (req, res, next) => {
     });
 
     const payload = doc.toObject();
-    emitToUsers(
-      recipients.map((r) => r.userId),
-      'tasknotification:new',
-      payload
-    );
+    const recipientIds = recipients.map((r) => r.userId);
+    emitToUsers(recipientIds, 'tasknotification:new', payload);
+    emitTaskNotificationListToUsers(recipientIds).catch(() => {});
 
     res.status(201).json({
       message: 'Task notification created successfully',
@@ -239,48 +297,16 @@ export const getTaskNotification = async (req, res, next) => {
 /**
  * GET task notifications for a specific user (from recipients array)
  * Query: ?unseenOnly=true
+ * Realtime twin: socket `tasknotification:subscribe` → `tasknotification:list`
  */
 export const getTaskNotificationsByUser = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-      return next(errorHandler(400, 'Valid userId is required'));
-    }
-
-    const oid = new mongoose.Types.ObjectId(userId);
-    const match =
-      String(req.query.unseenOnly).toLowerCase() === 'true'
-        ? { recipients: { $elemMatch: { userId: oid, seen: false } } }
-        : { 'recipients.userId': oid };
-
-    const notifications = await TaskNotification.find(match)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const result = notifications.map((n) => {
-      const me = (n.recipients || []).find((r) => String(r.userId) === String(userId));
-      return {
-        _id: n._id,
-        title: n.title,
-        message: n.message,
-        targetType: n.targetType,
-        company: n.company,
-        createdBy: n.createdBy,
-        createdByName: n.createdByName,
-        createdByUserType: n.createdByUserType,
-        seen: me?.seen ?? false,
-        seenAt: me?.seenAt ?? null,
-        createdAt: n.createdAt,
-        updatedAt: n.updatedAt
-      };
-    });
-
-    res.status(200).json({
-      notifications: result,
-      count: result.length,
-      unseenCount: result.filter((n) => !n.seen).length
-    });
+    const unseenOnly = String(req.query.unseenOnly).toLowerCase() === 'true';
+    const payload = await fetchTaskNotificationsForUser(userId, { unseenOnly });
+    res.status(200).json(payload);
   } catch (error) {
+    if (error?.statusCode) return next(error);
     next(error);
   }
 };
@@ -324,6 +350,7 @@ export const markTaskNotificationSeen = async (req, res, next) => {
     };
 
     emitToUsers([userId, updated.createdBy], 'tasknotification:seen', payload);
+    emitTaskNotificationListToUsers([userId]).catch(() => {});
 
     res.status(200).json({
       message: 'Marked as seen',
@@ -354,6 +381,7 @@ export const deleteTaskNotification = async (req, res, next) => {
       taskNotificationId: deleted._id,
       title: deleted.title
     });
+    emitTaskNotificationListToUsers(recipientIds).catch(() => {});
 
     res.status(200).json({
       message: 'Task notification deleted successfully',
@@ -383,13 +411,16 @@ export const deleteMultipleTaskNotifications = async (req, res, next) => {
     const toDelete = await TaskNotification.find({ _id: { $in: validIds } }).lean();
     const result = await TaskNotification.deleteMany({ _id: { $in: validIds } });
 
+    const allRecipientIds = [];
     for (const item of toDelete) {
-      emitToUsers(
-        (item.recipients || []).map((r) => r.userId),
-        'tasknotification:deleted',
-        { taskNotificationId: item._id, title: item.title }
-      );
+      const ids = (item.recipients || []).map((r) => r.userId);
+      allRecipientIds.push(...ids);
+      emitToUsers(ids, 'tasknotification:deleted', {
+        taskNotificationId: item._id,
+        title: item.title
+      });
     }
+    emitTaskNotificationListToUsers(allRecipientIds).catch(() => {});
 
     res.status(200).json({
       message: `Successfully deleted ${result.deletedCount} task notification(s)`,
