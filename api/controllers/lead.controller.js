@@ -1074,6 +1074,53 @@ export const getAssignedLeadsPtwPaginated = async (req, res, next) => {
 export const getAssignedLeadsDemandPaginated = async (req, res, next) => {
   return getAssignedLeadsPaginated(req, res, next, { isAssignedLead: true, publish: 'demand' });
 };
+
+const ASSIGNED_LEAD_FAST_FIELDS =
+  'leadId leadStatus name email mobile destination converted travelDate assignedAt assignedUserId guestLocation convertedDate createdAt nights days';
+
+const getAssignedLeadsFastPaginated = async (req, res, next, filter) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const [totalLeads, leads] = await Promise.all([
+      Lead.countDocuments(filter),
+      Lead.find(filter)
+        .select(ASSIGNED_LEAD_FAST_FIELDS)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    res.status(200).json({
+      leads,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalLeads,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+        limit
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// GET assigned PTW leads (limited fields + pagination)
+export const getAssignedLeadsPtwFast = async (req, res, next) => {
+  return getAssignedLeadsFastPaginated(req, res, next, { isAssignedLead: true, publish: 'ptw' });
+};
+
+// GET assigned Demand leads (limited fields + pagination)
+export const getAssignedLeadsDemandFast = async (req, res, next) => {
+  return getAssignedLeadsFastPaginated(req, res, next, { isAssignedLead: true, publish: 'demand' });
+};
 // POST create assigned lead – sets isAssignedLead true and assignedUserId from body
 export const createAssignedLead = async (req, res, next) => {
   try {
