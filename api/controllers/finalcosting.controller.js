@@ -44,9 +44,14 @@ async function updateLeadTotalAmountFromOperations(customerLeadId) {
 
     lead.totalAmount = totalAmount;
     // Mark lead as converted only when it has at least one converted operation
-    lead.converted = convertedOperations.length > 0;
+    const isConverted = convertedOperations.length > 0;
+    lead.converted = isConverted;
 
-    if (convertedOperations.length > 0) {
+    if (isConverted) {
+      // Set convertedDate only on first convert; keep existing date on later syncs
+      if (!lead.convertedDate) {
+        lead.convertedDate = new Date();
+      }
       // Sync margin/discount/cost from the first converted operation (so lead has marginAmount, marginPercentage, etc.)
       const firstOp = convertedOperations[0];
       const marginPct = Number(firstOp.marginPercentage) || 0;
@@ -62,7 +67,8 @@ async function updateLeadTotalAmountFromOperations(customerLeadId) {
       lead.marginAmount = (totalForCalc * marginPct) / 100;
       lead.discountAmount = (totalForCalc * discountPct) / 100;
     } else {
-      // No converted operations left - clear margin/discount/cost on lead
+      // No converted operations left - clear margin/discount/cost + convertedDate on lead
+      lead.convertedDate = null;
       lead.marginPercentage = 0;
       lead.discountPercentage = 0;
       lead.totalCost = undefined;
