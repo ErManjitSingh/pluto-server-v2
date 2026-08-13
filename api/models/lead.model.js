@@ -209,6 +209,8 @@ const leadSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+leadSchema.index({ isAssignedLead: 1, publish: 1, createdAt: -1 });
+
 const Lead = mongoose.model('Lead', leadSchema);
 
 export default Lead;
