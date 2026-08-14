@@ -73,6 +73,12 @@ const attendanceSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    currentLocation: {
+      latitude: { type: Number, default: null },
+      longitude: { type: Number, default: null },
+      accuracy: { type: Number, default: null },
+      address: { type: String, trim: true, default: null },
+    },
   },
   { timestamps: true }
 );
