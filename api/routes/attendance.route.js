@@ -13,7 +13,7 @@ import {
 
 const router = express.Router();
 
-/** Mark attendance (CRM login button) */
+/** Mark attendance (CRM login button). Body may include currentLocation { latitude, longitude, accuracy, address } */
 router.post('/mark', markAttendance);
 
 /** Check if user already marked today — drives button UI */
@@ -34,6 +34,7 @@ router.get('/team-leader/:teamLeaderId/month/:month', getAttendanceByTeamLeader)
 /** Manager view */
 router.get('/manager/:managerId/month/:month', getAttendanceByManager);
 
+/** Update status, note, image, or currentLocation */
 router.put('/update/:id', updateAttendance);
 router.delete('/delete/:id', deleteAttendance);
 
