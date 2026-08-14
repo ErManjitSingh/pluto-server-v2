@@ -18,6 +18,23 @@ export function toMonthString(dateStr) {
   return String(dateStr).slice(0, 7);
 }
 
+function parseCurrentLocation(value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const latitude = value.latitude != null && value.latitude !== '' ? Number(value.latitude) : null;
+  const longitude = value.longitude != null && value.longitude !== '' ? Number(value.longitude) : null;
+  const accuracy = value.accuracy != null && value.accuracy !== '' ? Number(value.accuracy) : null;
+  const address = value.address != null ? String(value.address).trim() : null;
+  if (
+    (latitude != null && Number.isNaN(latitude)) ||
+    (longitude != null && Number.isNaN(longitude)) ||
+    (accuracy != null && Number.isNaN(accuracy))
+  ) {
+    return undefined;
+  }
+  if (latitude == null && longitude == null && accuracy == null && !address) return null;
+  return { latitude, longitude, accuracy, address: address || null };
+}
+
 async function loadMakerSnapshot(userId) {
   const maker = await Maker.findById(userId)
     .select('firstName lastName email designation teamLeaderId teamLeaderName managerId managerName')
@@ -37,11 +54,11 @@ async function loadMakerSnapshot(userId) {
 
 /**
  * POST /mark — Mark attendance for today (or a given date).
- * Body: { userId, date?, status?, note?, image? }
+ * Body: { userId, date?, status?, note?, image?, currentLocation? }
  */
 export const markAttendance = async (req, res, next) => {
   try {
-    const { userId, status = 'present', note, image } = req.body;
+    const { userId, status = 'present', note, image, currentLocation } = req.body;
     const date = req.body.date ? String(req.body.date).trim() : toDateString();
 
     if (!userId || !isValidObjectId(String(userId))) {
@@ -52,6 +69,14 @@ export const markAttendance = async (req, res, next) => {
     }
     if (!['present', 'absent', 'half-day', 'late'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    const parsedLocation = parseCurrentLocation(currentLocation);
+    if (currentLocation !== undefined && parsedLocation === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'currentLocation latitude, longitude, and accuracy must be numbers',
+      });
     }
 
     const existing = await Attendance.findOne({ userId, date }).lean();
@@ -77,6 +102,7 @@ export const markAttendance = async (req, res, next) => {
       markedAt: new Date(),
       note: note != null ? String(note).trim() : null,
       image: image != null ? String(image).trim() : null,
+      currentLocation: parsedLocation,
       ...snapshot,
     });
 
@@ -293,11 +319,11 @@ export const getAttendanceByManager = async (req, res, next) => {
   }
 };
 
-/** PUT /update/:id — Update status or note for an existing record. */
+/** PUT /update/:id — Update status, note, image, or currentLocation for an existing record. */
 export const updateAttendance = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, note, image } = req.body;
+    const { status, note, image, currentLocation } = req.body;
 
     if (!isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: 'Invalid attendance id' });
@@ -312,6 +338,16 @@ export const updateAttendance = async (req, res, next) => {
     }
     if (note !== undefined) setFields.note = note != null ? String(note).trim() : null;
     if (image !== undefined) setFields.image = image != null ? String(image).trim() : null;
+    if (currentLocation !== undefined) {
+      const parsedLocation = parseCurrentLocation(currentLocation);
+      if (parsedLocation === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: 'currentLocation latitude, longitude, and accuracy must be numbers',
+        });
+      }
+      setFields.currentLocation = parsedLocation;
+    }
 
     if (Object.keys(setFields).length === 0) {
       return res.status(400).json({ success: false, message: 'Nothing to update' });
