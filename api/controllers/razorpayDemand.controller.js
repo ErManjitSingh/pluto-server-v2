@@ -163,6 +163,36 @@ export const verifyDemandPayment = async (req, res) => {
 };
 
 /**
+ * GET /api/razorpay-demand/payments
+ * Query: status? (created | paid | failed)
+ */
+export const getAllDemandPayments = async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    const payments = await RazorpayDemand.find(filter)
+      .populate('inventoryBookingId')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: payments.length,
+      payments,
+    });
+  } catch (error) {
+    console.error('Razorpay demand get all payments error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payments',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * GET /api/razorpay-demand/order/:orderId
  */
 export const getDemandPayment = async (req, res) => {
