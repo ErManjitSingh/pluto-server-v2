@@ -902,6 +902,70 @@ export const getLeadStatusNoteFast = async (req, res, next) => {
   }
 };
 
+const MISSED_FOLLOW_UP_GRACE_MS = 30 * 60 * 1000;
+const MISSED_FOLLOW_UP_EXCLUDED_LOWER = new Set([
+  'lost',
+  'booked',
+  'tour cancelled',
+  'tour postponed',
+  'tour booked',
+]);
+
+function isExcludedFromMissedFollowUp(leadstatus) {
+  const status = String(leadstatus || '').toLowerCase().trim();
+  return MISSED_FOLLOW_UP_EXCLUDED_LOWER.has(status);
+}
+
+function isMissedFollowUp(followUpDate, now = new Date(), graceMs = MISSED_FOLLOW_UP_GRACE_MS) {
+  if (!followUpDate || Number.isNaN(followUpDate.getTime())) return false;
+  return now.getTime() > followUpDate.getTime() + graceMs;
+}
+
+/**
+ * GET missed follow-up count by assignedUserId.
+ * Latest leadstatusnote only. Same exclude list + 30 min grace as frontend.
+ * GET /get-missed-follow-up-count/:assignedUserId
+ */
+export const getMissedFollowUpCount = async (req, res, next) => {
+  try {
+    const { assignedUserId } = req.params;
+    if (!assignedUserId) {
+      return res.status(400).json({ message: 'assignedUserId is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(assignedUserId)) {
+      return res.status(400).json({ message: 'Invalid assignedUserId' });
+    }
+    const oid = new mongoose.Types.ObjectId(assignedUserId);
+    const leads = await Lead.find({
+      assignedUserId: oid,
+      isAssignedLead: true
+    })
+      .select('leadStatus leadstatusnote')
+      .lean();
+
+    const now = new Date();
+    let missedFollowUpCount = 0;
+
+    for (const lead of leads) {
+      const notes = lead.leadstatusnote;
+      const lastNote = Array.isArray(notes) && notes.length ? notes[notes.length - 1] : null;
+      if (!lastNote) continue;
+      const status = lastNote.leadstatus || lead.leadStatus;
+      if (isExcludedFromMissedFollowUp(status)) continue;
+      const followUpDate = parseTimingToDate(lastNote.timing);
+      if (!followUpDate) continue;
+      if (isMissedFollowUp(followUpDate, now)) missedFollowUpCount += 1;
+    }
+
+    return res.status(200).json({
+      userId: assignedUserId,
+      missedFollowUpCount
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * GET leads basic trip/contact info by assignedUserId (fast):
  * name, email, mobile, destination, days, nights, leadStatus, all leadstatusnote
