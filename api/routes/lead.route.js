@@ -42,7 +42,8 @@ import {
   removeLeadStatusNoteCreatedAt,
   getLeadsByAssignedUserIdBasic,
   getLeadStatusNoteFast,
-  getLeadBasicInfoFast
+  getLeadBasicInfoFast,
+  getMissedFollowUpCount
 } from '../controllers/lead.controller.js';
 import { verifyToken, verifyTokenOrCommon, verifySimpleToken } from '../utils/verifyUser.js';
 
@@ -54,6 +55,7 @@ router.get('/get-leads-by-assigned-user/:assignedUserId', getLeadsByAssignedUser
 router.get('/get-leads-by-assigned-user-basic/:assignedUserId', getLeadsByAssignedUserIdBasic);
 router.get('/get-lead-status-note/:assignedUserId', getLeadStatusNoteFast);
 router.get('/get-lead-basic-info/:assignedUserId', getLeadBasicInfoFast);
+router.get('/get-missed-follow-up-count/:assignedUserId', getMissedFollowUpCount);
 router.get('/get-lead/:id', verifyToken, getLead);
 router.get('/get-lead/:leadId/emails', verifyToken, getLeadEmails); 
 router.put('/update-lead/:id', verifyToken ,  updateLead);
