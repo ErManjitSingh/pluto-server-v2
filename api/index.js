@@ -71,6 +71,8 @@ import attendanceRouter from './routes/attendance.route.js';
 import websitePartnerRouter from './routes/websitepartner.route.js';
 import adminMailRouter from './routes/adminMail.route.js';
 import taskNotificationRouter from './routes/taskNotification.route.js';
+import requestRouter from './routes/request.route.js';
+import notificationRouter from './routes/notification.route.js';
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -201,7 +203,8 @@ app.use("/api/inventorybooking", inventoryBookingRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/admin-mail", adminMailRouter);
 app.use("/api/task-notifications", taskNotificationRouter);
-
+app.use("/api/requests", requestRouter);
+app.use("/api/notifications", notificationRouter);
 // -------------------------------------------------------------
 //  GLOBAL ERROR HANDLER
 // -------------------------------------------------------------
