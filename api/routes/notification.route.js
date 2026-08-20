@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  deleteCrmNotification,
   getNotificationUnreadCount,
   getNotificationsByUser,
   markAllNotificationsRead,
@@ -12,5 +13,6 @@ router.get('/get-by-user/:userId', getNotificationsByUser);
 router.get('/unread-count/:userId', getNotificationUnreadCount);
 router.patch('/read/:id', markNotificationRead);
 router.patch('/read-all/:userId', markAllNotificationsRead);
+router.delete('/delete/:id', deleteCrmNotification);
 
 export default router;
