@@ -5,6 +5,7 @@ import {
   approveRequest,
   cancelRequest,
   createRequest,
+  deleteRequest,
   getRequestById,
   getRequestCounts,
   listRequests,
@@ -244,6 +245,38 @@ export const cancelCrmRequest = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Request cancelled successfully',
+      data: request,
+    });
+  } catch (error) {
+    if (error?.statusCode) return next(error);
+    next(error);
+  }
+};
+
+/**
+ * DELETE /delete/:id
+ * Body: { userId } — owner or admin
+ */
+export const deleteCrmRequest = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = resolveUserId(req);
+
+    if (!isValidObjectId(id)) {
+      return next(errorHandler(400, 'Invalid id'));
+    }
+    if (!userId || !isValidObjectId(String(userId))) {
+      return next(errorHandler(400, 'Valid userId is required'));
+    }
+
+    const request = await deleteRequest({
+      requestId: id,
+      userId,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Request deleted successfully',
       data: request,
     });
   } catch (error) {
