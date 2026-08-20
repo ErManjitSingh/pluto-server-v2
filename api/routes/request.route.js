@@ -3,6 +3,7 @@ import {
   approveCrmRequest,
   cancelCrmRequest,
   createCrmRequest,
+  deleteCrmRequest,
   getCrmRequest,
   getCrmRequestCounts,
   getCrmRequests,
@@ -22,5 +23,6 @@ router.get('/get/:id', getCrmRequest);
 router.patch('/approve/:id', approveCrmRequest);
 router.patch('/reject/:id', rejectCrmRequest);
 router.patch('/cancel/:id', cancelCrmRequest);
+router.delete('/delete/:id', deleteCrmRequest);
 
 export default router;
