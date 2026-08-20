@@ -9,9 +9,10 @@ import {
   getRequestTypeLabel,
 } from '../constants/requestTypes.js';
 import {
+  deleteNotificationsForRequest,
   findAdminMakers,
   getMakerDisplayName,
-  isAdminUserType,
+  isAdminMaker,
   notifyAdmins,
   notifyUser,
 } from './notification.service.js';
@@ -64,7 +65,7 @@ export async function assertMaker(userId) {
 
 export async function assertAdminMaker(userId) {
   const maker = await assertMaker(userId);
-  if (!isAdminUserType(maker.userType)) {
+  if (!isAdminMaker(maker)) {
     const err = new Error('Only admin can process requests');
     err.statusCode = 403;
     throw err;
@@ -354,6 +355,35 @@ export async function cancelRequest({ requestId, userId }) {
     [maker._id, ...admins.map((a) => a._id)],
     'request:updated',
     toRequestSocketPayload(request)
+  );
+
+  return request;
+}
+
+export async function deleteRequest({ requestId, userId }) {
+  const maker = await assertMaker(userId);
+  const request = await Request.findById(requestId);
+  if (!request) {
+    const err = new Error('Request not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const isOwner = String(request.requestedBy) === String(maker._id);
+  if (!isOwner && !isAdminMaker(maker)) {
+    const err = new Error('You can only delete your own request');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  await Request.findByIdAndDelete(requestId);
+  await deleteNotificationsForRequest(requestId);
+
+  const admins = await findAdminMakers();
+  emitRequestEvent(
+    [request.requestedBy, maker._id, ...admins.map((a) => a._id)],
+    'request:deleted',
+    { id: String(request._id), _id: request._id }
   );
 
   return request;
