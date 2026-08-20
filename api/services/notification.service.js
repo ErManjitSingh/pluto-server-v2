@@ -8,6 +8,13 @@ const MAKER_SELECT = 'firstName lastName email userType designation companyName 
 export const isAdminUserType = (userType) =>
   String(userType || '').trim().toLowerCase() === 'admin';
 
+export const isAdminMaker = (maker) => {
+  if (!maker) return false;
+  const userType = String(maker.userType || '').trim().toLowerCase();
+  const designation = String(maker.designation || '').trim().toLowerCase();
+  return userType === 'admin' || designation === 'admin';
+};
+
 export const getMakerDisplayName = (maker) => {
   if (!maker) return 'User';
   const name = [maker.firstName, maker.lastName].filter(Boolean).join(' ').trim();
@@ -93,7 +100,10 @@ export async function notifyUser(recipientId, payload) {
 export async function findAdminMakers() {
   const makers = await Maker.find({
     active: { $ne: false },
-    userType: { $regex: /^admin$/i },
+    $or: [
+      { userType: { $regex: /^admin$/i } },
+      { designation: { $regex: /^admin$/i } },
+    ],
   })
     .select(MAKER_SELECT)
     .lean();
@@ -129,52 +139,72 @@ export async function notifyAdmins({
   return docs;
 }
 
-export async function markAsRead(notificationId, userId) {
-  const updated = await Notification.findOneAndUpdate(
-    {
-      _id: notificationId,
-      recipientId: userId,
-      isRead: false,
-    },
-    {
-      $set: {
-        isRead: true,
-        readAt: new Date(),
-      },
-    },
-    { new: true }
-  );
+const emitUnreadCount = async (recipientId) => {
+  const io = getIO();
+  if (!io || !recipientId) return;
+  const count = await getUnreadCount(recipientId);
+  io.to(`user:${String(recipientId)}`).emit('notification:unread-count', { count });
+  return count;
+};
 
-  if (updated) {
+export async function markAsRead(notificationId, userId) {
+  const deleted = await Notification.findOneAndDelete({
+    _id: notificationId,
+    recipientId: userId,
+  });
+
+  if (deleted) {
     const io = getIO();
     if (io) {
       const room = `user:${String(userId)}`;
-      io.to(room).emit('notification:read', {
-        id: String(updated._id),
-        requestId: updated.requestId || null,
-      });
-      const count = await getUnreadCount(userId);
-      io.to(room).emit('notification:unread-count', { count });
+      const payload = {
+        id: String(deleted._id),
+        requestId: deleted.requestId || null,
+      };
+      io.to(room).emit('notification:deleted', payload);
+      io.to(room).emit('notification:read', payload);
     }
+    await emitUnreadCount(userId);
   }
 
-  return updated;
+  return deleted;
 }
 
 export async function markAllAsRead(userId) {
-  const result = await Notification.updateMany(
-    { recipientId: userId, isRead: false },
-    { $set: { isRead: true, readAt: new Date() } }
-  );
+  const result = await Notification.deleteMany({ recipientId: userId });
 
   const io = getIO();
   if (io) {
     const room = `user:${String(userId)}`;
     io.to(room).emit('notification:read-all', { userId: String(userId) });
+    io.to(room).emit('notification:deleted-all', { userId: String(userId) });
     io.to(room).emit('notification:unread-count', { count: 0 });
   }
 
   return result;
+}
+
+export async function deleteNotification(notificationId, userId) {
+  return markAsRead(notificationId, userId);
+}
+
+export async function deleteNotificationsForRequest(requestId) {
+  const notes = await Notification.find({ requestId }).select('_id recipientId').lean();
+  if (!notes.length) return [];
+
+  await Notification.deleteMany({ requestId });
+
+  const io = getIO();
+  const recipientIds = [...new Set(notes.map((n) => String(n.recipientId)))];
+  for (const note of notes) {
+    if (!io) continue;
+    io.to(`user:${String(note.recipientId)}`).emit('notification:deleted', {
+      id: String(note._id),
+      requestId,
+    });
+  }
+  await Promise.all(recipientIds.map((id) => emitUnreadCount(id)));
+  return notes;
 }
 
 export async function getNotificationsForUser(userId, { unreadOnly = false, page = 1, limit = 20 } = {}) {
