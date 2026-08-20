@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { errorHandler } from '../utils/error.js';
 import {
+  deleteNotification,
   getNotificationsForUser,
   getUnreadCount,
   markAllAsRead,
@@ -85,12 +86,12 @@ export const markNotificationRead = async (req, res, next) => {
 
     const updated = await markAsRead(id, userId);
     if (!updated) {
-      return next(errorHandler(404, 'Notification not found for this user, or already read'));
+      return next(errorHandler(404, 'Notification not found for this user'));
     }
 
     res.status(200).json({
       success: true,
-      message: 'Marked as read',
+      message: 'Notification marked as seen and deleted',
       data: updated,
     });
   } catch (error) {
@@ -100,6 +101,7 @@ export const markNotificationRead = async (req, res, next) => {
 
 /**
  * PATCH /read-all/:userId
+ * Deletes all notifications for this user.
  */
 export const markAllNotificationsRead = async (req, res, next) => {
   try {
@@ -111,8 +113,39 @@ export const markAllNotificationsRead = async (req, res, next) => {
     const result = await markAllAsRead(userId);
     res.status(200).json({
       success: true,
-      message: 'All notifications marked as read',
-      modifiedCount: result.modifiedCount || 0,
+      message: 'All notifications marked as seen and deleted',
+      deletedCount: result.deletedCount || 0,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /delete/:id
+ * Body: { userId }
+ */
+export const deleteCrmNotification = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.body.userId || req.user?.id;
+
+    if (!isValidObjectId(id)) {
+      return next(errorHandler(400, 'Invalid id'));
+    }
+    if (!userId || !isValidObjectId(String(userId))) {
+      return next(errorHandler(400, 'Valid userId is required'));
+    }
+
+    const deleted = await deleteNotification(id, userId);
+    if (!deleted) {
+      return next(errorHandler(404, 'Notification not found for this user'));
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Notification deleted successfully',
+      data: deleted,
     });
   } catch (error) {
     next(error);
