@@ -61,6 +61,25 @@ const buildPagination = (page, limit, total) => {
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
+/** Match both ObjectId and string _id (native insertOne saved some packages as string). */
+const addIdFilter = (id) => {
+  const strId = String(id);
+  const ids = [strId];
+  if (mongoose.Types.ObjectId.isValid(strId)) {
+    ids.push(new mongoose.Types.ObjectId(strId));
+  }
+  return { _id: { $in: ids } };
+};
+
+const findAddByAnyId = (id) => Add.collection.findOne(addIdFilter(id));
+
+const updateAddByAnyId = async (id, update) => {
+  const result = await Add.collection.findOneAndUpdate(addIdFilter(id), update, {
+    returnDocument: "after",
+  });
+  return result?.value ?? result ?? null;
+};
+
 const SEARCH_MAX_LIMIT = 50;
 const SEARCH_DEFAULT_LIMIT = 20;
 const SEARCH_MIN_CHARS = 2;
@@ -303,7 +322,7 @@ export const getAdd = async (req, res, next) => {
     const cached = cacheGet(cacheKey);
     if (cached) return res.status(200).json(cached);
 
-    const add = await Add.findById(id).lean();
+    const add = await findAddByAnyId(id);
     if (!add) return next(errorHandler(404, "Add not found!"));
 
     cacheSet(cacheKey, add);
@@ -333,10 +352,10 @@ export const updateAdd = async (req, res, next) => {
       }
     }
 
-    const add = await Add.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: false,
-    }).lean();
+    const { _id: _ignoredId, ...safeUpdate } = updateData;
+    const add = await updateAddByAnyId(id, {
+      $set: { ...safeUpdate, updatedAt: new Date() },
+    });
 
     if (!add) return next(errorHandler(404, "Add not found!"));
 
@@ -567,11 +586,9 @@ export const updateAddMediaAndCanonical = async (req, res, next) => {
       return next(errorHandler(400, "Invalid package id"));
     }
 
-    const add = await Add.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateDoc },
-      { new: true, runValidators: false }
-    ).lean();
+    const add = await updateAddByAnyId(req.params.id, {
+      $set: { ...updateDoc, updatedAt: new Date() },
+    });
 
     if (!add) return next(errorHandler(404, "Add not found!"));
 
@@ -592,7 +609,7 @@ export const deleteAdd = async (req, res, next) => {
       return next(errorHandler(400, "Invalid package id"));
     }
 
-    const result = await Add.deleteOne({ _id: id });
+    const result = await Add.collection.deleteOne(addIdFilter(id));
     if (result.deletedCount === 0) {
       return next(errorHandler(404, "Add not found!"));
     }
@@ -620,7 +637,15 @@ export const deleteMultipleAdds = async (req, res, next) => {
       return next(errorHandler(400, "No valid ids provided"));
     }
 
-    const result = await Add.deleteMany({ _id: { $in: validIds } });
+    const mixedIds = validIds.flatMap((id) => {
+      const strId = String(id);
+      const ids = [strId];
+      if (mongoose.Types.ObjectId.isValid(strId)) {
+        ids.push(new mongoose.Types.ObjectId(strId));
+      }
+      return ids;
+    });
+    const result = await Add.collection.deleteMany({ _id: { $in: mixedIds } });
 
     if (result.deletedCount === 0) {
       return next(errorHandler(404, "No adds found to delete!"));
