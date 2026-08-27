@@ -39,9 +39,9 @@ export const findDuplicateInAdd = async (uniqueSignature, excludeAddId = null) =
     query._id = { $ne: new mongoose.Types.ObjectId(String(excludeAddId)) };
   }
 
-  const existingAdd = await Add.collection.findOne(query, {
-    projection: { _id: 1, "package.packageName": 1 },
-  });
+  const existingAdd = await Add.findOne(query)
+    .select("_id package.packageName")
+    .lean();
 
   if (!existingAdd) return null;
 
