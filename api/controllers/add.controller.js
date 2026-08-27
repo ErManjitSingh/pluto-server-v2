@@ -238,25 +238,12 @@ export const createAdd = async (req, res, next) => {
       return res.status(400).json(buildDuplicateResponse(existing));
     }
 
-    const now = new Date();
-    const { insertedId } = await Add.collection.insertOne({
+    const add = await Add.create({
       ...req.body,
       uniqueSignature,
-      createdAt: now,
-      updatedAt: now,
     });
     cacheClear();
-
-    // Client already has the full payload — don't echo it back (stringify+gzip was the slow part).
-    return res.status(201).json({
-      _id: insertedId,
-      uniqueSignature,
-      package: {
-        packageName: pkg.packageName || "",
-        duration: pkg.duration || "",
-        state: pkg.state || "",
-      },
-    });
+    return res.status(201).json(add.toObject ? add.toObject() : add);
   } catch (error) {
     if (error.code === 11000 && req.body?.package) {
       const existing = await findDuplicateInAdd(
