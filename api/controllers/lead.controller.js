@@ -1188,10 +1188,15 @@ export const getAssignedLeadsDemandFast = async (req, res, next) => {
 
 const getAssignedLeadsInfoPaginated = async (req, res, next, selectFields) => {
   try {
+    const publish = String(req.query.publish || req.body?.publish || '').trim().toLowerCase();
+    if (publish !== 'ptw' && publish !== 'demand') {
+      return res.status(400).json({ message: "publish is required and must be 'ptw' or 'demand'" });
+    }
+
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
     const skip = (page - 1) * limit;
-    const filter = { isAssignedLead: true };
+    const filter = { isAssignedLead: true, publish };
 
     const [totalLeads, leads] = await Promise.all([
       Lead.countDocuments(filter),
@@ -1223,7 +1228,7 @@ const getAssignedLeadsInfoPaginated = async (req, res, next, selectFields) => {
 
 /**
  * GET assigned leads: name, mobile, leadStatus only (isAssignedLead: true)
- * GET /get-assigned-leads-mobile-info?page=1&limit=50
+ * GET /get-assigned-leads-mobile-info?publish=ptw&page=1&limit=50
  */
 export const getAssignedLeadsMobileInfo = async (req, res, next) => {
   return getAssignedLeadsInfoPaginated(req, res, next, 'name mobile leadStatus');
@@ -1231,7 +1236,7 @@ export const getAssignedLeadsMobileInfo = async (req, res, next) => {
 
 /**
  * GET assigned leads: name, email, leadStatus only (isAssignedLead: true)
- * GET /get-assigned-leads-email-info?page=1&limit=50
+ * GET /get-assigned-leads-email-info?publish=demand&page=1&limit=50
  */
 export const getAssignedLeadsEmailInfo = async (req, res, next) => {
   return getAssignedLeadsInfoPaginated(req, res, next, 'name email leadStatus');
