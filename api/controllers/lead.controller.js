@@ -1185,6 +1185,57 @@ export const getAssignedLeadsPtwFast = async (req, res, next) => {
 export const getAssignedLeadsDemandFast = async (req, res, next) => {
   return getAssignedLeadsFastPaginated(req, res, next, { isAssignedLead: true, publish: 'demand' });
 };
+
+const getAssignedLeadsInfoPaginated = async (req, res, next, selectFields) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const skip = (page - 1) * limit;
+    const filter = { isAssignedLead: true };
+
+    const [totalLeads, leads] = await Promise.all([
+      Lead.countDocuments(filter),
+      Lead.find(filter)
+        .select(selectFields)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    const totalPages = Math.ceil(totalLeads / limit);
+
+    res.status(200).json({
+      leads,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalLeads,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+        limit
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET assigned leads: name, mobile, leadStatus only (isAssignedLead: true)
+ * GET /get-assigned-leads-mobile-info?page=1&limit=50
+ */
+export const getAssignedLeadsMobileInfo = async (req, res, next) => {
+  return getAssignedLeadsInfoPaginated(req, res, next, 'name mobile leadStatus');
+};
+
+/**
+ * GET assigned leads: name, email, leadStatus only (isAssignedLead: true)
+ * GET /get-assigned-leads-email-info?page=1&limit=50
+ */
+export const getAssignedLeadsEmailInfo = async (req, res, next) => {
+  return getAssignedLeadsInfoPaginated(req, res, next, 'name email leadStatus');
+};
 // POST create assigned lead – sets isAssignedLead true and assignedUserId from body
 export const createAssignedLead = async (req, res, next) => {
   try {
