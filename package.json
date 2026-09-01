@@ -33,6 +33,7 @@
     "multer": "^2.1.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.1",
+    "openai": "^4.104.0",
     "prerender-node": "^3.8.3",
     "puppeteer": "^24.43.1",
     "razorpay": "^2.9.2",
