@@ -33,6 +33,7 @@ const LEAD_PREVIEW_FIELDS = [
   'remainingAmount',
   'publish',
   'assignedUserId',
+  'assignedAt',
   'createdAt',
   'source',
   'guestLocation',
@@ -82,7 +83,7 @@ export const AI_LEAD_TOOLS = [
     function: {
       name: 'search_leads',
       description:
-        'Search accessible leads. Executive: own created or assigned. Admin/manager: isAssignedLead true for their company only (ptw or demand). Never mix companies. Returns up to 20 rows plus total count.',
+        'Search accessible leads. Executive: own created or assigned. Admin/manager: isAssignedLead true for their company only (ptw or demand). Never mix companies. Returns up to 20 rows plus total count. Date filters are full IST calendar days. For Assigned Leads tab "yesterday/today/date" counts use assignedToday/assignedYesterday/assignedOn.',
       parameters: {
         type: 'object',
         properties: {
@@ -93,11 +94,18 @@ export const AI_LEAD_TOOLS = [
           leadStatus: { type: 'string' },
           assignedUserName: { type: 'string', description: 'Executive first or last name' },
           converted: { type: 'boolean' },
-          createdToday: { type: 'boolean' },
-          createdFrom: { type: 'string', description: 'ISO date' },
-          createdTo: { type: 'string', description: 'ISO date' },
-          travelFrom: { type: 'string', description: 'ISO date' },
-          travelTo: { type: 'string', description: 'ISO date' },
+          createdToday: { type: 'boolean', description: 'createdAt during today IST' },
+          createdYesterday: { type: 'boolean', description: 'createdAt during yesterday IST' },
+          createdOn: { type: 'string', description: 'YYYY-MM-DD, createdAt that IST day only' },
+          createdFrom: { type: 'string', description: 'YYYY-MM-DD start (IST). Alone = that one day.' },
+          createdTo: { type: 'string', description: 'YYYY-MM-DD end inclusive (IST)' },
+          assignedToday: { type: 'boolean', description: 'assignedAt during today IST. Use for aaj kitni leads.' },
+          assignedYesterday: { type: 'boolean', description: 'assignedAt during yesterday IST. Use for kal kitni leads on Assigned Leads tab.' },
+          assignedOn: { type: 'string', description: 'YYYY-MM-DD, assignedAt that IST day only' },
+          assignedFrom: { type: 'string', description: 'YYYY-MM-DD start (IST). Alone = that one day.' },
+          assignedTo: { type: 'string', description: 'YYYY-MM-DD end inclusive (IST)' },
+          travelFrom: { type: 'string', description: 'YYYY-MM-DD travelDate start IST' },
+          travelTo: { type: 'string', description: 'YYYY-MM-DD travelDate end inclusive IST' },
           countOnly: { type: 'boolean' },
         },
       },
@@ -213,16 +221,108 @@ function publishFromCompany(companyName) {
   return undefined;
 }
 
-function istDayRange() {
-  const now = new Date();
-  const istMs = now.getTime() + 5.5 * 60 * 60 * 1000;
-  const ist = new Date(istMs);
-  const startUtc =
-    Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 0, 0, 0, 0) -
-    5.5 * 60 * 60 * 1000;
+const IST_MS = 5.5 * 60 * 60 * 1000;
+const YMD_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function ymdFromIstParts(y, m0, d) {
+  return `${y}-${pad2(m0 + 1)}-${pad2(d)}`;
+}
+
+function istYmdFromDate(date) {
+  const ist = new Date(date.getTime() + IST_MS);
+  return ymdFromIstParts(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate());
+}
+
+function istDayRangeForYmd(ymd) {
+  const m = String(ymd || '').match(YMD_RE);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const startUtc = Date.UTC(y, mo, d, 0, 0, 0, 0) - IST_MS;
   return {
     start: new Date(startUtc),
-    end: new Date(startUtc + 24 * 60 * 60 * 1000),
+    end: new Date(startUtc + DAY_MS),
+    ymd: `${m[1]}-${m[2]}-${m[3]}`,
+  };
+}
+
+function extractYmd(value) {
+  if (value == null || value === '') return null;
+  const s = String(value).trim();
+  const direct = s.match(YMD_RE);
+  if (direct) return `${direct[1]}-${direct[2]}-${direct[3]}`;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return istYmdFromDate(d);
+}
+
+export function istCalendarLabels() {
+  const todayYmd = istYmdFromDate(new Date());
+  const today = istDayRangeForYmd(todayYmd);
+  const yesterdayYmd = istYmdFromDate(new Date(today.start.getTime() - 1));
+  return { today: todayYmd, yesterday: yesterdayYmd, timezone: 'Asia/Kolkata' };
+}
+
+function resolveIstRange({ today, yesterday, on, from, to }) {
+  const labels = istCalendarLabels();
+  if (today) {
+    const r = istDayRangeForYmd(labels.today);
+    return r ? { ...r, kind: 'today' } : null;
+  }
+  if (yesterday) {
+    const r = istDayRangeForYmd(labels.yesterday);
+    return r ? { ...r, kind: 'yesterday' } : null;
+  }
+  if (on) {
+    const ymd = extractYmd(on);
+    const r = ymd && istDayRangeForYmd(ymd);
+    return r ? { ...r, kind: 'on' } : null;
+  }
+  const fromYmd = extractYmd(from);
+  const toYmd = extractYmd(to);
+  if (fromYmd && !toYmd) {
+    const r = istDayRangeForYmd(fromYmd);
+    return r ? { ...r, kind: 'from-day' } : null;
+  }
+  if (!fromYmd && toYmd) {
+    const r = istDayRangeForYmd(toYmd);
+    return r ? { ...r, kind: 'to-day' } : null;
+  }
+  if (fromYmd && toYmd) {
+    const startR = istDayRangeForYmd(fromYmd);
+    const endR = istDayRangeForYmd(toYmd);
+    if (!startR || !endR) return null;
+    return {
+      start: startR.start,
+      end: endR.end,
+      ymd: `${fromYmd}..${toYmd}`,
+      kind: 'range',
+    };
+  }
+  return null;
+}
+
+function mongoRange(range) {
+  const out = {};
+  if (range.start) out.$gte = range.start;
+  if (range.end) out.$lt = range.end;
+  return out;
+}
+
+function dateFilterMeta(field, range) {
+  if (!range) return null;
+  return {
+    field,
+    istDay: range.ymd,
+    kind: range.kind,
+    from: range.start?.toISOString(),
+    to: range.end?.toISOString(),
   };
 }
 
@@ -330,40 +430,54 @@ async function searchLeads(user, maker, args = {}) {
     and.push({ converted: args.converted });
   }
 
-  if (args.createdToday) {
-    const { start, end } = istDayRange();
-    and.push({ createdAt: { $gte: start, $lt: end } });
-  } else {
-    const createdFrom = parseDate(args.createdFrom);
-    const createdTo = parseDate(args.createdTo);
-    if (createdFrom || createdTo) {
-      const range = {};
-      if (createdFrom) range.$gte = createdFrom;
-      if (createdTo) range.$lt = createdTo;
-      and.push({ createdAt: range });
-    }
+  const createdRange = resolveIstRange({
+    today: args.createdToday,
+    yesterday: args.createdYesterday,
+    on: args.createdOn,
+    from: args.createdFrom,
+    to: args.createdTo,
+  });
+  if (createdRange) {
+    and.push({ createdAt: mongoRange(createdRange) });
   }
 
-  const travelFrom = parseDate(args.travelFrom);
-  const travelTo = parseDate(args.travelTo);
-  if (travelFrom || travelTo) {
-    const range = {};
-    if (travelFrom) range.$gte = travelFrom;
-    if (travelTo) range.$lt = travelTo;
-    and.push({ travelDate: range });
+  const assignedRange = resolveIstRange({
+    today: args.assignedToday,
+    yesterday: args.assignedYesterday,
+    on: args.assignedOn,
+    from: args.assignedFrom,
+    to: args.assignedTo,
+  });
+  if (assignedRange) {
+    and.push({ assignedAt: mongoRange(assignedRange) });
   }
+
+  const travelRange = resolveIstRange({
+    from: args.travelFrom,
+    to: args.travelTo,
+  });
+  if (travelRange) {
+    and.push({ travelDate: mongoRange(travelRange) });
+  }
+
+  const dateFilter = [
+    dateFilterMeta('createdAt', createdRange),
+    dateFilterMeta('assignedAt', assignedRange),
+    dateFilterMeta('travelDate', travelRange),
+  ].filter(Boolean);
 
   if (and.length) filter.$and = and;
 
   const total = await Lead.countDocuments(filter);
   const scope = companyAssignedFilter(maker) || 'own';
   if (args.countOnly) {
-    return { ok: true, total, leads: [], scope };
+    return { ok: true, total, leads: [], scope, dateFilter };
   }
 
+  const sort = assignedRange && !createdRange ? { assignedAt: -1 } : { createdAt: -1 };
   const leads = await Lead.find(filter)
     .select(LEAD_PREVIEW_FIELDS.join(' ') + ' leadstatusnote')
-    .sort({ createdAt: -1 })
+    .sort(sort)
     .limit(SEARCH_LIMIT)
     .lean();
 
@@ -373,6 +487,7 @@ async function searchLeads(user, maker, args = {}) {
     shown: leads.length,
     leads: leads.map(leadPreview),
     scope,
+    dateFilter,
   };
 }
 
