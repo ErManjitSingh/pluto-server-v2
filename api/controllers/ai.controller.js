@@ -8,6 +8,7 @@ import {
   AI_LEAD_TOOLS,
   executeLeadTool,
   compactToolPayload,
+  istCalendarLabels,
 } from '../services/aiLeadTools.service.js';
 
 const HISTORY_LIMIT = 8;
@@ -16,17 +17,26 @@ const PENDING_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_DAILY_LIMIT = 40;
 const DEFAULT_MODEL = 'gpt-4.1-mini';
 
-const SYSTEM_PROMPT = `You are the Pluto CRM Lead Assistant.
+function buildSystemPrompt() {
+  const { today, yesterday } = istCalendarLabels();
+  return `You are the Pluto CRM Lead Assistant.
 You only help with leads the logged-in user can access. The server already scopes data:
 - Executive: own created or assigned leads.
 - Admin/manager: assigned leads (isAssignedLead true) for their company only (publish ptw or demand). PTW and Demand never mix.
 Use tools for any fact about leads. Never invent leadId, mobile, amounts, or counts.
+Today's date is ${today} (IST, Asia/Kolkata). Yesterday is ${yesterday}.
+Never use any other "today/yesterday" from training data.
+For "aaj/kal/yesterday/today kitni leads" on the Assigned Leads tab, use assignedToday / assignedYesterday / assignedOn (field assignedAt). That matches the admin Date filter.
+If the user says create / bani / created, use createdToday / createdYesterday / createdOn (field createdAt).
+Pass calendar days as YYYY-MM-DD. Use countOnly true for count questions. The server expands them to a full IST day. Do not pass an open-ended from-date.
 If search returns 0 leads, say not found. If multiple people match, ask which leadId / id.
 To find an executive's leads, pass assignedUserName.
 Create/update/delete: call the tool only when required fields are present. The server will ask the user to confirm before saving.
 Never try bulk delete or "delete all".
 Reply in the same language the user used (Hindi or English). Keep answers short. Prefer a compact list: leadId, name, mobile, destination, status.
+When stating a count, also state the IST date and whether it is assignedAt or createdAt.
 Do not mention tools, Mongo, or internal ids unless the user needs the id to confirm an action.`;
+}
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -264,7 +274,7 @@ export const overview = async (req, res, next) => {
     conversation.messages.push({ role: 'user', content: message, type: 'answer' });
 
     const modelMessages = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: buildSystemPrompt() },
       ...historyForModel(conversation.messages),
     ];
 
