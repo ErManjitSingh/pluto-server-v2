@@ -1,6 +1,7 @@
 import express from 'express';
 import { handleStep, getProperties, getRoomsById, getPropertyById,
      getHotelsByCityName, getBasicPropertyInfo, getAllBasicPropertyInfo,
+      getPropertyNames,
       deletePackageMaker, deleteAllPackageMakerPhotosAndVideos,
       loginPackageMaker, getAllHotelStates, getAllHotelCities,
       getHotelsByState, getHotelsByCityPi, getHotelsByPropertyType,
@@ -31,6 +32,7 @@ router.get('/get-packagemaker-hotels-by-filters', getHotelsByPropertyTypeAndLoca
 router.get('/get-packagemaker-basic-info/:id', getBasicPropertyInfo);
 //get-all-basic-property-info
 router.get('/get-all-packagemaker-basic-info', getAllBasicPropertyInfo);
+router.get('/get-packagemaker-property-names', getPropertyNames);
 
 // Add new delete route
 router.delete('/delete-packagemaker/:id', deletePackageMaker);
