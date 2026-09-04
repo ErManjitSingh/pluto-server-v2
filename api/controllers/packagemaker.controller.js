@@ -733,6 +733,26 @@ export const getAllBasicPropertyInfo = async (req, res) => {
   }
 };
 
+export const getPropertyNames = async (req, res) => {
+  try {
+    const properties = await Property.find({}, { 'basicInfo.propertyName': 1 }).lean();
+    const data = properties.map((property) => ({
+      _id: property._id,
+      propertyName: property.basicInfo?.propertyName || '',
+    }));
+
+    res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const deletePackageMaker = async (req, res) => {
   const { id: packageId } = req.params;
 
