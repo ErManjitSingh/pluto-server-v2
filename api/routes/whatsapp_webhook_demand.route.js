@@ -11,6 +11,7 @@ import Maker from '../models/maker.model.js';
 import { getIO } from '../socket/socket.js';
 import { storeIncomingWhatsappMediaFromMeta, WHATSAPP_INBOUND_DIR } from '../utils/whatsappMediaUrl.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
+import { applyWhatsappStatusToCampaign } from '../services/campaignStatus.service.js';
 import { verifyToken } from '../utils/verifyUser.js';
 import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
 
@@ -461,6 +462,14 @@ router.post('/webhook', async (req, res) => {
       if (updated) {
         emitWhatsappDemandMessageUpdatedToViewRooms(updated);
       }
+
+      // Mirror the status onto the campaign recipient when this wamid came from a campaign.
+      await applyWhatsappStatusToCampaign({
+        metaMessageId,
+        status: statusType,
+        timestamp: status.timestamp,
+        errors: statusErrors,
+      });
     }
   }
 
