@@ -74,6 +74,7 @@ import taskNotificationRouter from './routes/taskNotification.route.js';
 import requestRouter from './routes/request.route.js';
 import notificationRouter from './routes/notification.route.js';
 import aiRouter from './routes/ai.route.js';
+import campaignRouter from './routes/campaign.route.js';
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -207,6 +208,8 @@ app.use("/api/task-notifications", taskNotificationRouter);
 app.use("/api/requests", requestRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/ai", aiRouter);
+app.use("/api/campaigns", campaignRouter);
+
 // -------------------------------------------------------------
 //  GLOBAL ERROR HANDLER
 // -------------------------------------------------------------
