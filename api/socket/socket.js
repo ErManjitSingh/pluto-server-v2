@@ -198,6 +198,33 @@ export const initializeSocket = (server) => {
       }
     });
 
+    // Campaigns: live send progress. `campaigns` for the list view,
+    // `campaign:<id>` for a single campaign's lead-wise status table.
+    socket.on("campaigns:subscribe", () => {
+      socket.join("campaigns");
+      socket.emit("campaigns:subscribed", { room: "campaigns" });
+    });
+
+    socket.on("campaigns:unsubscribe", () => {
+      socket.leave("campaigns");
+    });
+
+    socket.on("campaign:subscribe", (payload = {}) => {
+      const campaignId = String(payload.campaignId || payload.id || "").trim();
+      if (!campaignId) {
+        socket.emit("error", { message: "campaignId is required" });
+        return;
+      }
+      const room = `campaign:${campaignId}`;
+      socket.join(room);
+      socket.emit("campaign:subscribed", { room, campaignId });
+    });
+
+    socket.on("campaign:unsubscribe", (payload = {}) => {
+      const campaignId = String(payload.campaignId || payload.id || "").trim();
+      if (campaignId) socket.leave(`campaign:${campaignId}`);
+    });
+
     // WhatsApp CRM: join room to receive real-time new messages (incoming + outgoing)
     socket.on("whatsapp:subscribe", () => {
       socket.join("whatsapp");
