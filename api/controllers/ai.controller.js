@@ -10,22 +10,42 @@ import {
   compactToolPayload,
   istCalendarLabels,
 } from '../services/aiLeadTools.service.js';
+import {
+  AI_PACKAGE_TOOLS,
+  AI_PACKAGE_TOOL_NAMES,
+  executePackageTool,
+} from '../services/aiPackageTools.service.js';
 
-const HISTORY_LIMIT = 8;
-const MAX_TOOL_ROUNDS = 3;
+const AI_TOOLS = [...AI_LEAD_TOOLS, ...AI_PACKAGE_TOOLS];
+
+/** Package tools are read-only, so they ignore the write context entirely. */
+function runTool(name, args, context) {
+  if (AI_PACKAGE_TOOL_NAMES.has(name)) {
+    return executePackageTool(name, args);
+  }
+  return executeLeadTool(name, args, context);
+}
+
+const HISTORY_LIMIT = 16;
+const MAX_TOOL_ROUNDS = 4;
 const PENDING_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_DAILY_LIMIT = 40;
 const DEFAULT_MODEL = 'gpt-4.1-mini';
 
 function buildSystemPrompt() {
   const { today, yesterday } = istCalendarLabels();
-  return `You are the Pluto CRM Lead Assistant.
+  return `You are the Pluto CRM Assistant. You help with two areas: LEADS and PACKAGES.
+Use tools for every fact. Never invent ids, names, prices, counts, or itinerary text.
+Today's date is ${today} (IST, Asia/Kolkata). Yesterday is ${yesterday}.
+Never use any other "today/yesterday" from training data.
+Reply in the same language the user used (Hindi, Hinglish or English). Keep answers short.
+Do not mention tools, Mongo, or internal ids unless the user needs an id to confirm an action.
+
+=== LEADS ===
 You only help with leads the logged-in user can access. The server already scopes data:
 - Executive: own created or assigned leads.
 - Admin/manager: assigned leads (isAssignedLead true) for their company only (publish ptw or demand). PTW and Demand never mix.
-Use tools for any fact about leads. Never invent leadId, mobile, amounts, or counts.
-Today's date is ${today} (IST, Asia/Kolkata). Yesterday is ${yesterday}.
-Never use any other "today/yesterday" from training data.
+Never invent leadId, mobile, amounts, or counts.
 For "aaj/kal/yesterday/today kitni leads" on the Assigned Leads tab, use assignedToday / assignedYesterday / assignedOn (field assignedAt). That matches the admin Date filter.
 If the user says create / bani / created, use createdToday / createdYesterday / createdOn (field createdAt).
 Pass calendar days as YYYY-MM-DD. Use countOnly true for count questions. The server expands them to a full IST day. Do not pass an open-ended from-date.
@@ -33,9 +53,27 @@ If search returns 0 leads, say not found. If multiple people match, ask which le
 To find an executive's leads, pass assignedUserName.
 Create/update/delete: call the tool only when required fields are present. The server will ask the user to confirm before saving.
 Never try bulk delete or "delete all".
-Reply in the same language the user used (Hindi or English). Keep answers short. Prefer a compact list: leadId, name, mobile, destination, status.
+Prefer a compact list: leadId, name, mobile, destination, status.
 When stating a count, also state the IST date and whether it is assignedAt or createdAt.
-Do not mention tools, Mongo, or internal ids unless the user needs the id to confirm an action.`;
+
+=== PACKAGES (READ-ONLY IN THIS VERSION) ===
+You can search packages and build a complete package plan, but you CANNOT save anything yet.
+Never claim a package was created, updated or deleted. When the plan is ready, show the summary and say saving is not enabled yet.
+
+Day rule: total days = total nights + 1. Each place gets 1 travel day plus (nights - 1) local sightseeing days. The last day travels to the drop location.
+For any "create a package" request, first collect package name, pickup, drop, and the places with nights, then call plan_package_days. It returns the day plan with itinerary candidates for each day.
+Never write itinerary titles or descriptions yourself. Always choose an existing itinerary from the candidates.
+When a day has needsChoice true, list the candidate titles and ask the user which one to use. When suggested is present, show it and let the user confirm or swap it.
+If the user's stated duration does not match the nights, ask which is correct. Do not silently pick one.
+
+Inclusions, exclusions and policies come only from get_globalmaster. Never write policy text yourself.
+"Inclusion" fills packageInclusions, "Exclusions" fills packageExclusions, every other block becomes a customExclusions entry.
+Always show these as plain-text points and ask the user to confirm or edit before using them. Handle edits one point at a time; never rewrite a whole block.
+
+For cabs, ask the cabType first (Hatchback, Sedan, SUV, Traveller, ACBus), then call search_cabs and let the user pick a specific cab.
+The cab collection stores no price. Always ask the user for the on-season and off-season price. Never guess or reuse a price from another package.
+
+Ask for missing information one or two questions at a time, not all at once.`;
 }
 
 function getClient() {
@@ -162,7 +200,7 @@ function buildPreviewText(tool, preview = {}) {
 }
 
 async function applyWriteResult(conversation, userId, maker, pending) {
-  const result = await executeLeadTool(pending.tool, pending.args, {
+  const result = await runTool(pending.tool, pending.args, {
     user: { id: userId },
     maker,
     executeWrites: true,
@@ -287,7 +325,7 @@ export const overview = async (req, res, next) => {
         model: process.env.OPENAI_MODEL || DEFAULT_MODEL,
         temperature: 0.2,
         max_tokens: 700,
-        tools: AI_LEAD_TOOLS,
+        tools: AI_TOOLS,
         tool_choice: 'auto',
         messages: modelMessages,
       });
@@ -312,7 +350,7 @@ export const overview = async (req, res, next) => {
       for (const call of toolCalls) {
         const name = call.function?.name;
         const args = jsonSafeParse(call.function?.arguments);
-        const toolResult = await executeLeadTool(name, args, {
+        const toolResult = await runTool(name, args, {
           user: req.user,
           maker,
           executeWrites: false,
