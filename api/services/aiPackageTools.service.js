@@ -3,11 +3,15 @@ import Add from '../models/add.model.js';
 import Itinerary from '../models/itenary.model.js';
 import GlobalMaster from '../models/globalmaster.model.js';
 import Cabs from '../models/cabs.model.js';
+import { createAdd } from '../controllers/add.controller.js';
+import { runController } from '../utils/runController.js';
 import {
   buildDaySkeleton,
   buildTravelInfo,
   computeFinalCosting,
+  embedCab,
   formatDuration,
+  lowestCabPrices,
   normalizeLocation,
   normalizeTitle,
   packagePlacesFrom,
@@ -87,6 +91,60 @@ function htmlToPoints(html) {
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+const LIST_ITEM_RE = /<li\b[^>]*>[\s\S]*?<\/li>/gi;
+
+function stripTags(html) {
+  return htmlToPoints(html).join(' ').trim();
+}
+
+/**
+ * Points are read from the <li> elements themselves so that the numbering the
+ * user sees is the same numbering used when removing a point later.
+ */
+export function policyPoints(html) {
+  const items = String(html ?? '').match(LIST_ITEM_RE);
+  if (items?.length) return items.map(stripTags).filter(Boolean);
+  return htmlToPoints(html);
+}
+
+function escapeHtml(text) {
+  return String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Edits are applied at <li> level only: a point is dropped whole, or a new one
+ * is appended reusing the first item's opening tag. Nothing rewrites the markup
+ * inside a point, so the stored formatting cannot be corrupted. A reword is
+ * therefore expressed as a remove plus an add.
+ */
+export function applyPolicyEdits(html, { removeIndices = [], addPoints = [] } = {}) {
+  const raw = String(html ?? '');
+  const items = raw.match(LIST_ITEM_RE);
+  if (!items?.length) return raw;
+
+  const remove = new Set((removeIndices || []).map(Number).filter((n) => Number.isFinite(n)));
+  const openTag = (items[0].match(/^<li\b[^>]*>/i) || ['<li>'])[0];
+
+  const kept = items.filter((_, i) => !remove.has(i + 1));
+  const added = (addPoints || [])
+    .map((point) => String(point ?? '').trim())
+    .filter(Boolean)
+    .map((point) => `${openTag}${escapeHtml(point)}</li>`);
+
+  const merged = [...kept, ...added];
+  if (!merged.length) return '';
+
+  let seen = 0;
+  return raw.replace(LIST_ITEM_RE, () => {
+    const replacement = seen === 0 ? merged.join('') : '';
+    seen += 1;
+    return replacement;
+  });
 }
 
 /**
@@ -269,7 +327,7 @@ async function getGlobalMaster(args = {}) {
     name: row.name,
     slot: globalMasterSlot(row.name),
     ...(isOptionalPolicy(row.name) ? { optional: true } : {}),
-    points: args.namesOnly ? undefined : htmlToPoints(row.description),
+    points: args.namesOnly ? undefined : policyPoints(row.description),
   }));
 
   return {
@@ -279,7 +337,7 @@ async function getGlobalMaster(args = {}) {
     slotRule:
       'Inclusion -> package.packageInclusions, Exclusions -> package.packageExclusions, everything else -> package.customExclusions[]. Entries marked optional are only used when the user asks for them.',
     editRule:
-      'These are stored as formatted HTML. Show the points as plain text and ask the user to confirm. Edits must be per-point (add / remove / reword one point) so the stored formatting survives.',
+      'Show the points to the user numbered from 1 and ask them to confirm. To change a block, save it in the draft with removeIndices (1-based, matching the numbers shown) and addPoints. A reword is a remove plus an add. Never retype a whole block.',
   };
 }
 
@@ -376,11 +434,11 @@ async function getPackage(args = {}) {
         city: d?.selectedItinerary?.cityName,
         descriptionPreview: truncate(d?.selectedItinerary?.itineraryDescription, DESCRIPTION_PREVIEW),
       })),
-      inclusions: htmlToPoints(pkg.packageInclusions),
-      exclusions: htmlToPoints(pkg.packageExclusions),
+      inclusions: policyPoints(pkg.packageInclusions),
+      exclusions: policyPoints(pkg.packageExclusions),
       customExclusions: (pkg.customExclusions || []).map((c) => ({
         name: c?.name,
-        points: htmlToPoints(c?.description),
+        points: policyPoints(c?.description),
       })),
       travelInfo: doc?.cabs?.travelPrices?.travelInfo,
     },
@@ -575,11 +633,442 @@ async function planPackageDays(args = {}) {
     ...(costing ? { costingPreview: costing } : {}),
     warnings,
     nextSteps: [
-      'Confirm every day where needsChoice is true by showing the candidate titles.',
-      'Call get_globalmaster and ask the user to confirm or edit inclusions, exclusions and policies.',
-      'Ask the cabType, then call search_cabs, then ask the on-season and off-season price.',
-      'Saving is not enabled yet: present the final plan and tell the user it cannot be saved in this version.',
+      'Confirm every day where needsChoice is true by showing the candidate titles, then save the choice with update_package_draft.',
+      'Call get_globalmaster and ask the user to confirm or edit inclusions, exclusions and policies, then save them.',
+      'Ask the cabType, then call search_cabs, then ask the on-season and off-season price and save the cab.',
+      'Ask for state and packageType if not known yet, then call create_package.',
     ],
+  };
+}
+
+/** The plan is written straight into the draft so it survives history trimming. */
+async function planAndSaveDraft(args = {}, currentDraft) {
+  const plan = await planPackageDays(args);
+  if (!plan.ok) return { kind: 'result', data: plan };
+
+  const merged = mergeDraft(currentDraft, {
+    ...pick(args, ['packageName', 'state', 'packageType', 'packageCategory', 'hotelCategory', 'themes', 'tags']),
+    pickupLocation: plan.pickupLocation,
+    dropLocation: plan.dropLocation,
+    duration: plan.derivedDuration,
+    places: plan.packagePlaces,
+    replaceDays: plan.days.map((d) => ({
+      day: d.day,
+      purpose: d.purpose,
+      itineraryType: d.itineraryType,
+      city: d.city,
+      from: d.from,
+      to: d.to,
+      expectedTitle: d.expectedTitle,
+      itineraryId: d.suggested?.id,
+      itineraryTitle: d.suggested?.itineraryTitle,
+    })),
+  });
+
+  return {
+    kind: 'draft',
+    draft: merged,
+    data: { ...plan, draftSaved: true, missing: draftMissingFields(merged) },
+  };
+}
+
+// ------------------------------------------------------------------ draft
+
+const DRAFT_SCALARS = [
+  'packageName',
+  'pickupLocation',
+  'dropLocation',
+  'duration',
+  'state',
+  'packageType',
+  'packageCategory',
+  'hotelCategory',
+];
+
+function plainDraft(draft) {
+  if (!draft) return null;
+  return typeof draft.toObject === 'function' ? draft.toObject() : { ...draft };
+}
+
+/**
+ * Shallow merge for scalars, replace-by-key for lists.
+ * days are merged per day number so a single day can be changed without
+ * resending the whole plan.
+ */
+export function mergeDraft(current, patch = {}) {
+  const base = plainDraft(current) || { places: [], days: [], policies: [], cabs: [] };
+
+  for (const key of DRAFT_SCALARS) {
+    if (patch[key] !== undefined) base[key] = normalizeLocation(patch[key]);
+  }
+  for (const key of ['themes', 'tags']) {
+    if (Array.isArray(patch[key])) base[key] = patch[key].map((v) => String(v).trim()).filter(Boolean);
+  }
+  if (patch.places !== undefined) base.places = packagePlacesFrom(patch.places);
+  if (patch.policies !== undefined) {
+    base.policies = (patch.policies || []).map((p) => ({
+      name: normalizeLocation(p?.name),
+      removeIndices: (p?.removeIndices || []).map(Number).filter(Number.isFinite),
+      addPoints: (p?.addPoints || []).map((t) => String(t).trim()).filter(Boolean),
+    }));
+  }
+  if (patch.cabs !== undefined) {
+    base.cabs = (patch.cabs || [])
+      .filter((c) => c?.cabId)
+      .map((c) => ({
+        cabId: String(c.cabId).trim(),
+        onSeasonPrice: String(c.onSeasonPrice ?? '').trim(),
+        offSeasonPrice: String(c.offSeasonPrice ?? c.onSeasonPrice ?? '').trim(),
+      }));
+  }
+  if (patch.margins) {
+    base.margins = { ...(base.margins || {}), ...patch.margins };
+  }
+
+  if (patch.days !== undefined) {
+    const byDay = new Map((base.days || []).map((d) => [Number(d.day), { ...d }]));
+    for (const incoming of patch.days || []) {
+      const dayNo = Number(incoming?.day);
+      if (!Number.isFinite(dayNo)) continue;
+      byDay.set(dayNo, { ...(byDay.get(dayNo) || {}), ...incoming, day: dayNo });
+    }
+    base.days = [...byDay.values()].sort((a, b) => a.day - b.day);
+  }
+  if (patch.replaceDays !== undefined) {
+    base.days = (patch.replaceDays || []).map((d) => ({ ...d, day: Number(d.day) }));
+  }
+
+  base.updatedAt = new Date();
+  return base;
+}
+
+export function draftMissingFields(draft) {
+  const d = plainDraft(draft);
+  const missing = [];
+  if (!d) return ['everything: no draft started yet'];
+
+  if (!d.packageName) missing.push('packageName');
+  if (!d.pickupLocation) missing.push('pickupLocation');
+  if (!d.state) missing.push('state');
+  if (!d.packageType) missing.push('packageType');
+
+  const places = d.places || [];
+  if (!places.length) missing.push('places');
+  else if (places.some((p) => !p.nights || p.nights < 1)) missing.push('nights for every place');
+
+  const expected = places.length ? buildDaySkeleton({
+    pickupLocation: d.pickupLocation,
+    dropLocation: d.dropLocation || d.pickupLocation,
+    places,
+  }).length : 0;
+
+  const days = d.days || [];
+  const chosen = days.filter((x) => x.itineraryId);
+  if (expected && chosen.length < expected) {
+    const pending = [];
+    for (let i = 1; i <= expected; i += 1) {
+      if (!days.find((x) => Number(x.day) === i && x.itineraryId)) pending.push(i);
+    }
+    missing.push(`itinerary for day ${pending.join(', ')}`);
+  }
+
+  if (!(d.cabs || []).length) missing.push('at least one cab');
+  else if ((d.cabs || []).some((c) => !c.onSeasonPrice)) missing.push('onSeasonPrice for every cab');
+
+  if (!(d.policies || []).length) missing.push('inclusions/exclusions/policies confirmation');
+
+  return missing;
+}
+
+/** Compact draft summary injected into the prompt every turn. */
+export function describeDraft(draft) {
+  const d = plainDraft(draft);
+  if (!d) return null;
+
+  const lines = ['CURRENT PACKAGE DRAFT (persisted, survives history trimming):'];
+  for (const key of DRAFT_SCALARS) {
+    if (d[key]) lines.push(`  ${key}: ${d[key]}`);
+  }
+  if ((d.places || []).length) {
+    lines.push(`  places: ${d.places.map((p) => `${p.placeCover} ${p.nights}N`).join(', ')}`);
+  }
+  if ((d.days || []).length) {
+    lines.push('  days:');
+    for (const day of d.days) {
+      lines.push(
+        `    ${day.day}. ${day.itineraryTitle ? `"${day.itineraryTitle}"` : 'NOT CHOSEN'}` +
+          `${day.itineraryId ? '' : ` (expected: ${day.expectedTitle || day.city})`}`
+      );
+    }
+  }
+  if ((d.policies || []).length) {
+    lines.push(
+      `  policies: ${d.policies
+        .map((p) => `${p.name}${p.removeIndices?.length ? ` -${p.removeIndices.join('/')}` : ''}${p.addPoints?.length ? ` +${p.addPoints.length}` : ''}`)
+        .join(', ')}`
+    );
+  }
+  if ((d.cabs || []).length) {
+    lines.push(`  cabs: ${d.cabs.map((c) => `${c.cabId} on=${c.onSeasonPrice || '?'} off=${c.offSeasonPrice || '?'}`).join(', ')}`);
+  }
+
+  const missing = draftMissingFields(d);
+  lines.push(missing.length ? `  STILL MISSING: ${missing.join('; ')}` : '  COMPLETE: ready for create_package');
+  return lines.join('\n');
+}
+
+async function updateDraft(args = {}, currentDraft) {
+  const merged = mergeDraft(currentDraft, args);
+  const missing = draftMissingFields(merged);
+  return {
+    kind: 'draft',
+    draft: merged,
+    data: {
+      ok: true,
+      saved: true,
+      draft: {
+        ...pick(merged, DRAFT_SCALARS),
+        places: merged.places,
+        days: (merged.days || []).map((d) => pick(d, ['day', 'itineraryTitle', 'itineraryId', 'expectedTitle'])),
+        policies: merged.policies,
+        cabs: merged.cabs,
+      },
+      missing,
+      ready: missing.length === 0,
+    },
+  };
+}
+
+// ----------------------------------------------------------- create package
+
+function itinerarySnapshot(doc) {
+  return {
+    itineraryTitle: doc.itineraryTitle,
+    itineraryDescription: doc.itineraryDescription,
+    cityName: doc.cityName,
+    totalHours: doc.totalHours ?? null,
+    distance: doc.distance ?? null,
+    cityArea: Array.isArray(doc.cityArea) ? doc.cityArea : [],
+    activities: [],
+    sightseeing: [],
+    inclusions: [],
+    exclusions: [],
+  };
+}
+
+/** Turns a completed draft into the exact body shape createAdd expects. */
+export async function assemblePackageBody(draft, maker) {
+  const d = plainDraft(draft);
+  const missing = draftMissingFields(d);
+  if (missing.length) {
+    return { ok: false, missing, message: `Draft incomplete: ${missing.join('; ')}` };
+  }
+
+  const places = packagePlacesFrom(d.places);
+  const pickupLocation = normalizeLocation(d.pickupLocation);
+  const dropLocation = normalizeLocation(d.dropLocation) || pickupLocation;
+  const nights = totalNightsOf(places);
+
+  const orderedDays = [...(d.days || [])].sort((a, b) => Number(a.day) - Number(b.day));
+  const ids = orderedDays.map((x) => String(x.itineraryId));
+  if (ids.some((id) => !mongoose.isValidObjectId(id))) {
+    return { ok: false, message: 'A chosen day itinerary id is not valid. Re-run plan_package_days.' };
+  }
+
+  const itineraryDocs = await Itinerary.find({ _id: { $in: ids } }).lean();
+  const itineraryById = new Map(itineraryDocs.map((doc) => [String(doc._id), doc]));
+  const missingItineraries = ids.filter((id) => !itineraryById.has(id));
+  if (missingItineraries.length) {
+    return { ok: false, message: `${missingItineraries.length} chosen itinerary/itineraries no longer exist. Re-run plan_package_days.` };
+  }
+
+  const cabIds = (d.cabs || []).map((c) => String(c.cabId)).filter((id) => mongoose.isValidObjectId(id));
+  const cabDocs = await Cabs.find({ _id: { $in: cabIds } }).lean();
+  const cabById = new Map(cabDocs.map((doc) => [String(doc._id), doc]));
+  const missingCabs = (d.cabs || []).filter((c) => !cabById.has(String(c.cabId)));
+  if (missingCabs.length) {
+    return { ok: false, message: 'A chosen cab no longer exists in the cab list. Ask the user to pick again.' };
+  }
+
+  const policyNames = (d.policies || []).map((p) => p.name);
+  const policyDocs = policyNames.length
+    ? await GlobalMaster.find({ $or: policyNames.map((n) => ({ name: looseExact(n) })) }).lean()
+    : [];
+  const policyByName = new Map(policyDocs.map((doc) => [normalizeTitle(doc.name), doc]));
+
+  let packageInclusions = '';
+  let packageExclusions = '';
+  const customExclusions = [];
+  for (const entry of d.policies || []) {
+    const doc = policyByName.get(normalizeTitle(entry.name));
+    if (!doc) {
+      return { ok: false, message: `Policy block "${entry.name}" not found in GlobalMaster.` };
+    }
+    const html = applyPolicyEdits(doc.description, entry);
+    const slot = globalMasterSlot(doc.name);
+    if (slot === 'packageInclusions') packageInclusions = html;
+    else if (slot === 'packageExclusions') packageExclusions = html;
+    else customExclusions.push({ name: doc.name, description: html });
+  }
+
+  const selectedCabs = {};
+  for (const entry of d.cabs || []) {
+    const doc = cabById.get(String(entry.cabId));
+    const embedded = embedCab(doc, {
+      onSeasonPrice: entry.onSeasonPrice,
+      offSeasonPrice: entry.offSeasonPrice || entry.onSeasonPrice,
+    });
+    const type = doc.cabType || 'Unknown';
+    selectedCabs[type] = selectedCabs[type] || [];
+    selectedCabs[type].push(embedded);
+  }
+  const prices = lowestCabPrices(selectedCabs);
+
+  const finalCosting = computeFinalCosting({
+    transportCost: prices.lowestOnSeasonPrice,
+    margins: d.margins,
+  });
+
+  const itineraryDays = orderedDays.map((day) => ({
+    day: Number(day.day),
+    selectedItinerary: itinerarySnapshot(itineraryById.get(String(day.itineraryId))),
+  }));
+
+  // There is no createdBy on the Add model, so the logged-in user is recorded
+  // here. It is the only trace of who built the package.
+  const leaderName = [maker?.firstName, maker?.lastName].filter(Boolean).join(' ').trim();
+
+  const packageObject = {
+    packageType: d.packageType || '',
+    packageCategory: d.packageCategory || '',
+    teamLeader: leaderName,
+    teamLeaderId: maker?._id ? String(maker._id) : '',
+    packageName: d.packageName,
+    packageImages: [],
+    priceTag: '',
+    duration: formatDuration(nights),
+    state: d.state,
+    status: 'enabled',
+    displayOrder: '',
+    hotelCategory: d.hotelCategory || '',
+    pickupLocation,
+    pickupTransfer: false,
+    dropLocation,
+    validTill: '',
+    tourBy: '',
+    agentPackage: '',
+    customizablePackage: false,
+    packagePlaces: places,
+    themes: d.themes || [],
+    tags: d.tags || [],
+    amenities: [],
+    initialAmount: '',
+    defaultHotelPackage: '',
+    defaultVehicle: '',
+    packageDescription: '',
+    packageInclusions,
+    packageExclusions,
+    customExclusions,
+    cityArea: itineraryDays.map((x) => ({ day: x.day, cityArea: [] })),
+    itineraryDays,
+  };
+
+  return {
+    ok: true,
+    body: {
+      package: packageObject,
+      images: [],
+      canonicalTag: '',
+      metaTitle: '',
+      metaKeywords: '',
+      metaDescription: '',
+      enablePageSchema: false,
+      focusKeyword: '',
+      schemaType: '',
+      cabs: {
+        travelPrices: {
+          prices,
+          selectedCabs,
+          travelInfo: buildTravelInfo({ pickupLocation, dropLocation, places }),
+        },
+      },
+      finalCosting,
+      activities: [],
+      sightseeing: [],
+    },
+  };
+}
+
+function createPreviewFrom(draft, body) {
+  const pkg = body.package;
+  return {
+    packageName: pkg.packageName,
+    duration: pkg.duration,
+    state: pkg.state,
+    packageType: pkg.packageType,
+    pickupLocation: pkg.pickupLocation,
+    dropLocation: pkg.dropLocation,
+    places: pkg.packagePlaces.map((p) => `${p.placeCover} ${p.nights}N`),
+    days: pkg.itineraryDays.map((x) => `${x.day}. ${x.selectedItinerary.itineraryTitle}`),
+    inclusionPoints: policyPoints(pkg.packageInclusions).length,
+    exclusionPoints: policyPoints(pkg.packageExclusions).length,
+    policies: pkg.customExclusions.map((c) => c.name),
+    cabs: Object.entries(body.cabs.travelPrices.selectedCabs).flatMap(([type, list]) =>
+      list.map((c) => `${type} ${c.cabName} on=${c.prices.onSeasonPrice} off=${c.prices.offSeasonPrice}`)
+    ),
+    baseTotal: body.finalCosting.baseTotal,
+    finalPrices: body.finalCosting.finalPrices,
+  };
+}
+
+async function createPackage(args = {}, { user, maker, executeWrites, draft } = {}) {
+  const source = args.draft || draft;
+  const assembled = await assemblePackageBody(source, maker);
+  if (!assembled.ok) {
+    return { kind: 'result', data: { ok: false, kind: 'need_more', ...assembled } };
+  }
+
+  if (!executeWrites) {
+    return {
+      kind: 'confirm',
+      tool: 'create_package',
+      // The draft is snapshotted so a later confirm cannot pick up drifted data.
+      args: { draft: plainDraft(source) },
+      preview: createPreviewFrom(source, assembled.body),
+    };
+  }
+
+  const { body } = assembled;
+  const wrapped = await runController(createAdd, { user, body });
+  const data = wrapped.data || {};
+
+  if (wrapped.statusCode >= 400) {
+    if (data.duplicatePackage) {
+      return {
+        kind: 'result',
+        data: {
+          ok: false,
+          duplicate: true,
+          message: `A package with the same route, duration and day titles already exists: "${data.duplicatePackage.packageName}". Ask the user to change a day, the places or the pickup/drop, or to edit that package instead.`,
+          existing: data.duplicatePackage,
+        },
+      };
+    }
+    return { kind: 'result', data: { ok: false, message: data.message || 'Could not create the package' } };
+  }
+
+  return {
+    kind: 'result',
+    data: {
+      ok: true,
+      created: true,
+      message: `Package "${body.package.packageName}" created.`,
+      packageId: data?._id ? String(data._id) : undefined,
+      duration: body.package.duration,
+      days: body.package.itineraryDays.length,
+      finalPrices: body.finalCosting.finalPrices,
+    },
+    clearDraft: true,
   };
 }
 
@@ -615,6 +1104,102 @@ export const AI_PACKAGE_TOOLS = [
           cabOnSeasonPrice: { type: 'number', description: 'Only pass once the user has given the cab price' },
         },
       },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_package_draft',
+      description:
+        'Save package details into the persistent draft after the user decides something: a chosen itinerary for a day, the policy blocks, a cab with its prices, the state, or the package type. Send only the fields that changed. Returns what is still missing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          packageName: { type: 'string' },
+          pickupLocation: { type: 'string' },
+          dropLocation: { type: 'string' },
+          state: { type: 'string', description: 'Indian state, e.g. Himachal Pradesh. Required before create.' },
+          packageType: { type: 'string', description: 'e.g. Family, Honeymoon, Group. Required before create.' },
+          packageCategory: { type: 'string' },
+          hotelCategory: { type: 'string' },
+          themes: { type: 'array', items: { type: 'string' } },
+          tags: { type: 'array', items: { type: 'string' } },
+          places: {
+            type: 'array',
+            description: 'Replaces the whole places list. Re-run plan_package_days after changing this.',
+            items: {
+              type: 'object',
+              properties: { placeCover: { type: 'string' }, nights: { type: 'number' } },
+            },
+          },
+          days: {
+            type: 'array',
+            description: 'Merged by day number. Send only the days the user just decided.',
+            items: {
+              type: 'object',
+              required: ['day', 'itineraryId'],
+              properties: {
+                day: { type: 'number' },
+                itineraryId: { type: 'string', description: 'id from plan_package_days candidates or search_itineraries' },
+                itineraryTitle: { type: 'string' },
+              },
+            },
+          },
+          policies: {
+            type: 'array',
+            description:
+              'Replaces the whole policy list. Use the exact GlobalMaster names from get_globalmaster. removeIndices are the 1-based point numbers shown to the user.',
+            items: {
+              type: 'object',
+              required: ['name'],
+              properties: {
+                name: { type: 'string' },
+                removeIndices: { type: 'array', items: { type: 'number' } },
+                addPoints: { type: 'array', items: { type: 'string' } },
+              },
+            },
+          },
+          cabs: {
+            type: 'array',
+            description: 'Replaces the whole cab list. Prices must come from the user.',
+            items: {
+              type: 'object',
+              required: ['cabId', 'onSeasonPrice'],
+              properties: {
+                cabId: { type: 'string', description: 'cabId from search_cabs' },
+                onSeasonPrice: { type: 'string' },
+                offSeasonPrice: { type: 'string' },
+              },
+            },
+          },
+          margins: {
+            type: 'object',
+            description: 'Percent margins. Defaults to 5 each.',
+            properties: {
+              b2b: { type: 'number' },
+              internal: { type: 'number' },
+              website: { type: 'number' },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_package',
+      description:
+        'Create the package from the saved draft. Call only when the draft reports nothing missing. The server asks the user to confirm before saving.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'clear_package_draft',
+      description: 'Discard the current package draft and start over.',
+      parameters: { type: 'object', properties: {} },
     },
   },
   {
@@ -720,11 +1305,19 @@ export const AI_PACKAGE_TOOLS = [
 
 export const AI_PACKAGE_TOOL_NAMES = new Set(AI_PACKAGE_TOOLS.map((t) => t.function.name));
 
-export async function executePackageTool(name, args = {}) {
+export const PACKAGE_WRITE_TOOLS = new Set(['create_package']);
+
+export async function executePackageTool(name, args = {}, context = {}) {
   try {
     switch (name) {
       case 'plan_package_days':
-        return { kind: 'result', data: await planPackageDays(args) };
+        return await planAndSaveDraft(args, context.draft);
+      case 'update_package_draft':
+        return await updateDraft(args, context.draft);
+      case 'clear_package_draft':
+        return { kind: 'draft', draft: null, data: { ok: true, message: 'Draft cleared.' } };
+      case 'create_package':
+        return await createPackage(args, context);
       case 'search_itineraries':
         return { kind: 'result', data: await searchItineraries(args) };
       case 'get_itinerary':
@@ -746,3 +1339,4 @@ export async function executePackageTool(name, args = {}) {
 }
 
 export { htmlToPoints, itineraryPreview, packagePreview, READ_ONLY_TOOLS };
+export { planPackageDays };
