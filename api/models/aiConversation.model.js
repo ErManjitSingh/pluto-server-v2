@@ -31,6 +31,84 @@ const pendingActionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const draftPlaceSchema = new mongoose.Schema(
+  {
+    placeCover: { type: String, required: true },
+    nights: { type: Number, default: 0 },
+    transfer: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const draftDaySchema = new mongoose.Schema(
+  {
+    day: { type: Number, required: true },
+    purpose: String,
+    itineraryType: String,
+    city: String,
+    from: String,
+    to: String,
+    expectedTitle: String,
+    itineraryId: String,
+    itineraryTitle: String,
+  },
+  { _id: false }
+);
+
+/**
+ * Policy text is never stored here. Only the GlobalMaster block name and the
+ * edits the user asked for, so the stored HTML stays the single source.
+ * removeIndices are 1-based, matching the numbering shown to the user.
+ */
+const draftPolicySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    removeIndices: { type: [Number], default: [] },
+    addPoints: { type: [String], default: [] },
+  },
+  { _id: false }
+);
+
+const draftCabSchema = new mongoose.Schema(
+  {
+    cabId: { type: String, required: true },
+    onSeasonPrice: { type: String, default: '' },
+    offSeasonPrice: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+/**
+ * A package being assembled across several chat turns. It is kept on the
+ * conversation instead of the message history because the history window is
+ * trimmed and would drop the earliest decisions mid-build.
+ */
+const draftPackageSchema = new mongoose.Schema(
+  {
+    packageName: String,
+    pickupLocation: String,
+    dropLocation: String,
+    duration: String,
+    state: String,
+    packageType: String,
+    packageCategory: String,
+    hotelCategory: String,
+    themes: { type: [String], default: [] },
+    tags: { type: [String], default: [] },
+    places: { type: [draftPlaceSchema], default: [] },
+    days: { type: [draftDaySchema], default: [] },
+    policies: { type: [draftPolicySchema], default: [] },
+    cabs: { type: [draftCabSchema], default: [] },
+    margins: {
+      b2b: { type: Number, default: 5 },
+      internal: { type: Number, default: 5 },
+      website: { type: Number, default: 5 },
+    },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const aiConversationSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -50,6 +128,10 @@ const aiConversationSchema = new mongoose.Schema(
     },
     pendingAction: {
       type: pendingActionSchema,
+      default: null,
+    },
+    draftPackage: {
+      type: draftPackageSchema,
       default: null,
     },
   },
