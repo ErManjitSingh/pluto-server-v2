@@ -13,15 +13,15 @@ import {
 import {
   AI_PACKAGE_TOOLS,
   AI_PACKAGE_TOOL_NAMES,
+  describeDraft,
   executePackageTool,
 } from '../services/aiPackageTools.service.js';
 
 const AI_TOOLS = [...AI_LEAD_TOOLS, ...AI_PACKAGE_TOOLS];
 
-/** Package tools are read-only, so they ignore the write context entirely. */
 function runTool(name, args, context) {
   if (AI_PACKAGE_TOOL_NAMES.has(name)) {
-    return executePackageTool(name, args);
+    return executePackageTool(name, args, context);
   }
   return executeLeadTool(name, args, context);
 }
@@ -29,7 +29,9 @@ function runTool(name, args, context) {
 const HISTORY_LIMIT = 16;
 const MAX_TOOL_ROUNDS = 4;
 const PENDING_TTL_MS = 10 * 60 * 1000;
-const DEFAULT_DAILY_LIMIT = 40;
+// Building one package takes several turns, so the old limit of 40 was roughly
+// four packages per day. Override with AI_DAILY_LIMIT_PER_USER.
+const DEFAULT_DAILY_LIMIT = 120;
 const DEFAULT_MODEL = 'gpt-4.1-mini';
 
 function buildSystemPrompt() {
@@ -56,9 +58,9 @@ Never try bulk delete or "delete all".
 Prefer a compact list: leadId, name, mobile, destination, status.
 When stating a count, also state the IST date and whether it is assignedAt or createdAt.
 
-=== PACKAGES (READ-ONLY IN THIS VERSION) ===
-You can search packages and build a complete package plan, but you CANNOT save anything yet.
-Never claim a package was created, updated or deleted. When the plan is ready, show the summary and say saving is not enabled yet.
+=== PACKAGES ===
+You can search packages, plan a new one, and create it. You cannot update or delete packages.
+Never claim a package was created unless create_package returned created true.
 
 Day rule: total days = total nights + 1. Each place gets 1 travel day plus (nights - 1) local sightseeing days. The last day travels to the drop location.
 For any "create a package" request, first collect package name, pickup, drop, and the places with nights, then call plan_package_days. It returns the day plan with itinerary candidates for each day.
@@ -72,6 +74,11 @@ Always show these as plain-text points and ask the user to confirm or edit befor
 
 For cabs, ask the cabType first (Hatchback, Sedan, SUV, Traveller, ACBus), then call search_cabs and let the user pick a specific cab.
 The cab collection stores no price. Always ask the user for the on-season and off-season price. Never guess or reuse a price from another package.
+
+Every decision the user makes must be saved with update_package_draft straight away: the chosen itinerary per day, the policy blocks, the cab and its prices, the state and the package type.
+The draft is shown to you below on every turn. Trust the draft over the chat history and never re-ask for something the draft already holds.
+When the draft reports nothing missing, call create_package. The server will show a preview and ask the user to confirm before saving.
+State and package type are required before creating. Ask for them if the draft does not have them.
 
 Ask for missing information one or two questions at a time, not all at once.`;
 }
@@ -187,6 +194,22 @@ async function loadConversation(userId, conversationId) {
 
 function buildPreviewText(tool, preview = {}) {
   const who = [preview.leadId, preview.name, preview.mobile].filter(Boolean).join(' · ');
+  if (tool === 'create_package') {
+    const lines = [
+      `Yeh package create karun?`,
+      `Name: ${preview.packageName}`,
+      `Duration: ${preview.duration}  |  ${preview.state}  |  ${preview.packageType}`,
+      `Route: ${preview.pickupLocation} → ${(preview.places || []).join(' → ')} → ${preview.dropLocation}`,
+      'Days:',
+      ...(preview.days || []).map((d) => `  ${d}`),
+      `Inclusions: ${preview.inclusionPoints} points  |  Exclusions: ${preview.exclusionPoints} points`,
+      `Policies: ${(preview.policies || []).join(', ') || '-'}`,
+      `Cabs: ${(preview.cabs || []).join(', ') || '-'}`,
+      `Base: ${preview.baseTotal}  |  Final: b2b ${preview.finalPrices?.b2b}, internal ${preview.finalPrices?.internal}, website ${preview.finalPrices?.website}`,
+      'Confirm ke baad hi save hoga.',
+    ];
+    return lines.join('\n');
+  }
   if (tool === 'create_lead') {
     return `Yeh lead create karun?\nName: ${preview.name || '-'}\nMobile: ${preview.mobile || '-'}\nDestination: ${preview.destination || '-'}\nBudget: ${preview.budget || '-'}`;
   }
@@ -204,9 +227,12 @@ async function applyWriteResult(conversation, userId, maker, pending) {
     user: { id: userId },
     maker,
     executeWrites: true,
+    draft: conversation.draftPackage,
   });
   const data = result.data || {};
   conversation.pendingAction = null;
+  // A created package is finished business, so the draft must not linger.
+  if (result.clearDraft) conversation.draftPackage = null;
   const text = data.ok === false
     ? (data.message || 'Action failed')
     : (data.message || 'Done');
@@ -311,8 +337,10 @@ export const overview = async (req, res, next) => {
     conversation.pendingAction = null;
     conversation.messages.push({ role: 'user', content: message, type: 'answer' });
 
+    const draftSummary = describeDraft(conversation.draftPackage);
     const modelMessages = [
       { role: 'system', content: buildSystemPrompt() },
+      ...(draftSummary ? [{ role: 'system', content: draftSummary }] : []),
       ...historyForModel(conversation.messages),
     ];
 
@@ -354,12 +382,19 @@ export const overview = async (req, res, next) => {
           user: req.user,
           maker,
           executeWrites: false,
+          draft: conversation.draftPackage,
         });
 
         if (toolResult.kind === 'confirm') {
           confirmPayload = toolResult;
           stopForConfirm = true;
           break;
+        }
+
+        // Draft edits are applied immediately so later tool calls in this same
+        // turn already see them.
+        if (toolResult.kind === 'draft') {
+          conversation.draftPackage = toolResult.draft;
         }
 
         hadToolResult = true;
@@ -375,7 +410,8 @@ export const overview = async (req, res, next) => {
 
     if (confirmPayload) {
       let preview = confirmPayload.preview || {};
-      if (confirmPayload.tool !== 'create_lead' && confirmPayload.args?.id) {
+      const enrichFromLead = confirmPayload.tool === 'update_lead' || confirmPayload.tool === 'delete_lead';
+      if (enrichFromLead && confirmPayload.args?.id) {
         const found = await executeLeadTool('get_lead', { id: confirmPayload.args.id }, {
           user: req.user,
           maker,
