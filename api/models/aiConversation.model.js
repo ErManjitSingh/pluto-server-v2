@@ -51,6 +51,16 @@ const draftDaySchema = new mongoose.Schema(
     expectedTitle: String,
     itineraryId: String,
     itineraryTitle: String,
+    /**
+     * Options offered for a day that still needs a choice. Tool results are not
+     * kept in the message history, so without this the ids are gone by the time
+     * the user answers "the first one".
+     */
+    candidates: {
+      type: [{ id: String, title: String }],
+      default: [],
+      _id: false,
+    },
   },
   { _id: false }
 );
