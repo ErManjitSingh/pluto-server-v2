@@ -31,6 +31,14 @@ const CANDIDATE_POOL = 60;
 const NOISE_WORDS = /\b(arrival|arrive|departure|depart|drop|transfer|airport|railway|volvo|overnight)\b/i;
 const PACKAGE_LIMIT = 12;
 const DESCRIPTION_PREVIEW = 220;
+const STANDARD_POLICY_NAMES = [
+  'Inclusion',
+  'Exclusions',
+  'Payment Policy',
+  'Cancellation Policy',
+  'Refund Policy',
+  'Points to Note',
+];
 
 const READ_ONLY_TOOLS = new Set([
   'search_itineraries',
@@ -180,6 +188,17 @@ function isOptionalPolicy(name) {
   return normalizeTitle(name).includes('honeymoon');
 }
 
+function canonicalPolicyName(name) {
+  const key = normalizeTitle(name);
+  if (key === 'inclusion' || key === 'inclusions') return 'Inclusion';
+  if (key === 'exclusion' || key === 'exclusions') return 'Exclusions';
+  if (key.includes('payment')) return 'Payment Policy';
+  if (key.includes('cancellation')) return 'Cancellation Policy';
+  if (key.includes('refund')) return 'Refund Policy';
+  if (key.includes('points to note') || key === 'notes') return 'Points to Note';
+  return normalizeLocation(name);
+}
+
 // ---------------------------------------------------------------- previews
 
 function itineraryCandidate(doc) {
@@ -327,7 +346,18 @@ async function getItinerary(args = {}) {
   };
 }
 
-async function getGlobalMaster(args = {}) {
+async function getGlobalMaster(args = {}, currentDraft) {
+  const current = plainDraft(currentDraft);
+  if ((current?.policies || []).length && !args.forceReselect) {
+    return {
+      ok: true,
+      alreadyChosen: true,
+      message:
+        'Policies are already saved on the draft. Do not list or ask them again. Only change a point if the user asked to edit one.',
+      policies: current.policies,
+    };
+  }
+
   const filter = {};
   const names = Array.isArray(args.names) ? args.names.filter(Boolean) : [];
   if (names.length) {
@@ -358,8 +388,21 @@ async function getGlobalMaster(args = {}) {
   };
 }
 
-async function searchCabs(args = {}) {
-  const filter = {};
+async function searchCabs(args = {}, currentDraft) {
+  const current = plainDraft(currentDraft);
+  const locked = (current?.cabs || []).filter((c) => c.cabId || c.cabName);
+  if (locked.length && !args.forceReselect && !args.query) {
+    return {
+      ok: true,
+      alreadyChosen: true,
+      message:
+        'A cab is already saved on the draft. Do not tell the user it is unavailable and do not list cabs again. Only ask if onSeasonPrice or offSeasonPrice is missing.',
+      cabs: locked,
+      availableCabTypes: await Cabs.distinct('cabType'),
+      cabsByType: {},
+      cabOptions: current.cabOptions || [],
+    };
+  }  const filter = {};
   if (args.cabType) filter.cabType = looseExact(args.cabType);
   if (args.query) filter.cabName = contains(args.query);
   if (args.seatingCapacity) filter.cabSeatingCapacity = contains(args.seatingCapacity);
@@ -379,22 +422,169 @@ async function searchCabs(args = {}) {
   }
 
   const allTypes = await Cabs.distinct('cabType');
+  const cabOptions = flattenCabOptions(grouped);
 
   return {
     ok: true,
     total: rows.length,
     availableCabTypes: allTypes,
     cabsByType: grouped,
+    cabOptions,
     priceRule:
-      'The Cabs collection stores no price. Always ask the user for onSeasonPrice and offSeasonPrice for each selected cab. Never guess a price.',
+      'The Cabs collection stores no price. Always ask the user for onSeasonPrice and offSeasonPrice for each selected cab. Never guess a price. If a cab is already LOCKED in the draft, do not list cabs again — only ask for any missing price.',
   };
 }
 
 function addIdFilter(id) {
-  const raw = String(id);
+  const raw = String(id || '').trim();
   const ids = [raw];
-  if (mongoose.isValidObjectId(raw)) ids.push(new mongoose.Types.ObjectId(raw));
+  if (isHexObjectId(raw)) ids.push(new mongoose.Types.ObjectId(raw));
   return { _id: { $in: ids } };
+}
+
+/** mongoose.isValidObjectId("Swift Dzire") can be true; only 24-hex is a real id. */
+function isHexObjectId(value) {
+  return /^[a-fA-F0-9]{24}$/.test(String(value || '').trim());
+}
+
+function mixedIds(idList = []) {
+  const out = [];
+  for (const id of idList) {
+    const raw = String(id || '').trim();
+    if (!raw) continue;
+    out.push(raw);
+    if (isHexObjectId(raw)) out.push(new mongoose.Types.ObjectId(raw));
+  }
+  return out;
+}
+
+async function findByAnyIds(Model, idList) {
+  const ids = mixedIds(idList);
+  if (!ids.length) return [];
+  return Model.find({ _id: { $in: ids } }).lean();
+}
+
+function flattenCabOptions(grouped = {}) {
+  const out = [];
+  for (const [cabType, list] of Object.entries(grouped)) {
+    for (const cab of Array.isArray(list) ? list : []) {
+      out.push({
+        cabId: String(cab.cabId || cab._id || ''),
+        cabName: cab.cabName || '',
+        cabType: cab.cabType || cabType,
+        seatingCapacity: cab.seatingCapacity || cab.cabSeatingCapacity || '',
+      });
+    }
+  }
+  return out;
+}
+
+function choiceToIndex(raw, length) {
+  if (raw == null || String(raw).trim() === '') return null;
+  const words = { first: 1, pehla: 1, pehli: 1, second: 2, dusra: 2, third: 3, tisra: 3 };
+  const n = words[String(raw).trim().toLowerCase()] || Number(raw);
+  if (!Number.isFinite(n) || n < 1 || n > length) return null;
+  return n;
+}
+
+function matchCabOption(options = [], incoming = {}) {
+  const list = Array.isArray(options) ? options : [];
+  if (!list.length) return null;
+
+  const index = choiceToIndex(
+    incoming.choiceIndex ?? incoming.choice ?? incoming.option,
+    list.length
+  );
+  if (index) return list[index - 1];
+
+  const id = String(incoming.cabId || '').trim();
+  if (isHexObjectId(id)) {
+    const byId = list.find((c) => String(c.cabId) === id);
+    if (byId) return byId;
+  }
+
+  const name = String(incoming.cabName || (!isHexObjectId(id) ? id : '') || '').trim();
+  if (!name) return null;
+  const want = normalizeTitle(name);
+  const exact = list.filter((c) => normalizeTitle(c.cabName) === want);
+  if (exact.length === 1) return exact[0];
+  const partial = list.filter(
+    (c) => normalizeTitle(c.cabName).includes(want) || want.includes(normalizeTitle(c.cabName))
+  );
+  if (partial.length === 1) return partial[0];
+  return null;
+}
+
+async function findCabDocument(incoming = {}, options = []) {
+  const fromOpt = matchCabOption(options, incoming);
+  if (fromOpt?.cabId) {
+    const docs = await findByAnyIds(Cabs, [fromOpt.cabId]);
+    if (docs[0]) return docs[0];
+    return {
+      _id: fromOpt.cabId,
+      cabName: fromOpt.cabName,
+      cabType: fromOpt.cabType,
+      cabSeatingCapacity: fromOpt.seatingCapacity,
+    };
+  }
+
+  const id = String(incoming.cabId || '').trim();
+  if (isHexObjectId(id)) {
+    const docs = await findByAnyIds(Cabs, [id]);
+    if (docs[0]) return docs[0];
+  }
+
+  const name = String(incoming.cabName || (!isHexObjectId(id) ? id : '') || '').trim();
+  if (!name) return null;
+
+  const exact = await Cabs.find({ cabName: looseExact(name) }).lean();
+  if (exact.length === 1) return exact[0];
+  const fuzzy = await Cabs.find({ cabName: contains(name) }).limit(8).lean();
+  if (fuzzy.length === 1) return fuzzy[0];
+  return null;
+}
+
+async function resolveIncomingCabs(incomingCabs, currentDraft) {
+  const current = plainDraft(currentDraft);
+  const options = current?.cabOptions || [];
+  const existing = current?.cabs || [];
+
+  if (!Array.isArray(incomingCabs) || !incomingCabs.length) return existing;
+
+  // Prices-only update against the already locked cab.
+  const onlyPrices = incomingCabs.length === 1
+    && !incomingCabs[0].cabId
+    && !incomingCabs[0].cabName
+    && incomingCabs[0].choiceIndex == null
+    && incomingCabs[0].choice == null
+    && (incomingCabs[0].onSeasonPrice || incomingCabs[0].offSeasonPrice);
+  if (onlyPrices && existing.length === 1) {
+    const priceOn = String(incomingCabs[0].onSeasonPrice ?? existing[0].onSeasonPrice ?? '').trim();
+    return [{
+      ...existing[0],
+      onSeasonPrice: priceOn,
+      offSeasonPrice: String(incomingCabs[0].offSeasonPrice ?? existing[0].offSeasonPrice ?? priceOn).trim(),
+    }];
+  }
+
+  const resolved = [];
+  for (const incoming of incomingCabs) {
+    const doc = await findCabDocument(incoming, options);
+    if (!doc) continue;
+    const prev = existing.find((c) => String(c.cabId) === String(doc._id));
+    const onSeasonPrice = String(incoming.onSeasonPrice ?? prev?.onSeasonPrice ?? '').trim();
+    const offSeasonPrice = String(
+      incoming.offSeasonPrice ?? prev?.offSeasonPrice ?? onSeasonPrice
+    ).trim();
+    resolved.push({
+      cabId: String(doc._id),
+      cabName: doc.cabName || '',
+      cabType: doc.cabType || '',
+      onSeasonPrice,
+      offSeasonPrice,
+    });
+  }
+  return resolved.length ? resolved : existing;
 }
 
 async function searchPackages(args = {}) {
@@ -718,6 +908,7 @@ async function planAndSaveDraft(args = {}, currentDraft) {
     dropLocation: plan.dropLocation,
     duration: plan.derivedDuration,
     places: plan.packagePlaces,
+    packageType: args.packageType || current?.packageType || 'Family',
     replaceDays: plan.days.map((d) => {
       const previous = previousByDay.get(Number(d.day));
       const keepChosen = Boolean(previous?.itineraryId);
@@ -791,6 +982,10 @@ function resolveDayChoice(existingDay = {}, incoming = {}) {
   let itineraryTitle = incoming.itineraryTitle;
 
   const rawChoice = incoming.choice ?? incoming.choiceIndex ?? incoming.option;
+  if (itineraryId && !isHexObjectId(itineraryId)) {
+    itineraryTitle = itineraryTitle || itineraryId;
+    itineraryId = undefined;
+  }
   if (!itineraryId && rawChoice != null && String(rawChoice).trim() !== '') {
     const words = { first: 1, pehla: 1, pehli: 1, second: 2, dusra: 2, third: 3, tisra: 3 };
     const asWord = words[String(rawChoice).trim().toLowerCase()];
@@ -825,24 +1020,54 @@ export function mergeDraft(current, patch = {}) {
   const base = plainDraft(current) || { places: [], days: [], policies: [], cabs: [] };
 
   for (const key of DRAFT_SCALARS) {
-    if (patch[key] !== undefined) base[key] = normalizeLocation(patch[key]);
+    if (patch[key] !== undefined && String(patch[key]).trim() !== '') {
+      base[key] = normalizeLocation(patch[key]);
+    }
   }
   for (const key of ['themes', 'tags']) {
     if (Array.isArray(patch[key])) base[key] = patch[key].map((v) => String(v).trim()).filter(Boolean);
   }
   if (patch.places !== undefined) base.places = packagePlacesFrom(patch.places);
-  if (patch.policies !== undefined) {
-    base.policies = (patch.policies || []).map((p) => ({
-      name: normalizeLocation(p?.name),
-      removeIndices: (p?.removeIndices || []).map(Number).filter(Number.isFinite),
-      addPoints: (p?.addPoints || []).map((t) => String(t).trim()).filter(Boolean),
+  if (patch.confirmPolicies === true && !(base.policies || []).length) {
+    base.policies = STANDARD_POLICY_NAMES.map((name) => ({
+      name,
+      removeIndices: [],
+      addPoints: [],
     }));
+  }
+  if (patch.policies !== undefined) {
+    const byName = new Map((base.policies || []).map((p) => [normalizeTitle(p.name), { ...p }]));
+    for (const incoming of patch.policies || []) {
+      const name = canonicalPolicyName(incoming?.name);
+      if (!name) continue;
+      const prev = byName.get(normalizeTitle(name)) || { name, removeIndices: [], addPoints: [] };
+      byName.set(normalizeTitle(name), {
+        name,
+        removeIndices: incoming.removeIndices !== undefined
+          ? (incoming.removeIndices || []).map(Number).filter(Number.isFinite)
+          : prev.removeIndices || [],
+        addPoints: incoming.addPoints !== undefined
+          ? (incoming.addPoints || []).map((t) => String(t).trim()).filter(Boolean)
+          : prev.addPoints || [],
+      });
+    }
+    base.policies = [...byName.values()];
+  }
+  if (patch.cabOptions !== undefined) {
+    base.cabOptions = (patch.cabOptions || []).map((c) => ({
+      cabId: String(c.cabId || c._id || ''),
+      cabName: c.cabName || '',
+      cabType: c.cabType || '',
+      seatingCapacity: c.seatingCapacity || c.cabSeatingCapacity || '',
+    })).filter((c) => c.cabId || c.cabName);
   }
   if (patch.cabs !== undefined) {
     base.cabs = (patch.cabs || [])
       .filter((c) => c?.cabId)
       .map((c) => ({
         cabId: String(c.cabId).trim(),
+        cabName: c.cabName || '',
+        cabType: c.cabType || '',
         onSeasonPrice: String(c.onSeasonPrice ?? '').trim(),
         offSeasonPrice: String(c.offSeasonPrice ?? c.onSeasonPrice ?? '').trim(),
       }));
@@ -880,7 +1105,6 @@ export function draftMissingFields(draft) {
   if (!d.packageName) missing.push('packageName');
   if (!d.pickupLocation) missing.push('pickupLocation');
   if (!d.state) missing.push('state');
-  if (!d.packageType) missing.push('packageType');
 
   const places = d.places || [];
   if (!places.length) missing.push('places');
@@ -941,13 +1165,24 @@ export function describeDraft(draft) {
   }
   if ((d.policies || []).length) {
     lines.push(
-      `  policies: ${d.policies
+      `  policies: LOCKED — ${d.policies
         .map((p) => `${p.name}${p.removeIndices?.length ? ` -${p.removeIndices.join('/')}` : ''}${p.addPoints?.length ? ` +${p.addPoints.length}` : ''}`)
-        .join(', ')}`
+        .join(', ')}. Do not ask again.`
     );
   }
   if ((d.cabs || []).length) {
-    lines.push(`  cabs: ${d.cabs.map((c) => `${c.cabId} on=${c.onSeasonPrice || '?'} off=${c.offSeasonPrice || '?'}`).join(', ')}`);
+    lines.push(
+      `  cabs: ${d.cabs
+        .map((c) => {
+          const label = c.cabName || c.cabId;
+          const locked = isHexObjectId(c.cabId) ? 'LOCKED' : 'UNRESOLVED';
+          return `${locked} ${label} (${c.cabType || 'cab'}) on=${c.onSeasonPrice || '?'} off=${c.offSeasonPrice || '?'}`;
+        })
+        .join(', ')}`
+    );
+    if ((d.cabs || []).some((c) => c.onSeasonPrice)) {
+      lines.push('  Do not ask for the cab again. Only ask for a missing on/off season price.');
+    }
   }
 
   const missing = draftMissingFields(d);
@@ -955,8 +1190,62 @@ export function describeDraft(draft) {
   return lines.join('\n');
 }
 
+async function findItineraryDoc(day = {}) {
+  const id = String(day.itineraryId || '').trim();
+  if (isHexObjectId(id)) {
+    const docs = await findByAnyIds(Itinerary, [id]);
+    if (docs[0]) return docs[0];
+  }
+
+  const fromCandidates = (day.candidates || []).find((c) => {
+    if (isHexObjectId(id) && String(c.id) === id) return true;
+    const title = day.itineraryTitle || (!isHexObjectId(id) ? id : '');
+    return title && (normalizeTitle(c.title) === normalizeTitle(title) || stripTitleNoise(c.title) === stripTitleNoise(title));
+  });
+  if (fromCandidates?.id) {
+    const docs = await findByAnyIds(Itinerary, [fromCandidates.id]);
+    if (docs[0]) return docs[0];
+  }
+
+  const title = String(day.itineraryTitle || (!isHexObjectId(id) ? id : '') || '').trim();
+  if (!title) return null;
+
+  const filter = { status: 'enabled', itineraryTitle: looseExact(title) };
+  if (day.city) filter.cityName = looseExact(day.city);
+  const exact = await Itinerary.find(filter).limit(5).lean();
+  if (exact[0]) return exact[0];
+
+  const fuzzy = await Itinerary.find({
+    status: 'enabled',
+    itineraryTitle: contains(title),
+    ...(day.city ? { cityName: looseExact(day.city) } : {}),
+  })
+    .limit(5)
+    .lean();
+  return fuzzy.length === 1 ? fuzzy[0] : null;
+}
+
 async function updateDraft(args = {}, currentDraft) {
-  const merged = mergeDraft(currentDraft, args);
+  const patch = { ...args };
+  if (args.confirmPolicies === true || args.policiesConfirm === true) {
+    patch.confirmPolicies = true;
+  }
+  if (args.cabs !== undefined) {
+    patch.cabs = await resolveIncomingCabs(args.cabs, currentDraft);
+  }
+  const merged = mergeDraft(currentDraft, patch);
+  if (!merged.packageType) merged.packageType = 'Family';
+
+  for (const day of merged.days || []) {
+    if (isHexObjectId(day.itineraryId)) continue;
+    const doc = await findItineraryDoc(day);
+    if (doc) {
+      day.itineraryId = String(doc._id);
+      day.itineraryTitle = doc.itineraryTitle;
+      day.candidates = [];
+    }
+  }
+
   const missing = draftMissingFields(merged);
   return {
     kind: 'draft',
@@ -973,6 +1262,9 @@ async function updateDraft(args = {}, currentDraft) {
       },
       missing,
       ready: missing.length === 0,
+      ...(args.cabs !== undefined && !(merged.cabs || []).length
+        ? { message: 'Cab not saved. Pass choiceIndex, cabName (e.g. Swift Dzire), or the cabId from search_cabs.' }
+        : {}),
     },
   };
 }
@@ -1008,27 +1300,44 @@ export async function assemblePackageBody(draft, maker) {
   const nights = totalNightsOf(places);
 
   const orderedDays = [...(d.days || [])].sort((a, b) => Number(a.day) - Number(b.day));
-  const ids = orderedDays.map((x) => String(x.itineraryId));
-  if (ids.some((id) => !mongoose.isValidObjectId(id))) {
-    return { ok: false, message: 'A chosen day itinerary id is not valid. Re-run plan_package_days.' };
+  const itineraryDaysResolved = [];
+  for (const day of orderedDays) {
+    const doc = await findItineraryDoc(day);
+    if (!doc) {
+      return {
+        ok: false,
+        message: `Could not match Day ${day.day} itinerary "${day.itineraryTitle || day.itineraryId || day.expectedTitle}". Ask the user to pick from OPTIONS — do not say it was deleted.`,
+      };
+    }
+    itineraryDaysResolved.push({ day: Number(day.day), doc });
   }
 
-  const itineraryDocs = await Itinerary.find({ _id: { $in: ids } }).lean();
-  const itineraryById = new Map(itineraryDocs.map((doc) => [String(doc._id), doc]));
-  const missingItineraries = ids.filter((id) => !itineraryById.has(id));
-  if (missingItineraries.length) {
-    return { ok: false, message: `${missingItineraries.length} chosen itinerary/itineraries no longer exist. Re-run plan_package_days.` };
+  const resolvedCabs = [];
+  for (const entry of d.cabs || []) {
+    const doc = await findCabDocument(entry, d.cabOptions || []);
+    if (!doc?._id) {
+      return {
+        ok: false,
+        message: `Could not match cab "${entry.cabName || entry.cabId}". Save it with update_package_draft using cabName or choiceIndex — do not tell the user it was deleted.`,
+      };
+    }
+    resolvedCabs.push({
+      cabId: String(doc._id),
+      cabName: doc.cabName,
+      cabType: doc.cabType,
+      onSeasonPrice: entry.onSeasonPrice,
+      offSeasonPrice: entry.offSeasonPrice || entry.onSeasonPrice,
+      doc,
+    });
+  }
+  if (!resolvedCabs.length) {
+    return { ok: false, message: 'Pick a cab before creating the package.' };
   }
 
-  const cabIds = (d.cabs || []).map((c) => String(c.cabId)).filter((id) => mongoose.isValidObjectId(id));
-  const cabDocs = await Cabs.find({ _id: { $in: cabIds } }).lean();
-  const cabById = new Map(cabDocs.map((doc) => [String(doc._id), doc]));
-  const missingCabs = (d.cabs || []).filter((c) => !cabById.has(String(c.cabId)));
-  if (missingCabs.length) {
-    return { ok: false, message: 'A chosen cab no longer exists in the cab list. Ask the user to pick again.' };
-  }
-
-  const policyNames = (d.policies || []).map((p) => p.name);
+  const policyEntries = (d.policies || []).length
+    ? d.policies
+    : STANDARD_POLICY_NAMES.map((name) => ({ name, removeIndices: [], addPoints: [] }));
+  const policyNames = policyEntries.map((p) => canonicalPolicyName(p.name));
   const policyDocs = policyNames.length
     ? await GlobalMaster.find({ $or: policyNames.map((n) => ({ name: looseExact(n) })) }).lean()
     : [];
@@ -1037,10 +1346,11 @@ export async function assemblePackageBody(draft, maker) {
   let packageInclusions = '';
   let packageExclusions = '';
   const customExclusions = [];
-  for (const entry of d.policies || []) {
-    const doc = policyByName.get(normalizeTitle(entry.name));
+  for (const entry of policyEntries) {
+    const name = canonicalPolicyName(entry.name);
+    const doc = policyByName.get(normalizeTitle(name));
     if (!doc) {
-      return { ok: false, message: `Policy block "${entry.name}" not found in GlobalMaster.` };
+      return { ok: false, message: `Policy block "${name}" not found in GlobalMaster.` };
     }
     const html = applyPolicyEdits(doc.description, entry);
     const slot = globalMasterSlot(doc.name);
@@ -1050,13 +1360,12 @@ export async function assemblePackageBody(draft, maker) {
   }
 
   const selectedCabs = {};
-  for (const entry of d.cabs || []) {
-    const doc = cabById.get(String(entry.cabId));
-    const embedded = embedCab(doc, {
+  for (const entry of resolvedCabs) {
+    const embedded = embedCab(entry.doc, {
       onSeasonPrice: entry.onSeasonPrice,
       offSeasonPrice: entry.offSeasonPrice || entry.onSeasonPrice,
     });
-    const type = doc.cabType || 'Unknown';
+    const type = entry.doc.cabType || 'Unknown';
     selectedCabs[type] = selectedCabs[type] || [];
     selectedCabs[type].push(embedded);
   }
@@ -1067,9 +1376,9 @@ export async function assemblePackageBody(draft, maker) {
     margins: d.margins,
   });
 
-  const itineraryDays = orderedDays.map((day) => ({
-    day: Number(day.day),
-    selectedItinerary: itinerarySnapshot(itineraryById.get(String(day.itineraryId))),
+  const itineraryDays = itineraryDaysResolved.map(({ day, doc }) => ({
+    day,
+    selectedItinerary: itinerarySnapshot(doc),
   }));
 
   // There is no createdBy on the Add model, so the logged-in user is recorded
@@ -1077,7 +1386,7 @@ export async function assemblePackageBody(draft, maker) {
   const leaderName = [maker?.firstName, maker?.lastName].filter(Boolean).join(' ').trim();
 
   const packageObject = {
-    packageType: d.packageType || '',
+    packageType: d.packageType || 'Family',
     packageCategory: d.packageCategory || '',
     teamLeader: leaderName,
     teamLeaderId: maker?._id ? String(maker._id) : '',
@@ -1294,7 +1603,7 @@ export const AI_PACKAGE_TOOLS = [
           policies: {
             type: 'array',
             description:
-              'Replaces the whole policy list. Use the exact GlobalMaster names from get_globalmaster. removeIndices are the 1-based point numbers shown to the user.',
+              'Merged by name. Use exact GlobalMaster names. Sending Inclusion alone will not wipe the other blocks.',
             items: {
               type: 'object',
               required: ['name'],
@@ -1305,14 +1614,21 @@ export const AI_PACKAGE_TOOLS = [
               },
             },
           },
+          confirmPolicies: {
+            type: 'boolean',
+            description: 'Set true when the user accepts standard inclusions/exclusions/policies.',
+          },
           cabs: {
             type: 'array',
-            description: 'Replaces the whole cab list. Prices must come from the user.',
+            description:
+              'Replaces the cab list. cabId is optional — cabName or choiceIndex from the last search_cabs list is enough. Prices can be sent later.',
             items: {
               type: 'object',
-              required: ['cabId', 'onSeasonPrice'],
               properties: {
-                cabId: { type: 'string', description: 'cabId from search_cabs' },
+                cabId: { type: 'string', description: '24-char id from search_cabs. Do not put the cab name here.' },
+                cabName: { type: 'string', description: 'e.g. Swift Dzire' },
+                choiceIndex: { type: 'number', description: '1-based option from the last search_cabs list' },
+                choice: { type: 'string' },
                 onSeasonPrice: { type: 'string' },
                 offSeasonPrice: { type: 'string' },
               },
@@ -1468,10 +1784,32 @@ export async function executePackageTool(name, args = {}, context = {}) {
         return { kind: 'result', data: await searchItineraries(args) };
       case 'get_itinerary':
         return { kind: 'result', data: await getItinerary(args) };
-      case 'get_globalmaster':
-        return { kind: 'result', data: await getGlobalMaster(args) };
-      case 'search_cabs':
-        return { kind: 'result', data: await searchCabs(args) };
+      case 'get_globalmaster': {
+        const data = await getGlobalMaster(args, context.draft);
+        if (data.alreadyChosen) return { kind: 'result', data };
+        const defaults = (data.entries || [])
+          .filter((e) => !e.optional)
+          .map((e) => ({ name: e.name, removeIndices: [], addPoints: [] }));
+        const shouldSave = !(context.draft?.policies || []).length && defaults.length;
+        const merged = shouldSave
+          ? mergeDraft(context.draft, { policies: defaults })
+          : context.draft;
+        return {
+          kind: shouldSave ? 'draft' : 'result',
+          draft: merged,
+          data: {
+            ...data,
+            ...(shouldSave ? { savedDefaults: true, message: 'Standard inclusion/exclusion/policies saved on the draft. Do not ask again unless the user wants an edit.' } : {}),
+          },
+        };
+      }
+      case 'search_cabs': {
+        const data = await searchCabs(args, context.draft);
+        const merged = mergeDraft(context.draft, {
+          cabOptions: data.cabOptions || context.draft?.cabOptions || [],
+        });
+        return { kind: 'draft', draft: merged, data };
+      }
       case 'search_packages':
         return { kind: 'result', data: await searchPackages(args) };
       case 'get_package':
