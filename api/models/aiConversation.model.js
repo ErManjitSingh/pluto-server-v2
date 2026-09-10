@@ -79,9 +79,21 @@ const draftPolicySchema = new mongoose.Schema(
   { _id: false }
 );
 
+const draftCabOptionSchema = new mongoose.Schema(
+  {
+    cabId: String,
+    cabName: String,
+    cabType: String,
+    seatingCapacity: String,
+  },
+  { _id: false }
+);
+
 const draftCabSchema = new mongoose.Schema(
   {
     cabId: { type: String, required: true },
+    cabName: { type: String, default: '' },
+    cabType: { type: String, default: '' },
     onSeasonPrice: { type: String, default: '' },
     offSeasonPrice: { type: String, default: '' },
   },
@@ -108,6 +120,7 @@ const draftPackageSchema = new mongoose.Schema(
     places: { type: [draftPlaceSchema], default: [] },
     days: { type: [draftDaySchema], default: [] },
     policies: { type: [draftPolicySchema], default: [] },
+    cabOptions: { type: [draftCabOptionSchema], default: [] },
     cabs: { type: [draftCabSchema], default: [] },
     margins: {
       b2b: { type: Number, default: 5 },
