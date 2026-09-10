@@ -54,6 +54,23 @@ function pick(obj, fields) {
   return out;
 }
 
+function definedFields(obj = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined && value !== null && value !== '') out[key] = value;
+  }
+  return out;
+}
+
+function routeFingerprint({ pickupLocation, dropLocation, places } = {}) {
+  const pickup = normalizeTitle(pickupLocation);
+  const drop = normalizeTitle(dropLocation || pickupLocation);
+  const route = packagePlacesFrom(places)
+    .map((p) => `${normalizeTitle(p.placeCover)}:${Number(p.nights) || 0}`)
+    .join('|');
+  return `${pickup}>${route}>${drop}`;
+}
+
 /**
  * cityName casing is inconsistent in the data ("delhi" but "Manali"), and
  * some values carry stray whitespace, so every lookup is anchored + insensitive.
@@ -643,8 +660,57 @@ async function planPackageDays(args = {}) {
 
 /** The plan is written straight into the draft so it survives history trimming. */
 async function planAndSaveDraft(args = {}, currentDraft) {
+  const current = plainDraft(currentDraft);
+  const incomingPlaces = packagePlacesFrom(args.places);
+  const incomingRoute = routeFingerprint({
+    pickupLocation: args.pickupLocation,
+    dropLocation: args.dropLocation || args.pickupLocation,
+    places: incomingPlaces.length ? incomingPlaces : current?.places,
+  });
+  const existingRoute = current ? routeFingerprint(current) : '';
+
+  // Re-planning the same route was wiping Day 1 after the user had already chosen it.
+  if (current?.days?.length && existingRoute && existingRoute === incomingRoute) {
+    const pending = (current.days || []).filter((day) => !day.itineraryId);
+    return {
+      kind: 'draft',
+      draft: current,
+      data: {
+        ok: true,
+        reusedDraft: true,
+        message: pending.length
+          ? `Day plan already saved. Do not re-ask LOCKED days. Only ask for day ${pending.map((d) => d.day).join(', ')}.`
+          : 'Day plan already saved. Every day is LOCKED. Do not ask for itineraries again.',
+        packageName: current.packageName || args.packageName || null,
+        pickupLocation: current.pickupLocation,
+        dropLocation: current.dropLocation,
+        packagePlaces: current.places,
+        days: (current.days || []).map((day) => ({
+          day: day.day,
+          purpose: day.purpose,
+          itineraryType: day.itineraryType,
+          city: day.city,
+          expectedTitle: day.expectedTitle,
+          suggested: day.itineraryId
+            ? { id: day.itineraryId, itineraryTitle: day.itineraryTitle, why: 'already chosen in draft' }
+            : null,
+          needsChoice: !day.itineraryId,
+          candidates: day.itineraryId
+            ? []
+            : (day.candidates || []).map((c) => ({ id: c.id, itineraryTitle: c.title })),
+        })),
+        missing: draftMissingFields(current),
+        draftSaved: true,
+      },
+    };
+  }
+
   const plan = await planPackageDays(args);
   if (!plan.ok) return { kind: 'result', data: plan };
+
+  const previousByDay = new Map(
+    (current?.days || []).map((day) => [Number(day.day), day])
+  );
 
   const merged = mergeDraft(currentDraft, {
     ...pick(args, ['packageName', 'state', 'packageType', 'packageCategory', 'hotelCategory', 'themes', 'tags']),
@@ -652,23 +718,52 @@ async function planAndSaveDraft(args = {}, currentDraft) {
     dropLocation: plan.dropLocation,
     duration: plan.derivedDuration,
     places: plan.packagePlaces,
-    replaceDays: plan.days.map((d) => ({
-      day: d.day,
-      purpose: d.purpose,
-      itineraryType: d.itineraryType,
-      city: d.city,
-      from: d.from,
-      to: d.to,
-      expectedTitle: d.expectedTitle,
-      itineraryId: d.suggested?.id,
-      itineraryTitle: d.suggested?.itineraryTitle,
-    })),
+    replaceDays: plan.days.map((d) => {
+      const previous = previousByDay.get(Number(d.day));
+      const keepChosen = Boolean(previous?.itineraryId);
+
+      return {
+        day: d.day,
+        purpose: d.purpose,
+        itineraryType: d.itineraryType,
+        city: d.city,
+        from: d.from,
+        to: d.to,
+        expectedTitle: d.expectedTitle,
+        itineraryId: keepChosen ? previous.itineraryId : d.suggested?.id,
+        itineraryTitle: keepChosen ? previous.itineraryTitle : d.suggested?.itineraryTitle,
+        candidates: keepChosen
+          ? []
+          : (d.candidates || []).map((candidate) => ({
+              id: candidate.id,
+              title: candidate.itineraryTitle,
+            })),
+      };
+    }),
+  });
+
+  const overlayedDays = plan.days.map((d) => {
+    const saved = (merged.days || []).find((x) => Number(x.day) === Number(d.day));
+    if (saved?.itineraryId) {
+      return {
+        ...d,
+        suggested: { id: saved.itineraryId, itineraryTitle: saved.itineraryTitle, why: 'already chosen in draft' },
+        needsChoice: false,
+        candidates: [],
+      };
+    }
+    return d;
   });
 
   return {
     kind: 'draft',
     draft: merged,
-    data: { ...plan, draftSaved: true, missing: draftMissingFields(merged) },
+    data: {
+      ...plan,
+      days: overlayedDays,
+      draftSaved: true,
+      missing: draftMissingFields(merged),
+    },
   };
 }
 
@@ -688,6 +783,37 @@ const DRAFT_SCALARS = [
 function plainDraft(draft) {
   if (!draft) return null;
   return typeof draft.toObject === 'function' ? draft.toObject() : { ...draft };
+}
+
+function resolveDayChoice(existingDay = {}, incoming = {}) {
+  const candidates = existingDay.candidates || [];
+  let itineraryId = incoming.itineraryId;
+  let itineraryTitle = incoming.itineraryTitle;
+
+  const rawChoice = incoming.choice ?? incoming.choiceIndex ?? incoming.option;
+  if (!itineraryId && rawChoice != null && String(rawChoice).trim() !== '') {
+    const words = { first: 1, pehla: 1, pehli: 1, second: 2, dusra: 2, third: 3, tisra: 3 };
+    const asWord = words[String(rawChoice).trim().toLowerCase()];
+    const index = asWord || Number(rawChoice);
+    if (Number.isFinite(index) && index >= 1 && index <= candidates.length) {
+      itineraryId = candidates[index - 1].id;
+      itineraryTitle = candidates[index - 1].title;
+    }
+  }
+
+  if (!itineraryId && itineraryTitle && candidates.length) {
+    const want = normalizeTitle(itineraryTitle);
+    const wantCore = stripTitleNoise(itineraryTitle);
+    const hit = candidates.find(
+      (c) => normalizeTitle(c.title) === want || stripTitleNoise(c.title) === wantCore
+    );
+    if (hit) {
+      itineraryId = hit.id;
+      itineraryTitle = hit.title;
+    }
+  }
+
+  return definedFields({ ...incoming, itineraryId, itineraryTitle });
 }
 
 /**
@@ -730,7 +856,11 @@ export function mergeDraft(current, patch = {}) {
     for (const incoming of patch.days || []) {
       const dayNo = Number(incoming?.day);
       if (!Number.isFinite(dayNo)) continue;
-      byDay.set(dayNo, { ...(byDay.get(dayNo) || {}), ...incoming, day: dayNo });
+      const previous = byDay.get(dayNo) || {};
+      const resolved = resolveDayChoice(previous, incoming);
+      const updated = { ...previous, ...definedFields(resolved), day: dayNo };
+      if (updated.itineraryId) updated.candidates = [];
+      byDay.set(dayNo, updated);
     }
     base.days = [...byDay.values()].sort((a, b) => a.day - b.day);
   }
@@ -795,10 +925,18 @@ export function describeDraft(draft) {
   if ((d.days || []).length) {
     lines.push('  days:');
     for (const day of d.days) {
-      lines.push(
-        `    ${day.day}. ${day.itineraryTitle ? `"${day.itineraryTitle}"` : 'NOT CHOSEN'}` +
-          `${day.itineraryId ? '' : ` (expected: ${day.expectedTitle || day.city})`}`
-      );
+      if (day.itineraryId) {
+        lines.push(`    Day ${day.day}: LOCKED — "${day.itineraryTitle}". Do not ask again.`);
+        continue;
+      }
+      lines.push(`    Day ${day.day}: ASK — expected "${day.expectedTitle || day.city}"`);
+      if (day.candidates?.length) {
+        lines.push(
+          `       OPTIONS: ${day.candidates
+            .map((candidate, index) => `${index + 1}) ${candidate.title} [id=${candidate.id}]`)
+            .join(' | ')}`
+        );
+      }
     }
   }
   if ((d.policies || []).length) {
@@ -1080,7 +1218,7 @@ export const AI_PACKAGE_TOOLS = [
     function: {
       name: 'plan_package_days',
       description:
-        'Build the day-by-day plan for a new package from pickup, drop and places with nights, and return matching itinerary candidates for each day. Use this first for any package creation request. Read-only: nothing is saved.',
+        'Build the day-by-day plan from pickup, drop and places with nights. Call ONLY when the draft has no days yet, or the user changed pickup, drop or places. Never call again to confirm an itinerary. If days already exist, the server reuses them and will not re-ask LOCKED days.',
       parameters: {
         type: 'object',
         required: ['pickupLocation', 'places'],
@@ -1111,7 +1249,7 @@ export const AI_PACKAGE_TOOLS = [
     function: {
       name: 'update_package_draft',
       description:
-        'Save package details into the persistent draft after the user decides something: a chosen itinerary for a day, the policy blocks, a cab with its prices, the state, or the package type. Send only the fields that changed. Returns what is still missing.',
+        'Save a user decision into the persistent draft. When the user picks a day itinerary, call this immediately with that day only. You can pass itineraryId, or choiceIndex 1/2/3 matching the OPTIONS list, or the itineraryTitle. Never re-ask a LOCKED day.',
       parameters: {
         type: 'object',
         properties: {
@@ -1137,11 +1275,19 @@ export const AI_PACKAGE_TOOLS = [
             description: 'Merged by day number. Send only the days the user just decided.',
             items: {
               type: 'object',
-              required: ['day', 'itineraryId'],
+              required: ['day'],
               properties: {
                 day: { type: 'number' },
-                itineraryId: { type: 'string', description: 'id from plan_package_days candidates or search_itineraries' },
+                itineraryId: { type: 'string', description: 'id from OPTIONS or search_itineraries' },
                 itineraryTitle: { type: 'string' },
+                choiceIndex: {
+                  type: 'number',
+                  description: '1-based option number the user picked, e.g. 1 for pehla/first',
+                },
+                choice: {
+                  type: 'string',
+                  description: 'Same as choiceIndex, or first/second/pehla',
+                },
               },
             },
           },
