@@ -28,7 +28,7 @@ function runTool(name, args, context) {
 
 const HISTORY_LIMIT = 16;
 const MAX_TOOL_ROUNDS = 4;
-const PENDING_TTL_MS = 10 * 60 * 1000;
+const PENDING_TTL_MS = 30 * 60 * 1000;
 // Building one package takes several turns, so the old limit of 40 was roughly
 // four packages per day. Override with AI_DAILY_LIMIT_PER_USER.
 const DEFAULT_DAILY_LIMIT = 120;
@@ -72,16 +72,19 @@ If the user's stated duration does not match the nights, ask which is correct. D
 
 Inclusions, exclusions and policies come only from get_globalmaster. Never write policy text yourself.
 "Inclusion" fills packageInclusions, "Exclusions" fills packageExclusions, every other block becomes a customExclusions entry.
-Always show these as plain-text points and ask the user to confirm or edit before using them. Handle edits one point at a time; never rewrite a whole block.
+Always show these as plain-text points ONCE, then save them with update_package_draft (or just call get_globalmaster — that saves the standard blocks). If the draft already has policies, never list or ask them again.
+If the user says "all inclusion/exclusion", "standard", or "ok" for policies, save the standard blocks and move on.
 
-For cabs, ask the cabType first (Hatchback, Sedan, SUV, Traveller, ACBus), then call search_cabs and let the user pick a specific cab.
-The cab collection stores no price. Always ask the user for the on-season and off-season price. Never guess or reuse a price from another package.
+For cabs, ask the cabType first (Hatchback, Sedan, SUV, Traveller, ACBus), then call search_cabs once and let the user pick.
+When the user names a cab (e.g. Swift Dzire) or says 1/pehla, immediately call update_package_draft with cabName or choiceIndex. Never put the cab name in cabId.
+If the draft already has a LOCKED cab, never say it is unavailable and never list cabs again. Only ask for a missing on-season/off-season price.
+If the user gives one price, use it for both seasons. Never guess a price from another package.
 
 Every decision the user makes must be saved with update_package_draft straight away: the chosen itinerary per day, the policy blocks, the cab and its prices, the state and the package type.
 The draft is shown to you below on every turn. Trust the draft over the chat history and never re-ask for something the draft already holds.
-When the draft reports nothing missing, call create_package. The server will show a preview and ask the user to confirm before saving.
-State and package type are required before creating. Ask for them if the draft does not have them.
-
+If a field is LOCKED or already listed in the draft, skip it. Only ask what STILL MISSING lists.
+When the draft reports COMPLETE, call create_package immediately. Do not recap questions.
+State is required before creating. Ask once if the draft does not have it. If packageType is missing, save Family.
 Ask for missing information one or two questions at a time, not all at once.`;
 }
 
@@ -127,7 +130,7 @@ function wantsConfirm(body) {
   if (body.confirm === true) return true;
   if (body.confirmAction && body.confirmAction.confirm !== false) return true;
   const msg = String(body.message || '').trim().toLowerCase();
-  return msg === 'confirm' || msg === 'yes' || msg === 'haan' || msg === 'ha';
+  return /^(confirm|yes|y|haan+|ha|han|ok|okay|k|theek( hai)?|kr ?do|kar ?do|kardo|save|done|ho g[aiy]+a)([\s!.]*)$/i.test(msg);
 }
 
 function wantsCancel(body) {
