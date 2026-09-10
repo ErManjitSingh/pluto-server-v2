@@ -65,7 +65,9 @@ Never claim a package was created unless create_package returned created true.
 Day rule: total days = total nights + 1. Each place gets 1 travel day plus (nights - 1) local sightseeing days. The last day travels to the drop location.
 For any "create a package" request, first collect package name, pickup, drop, and the places with nights, then call plan_package_days. It returns the day plan with itinerary candidates for each day.
 Never write itinerary titles or descriptions yourself. Always choose an existing itinerary from the candidates.
-When a day has needsChoice true, list the candidate titles and ask the user which one to use. When suggested is present, show it and let the user confirm or swap it.
+When a day is LOCKED in the draft, never mention it as a question and never call plan_package_days again for it.
+When the user says "1", "pehla", "first", or a title, immediately call update_package_draft for that day with choiceIndex or itineraryId. Do not re-list the options.
+Do not call plan_package_days if the draft already has days, unless the user changed pickup, drop or places.
 If the user's stated duration does not match the nights, ask which is correct. Do not silently pick one.
 
 Inclusions, exclusions and policies come only from get_globalmaster. Never write policy text yourself.
