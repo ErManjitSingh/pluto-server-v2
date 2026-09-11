@@ -106,12 +106,34 @@ export const getDownloadCounts = async (req, res) => {
   }
 };
 
+const parsePagination = (query, defaultLimit = 25, maxLimit = 500) => {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit, 10) || defaultLimit));
+  return { page, limit, skip: (page - 1) * limit };
+};
+
+const paginationMeta = (page, limit, total) => ({
+  currentPage: page,
+  totalPages: Math.max(1, Math.ceil(total / limit) || 1),
+  total,
+  hasNextPage: page * limit < total,
+  hasPrevPage: page > 1,
+  limit
+});
+
 // Get all packages with their download counts
 export const getAllPackages = async (req, res) => {
   try {
-    const packages = await PackageTracker.find()
-      .select('packageId packageName downloadCounts users createdAt updatedAt')
-      .sort({ createdAt: -1 }); // Sort by newest first
+    const { page, limit, skip } = parsePagination(req.query);
+
+    const [packages, total] = await Promise.all([
+      PackageTracker.find()
+        .select('packageId packageName downloadCounts users createdAt updatedAt')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      PackageTracker.countDocuments()
+    ]);
 
     // Transform the data to include detailed information
     const formattedPackages = packages.map(pkg => {
@@ -180,7 +202,10 @@ export const getAllPackages = async (req, res) => {
       };
     });
 
-    res.status(200).json(formattedPackages);
+    res.status(200).json({
+      packages: formattedPackages,
+      pagination: paginationMeta(page, limit, total)
+    });
   } catch (error) {
     console.error('Error in getAllPackages:', error);
     res.status(500).json({ message: error.message });
