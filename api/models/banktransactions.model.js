@@ -83,6 +83,11 @@ cabPayment: {
     leadId: {
       type: String,
     },
+    // Same number for every transaction that shares a leadId.
+    // Set only when createdAt is after 2026-09-01T08:54:28.397Z.
+    invoiceNumber: {
+      type: Number,
+    },
     leadName: {
       type: String,
     },
