@@ -16,6 +16,9 @@ const packageTrackerSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.Mixed,
       required: true
     },
+    leadStatus: {
+      type: String
+    },
     downloads: [{
       downloadType: {
         type: String,
@@ -47,6 +50,9 @@ const packageTrackerSchema = new mongoose.Schema({
     }
   }
 }, { timestamps: true });
+
+packageTrackerSchema.index({ 'users.user.leaddetails._id': 1 });
+packageTrackerSchema.index({ 'users.leadStatus': 1 });
 
 const PackageTracker = mongoose.model('PackageTracker', packageTrackerSchema);
 
