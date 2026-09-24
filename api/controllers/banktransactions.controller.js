@@ -2,6 +2,10 @@ import BankTransaction from '../models/banktransactions.model.js';
 import BankAccountDetail from '../models/bankaccountdetail.model.js';
 import Lead from '../models/lead.model.js';
 import mongoose from 'mongoose';
+import {
+  isInvoiceEligible,
+  resolveInvoiceNumber,
+} from '../services/bankTransactionInvoice.service.js';
 
 // Function to update bank account totals based on transactions
 async function updateBankAccountTotals(bankId) {
@@ -359,6 +363,11 @@ operationId,
       }
     }
 
+    let invoiceNumber;
+    if (leadId && isInvoiceEligible(new Date())) {
+      invoiceNumber = await resolveInvoiceNumber(leadId);
+    }
+
     const tx = new BankTransaction({
       bank: resolvedBankId || undefined,
       bankName: bank?.bankName ?? (foundBank ? foundBank.bankName : undefined),
@@ -368,6 +377,7 @@ operationId,
       toAccountNumber: isDual ? (toBank?.accountNumber ?? (foundToBank ? foundToBank.accountNumber : undefined)) : undefined,
       isDualBankTransaction: isDual,
       leadId,
+      invoiceNumber,
       leadName,
       executiveDetail,
       travelDate,
@@ -831,6 +841,17 @@ export const updateTransaction = async (req, res, next) => {
     if (automaticcabtransaction !== undefined) tx.automaticcabtransaction = automaticcabtransaction;
     if (accept !== undefined) tx.accept = accept;
     if (leadId !== undefined) tx.leadId = leadId;
+    if (isInvoiceEligible(tx.createdAt)) {
+      const nextLeadId = leadId !== undefined ? leadId : tx.leadId;
+      if (nextLeadId == null || String(nextLeadId).trim() === '') {
+        tx.invoiceNumber = undefined;
+      } else if (
+        tx.invoiceNumber == null ||
+        (leadId !== undefined && String(leadId) !== String(previousLeadId))
+      ) {
+        tx.invoiceNumber = await resolveInvoiceNumber(nextLeadId);
+      }
+    }
     if (leadName !== undefined) tx.leadName = leadName;
     if (executiveDetail !== undefined) tx.executiveDetail = executiveDetail;
     if (hotelPayment !== undefined) tx.hotelPayment = hotelPayment;
