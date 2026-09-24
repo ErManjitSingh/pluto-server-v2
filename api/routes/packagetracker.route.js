@@ -22,6 +22,8 @@ router.post('/track', trackDownload);
 router.get('/counts/:packageId', getDownloadCounts);
 
 // Get all packages with download counts (GET)
+// Query: page (default 1), limit (default 25, max 500)
+// Optional: leadGroup=open|active|dead  or  leadStatus=Lost (comma-separated allowed)
 router.get('/packages', getAllPackages);
 
 // Get packages by download type (GET)
