@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import PackageTracker from '../models/packagetracker.model.js';
+import { resolvePackageTrackerLeadStatuses } from '../services/packageTrackerLeadStatus.service.js';
 
 // Track a new download
 export const trackDownload = async (req, res) => {
@@ -31,10 +32,14 @@ export const trackDownload = async (req, res) => {
           timestamp: new Date(timestamp),
           downloadDate
         });
+        if (user?.leaddetails?.leadStatus) {
+          userEntry.leadStatus = user.leaddetails.leadStatus;
+        }
       } else {
         // Add new user with their first download
         packageTracker.users.push({
           user,
+          leadStatus: user?.leaddetails?.leadStatus || '',
           downloads: [{
             downloadType,
             timestamp: new Date(timestamp),
@@ -55,6 +60,7 @@ export const trackDownload = async (req, res) => {
         packageName,
         users: [{
           user,
+          leadStatus: user?.leaddetails?.leadStatus || '',
           downloads: [{
             downloadType,
             timestamp: new Date(timestamp),
@@ -125,20 +131,33 @@ const paginationMeta = (page, limit, total) => ({
 export const getAllPackages = async (req, res) => {
   try {
     const { page, limit, skip } = parsePagination(req.query);
+    const leadStatuses = resolvePackageTrackerLeadStatuses(req.query);
+    if (Array.isArray(leadStatuses) && leadStatuses.length === 0) {
+      return res.status(400).json({ message: 'Invalid leadGroup. Use open, active, or dead' });
+    }
+
+    const filter = leadStatuses
+      ? { 'users.leadStatus': { $in: leadStatuses } }
+      : {};
+    const statusFilter = leadStatuses ? new Set(leadStatuses) : null;
 
     const [packages, total] = await Promise.all([
-      PackageTracker.find()
+      PackageTracker.find(filter)
         .select('packageId packageName downloadCounts users createdAt updatedAt')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      PackageTracker.countDocuments()
+      PackageTracker.countDocuments(filter)
     ]);
 
     // Transform the data to include detailed information
     const formattedPackages = packages.map(pkg => {
+      const sourceUsers = statusFilter
+        ? (pkg.users || []).filter((userEntry) => statusFilter.has(userEntry.leadStatus))
+        : (pkg.users || []);
+
       // Process users and their downloads
-      const processedUsers = (pkg.users || []).map(userEntry => {
+      const processedUsers = sourceUsers.map(userEntry => {
         // Group downloads by date for each user
         const downloadsByDate = {};
         
@@ -172,7 +191,7 @@ export const getAllPackages = async (req, res) => {
       });
 
       // Get all downloads from all users
-      const allDownloads = pkg.users.reduce((downloads, userEntry) => {
+      const allDownloads = sourceUsers.reduce((downloads, userEntry) => {
         return downloads.concat(userEntry.downloads || []);
       }, []);
 
