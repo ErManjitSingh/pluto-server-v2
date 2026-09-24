@@ -8,6 +8,7 @@ import compression from "compression";   // ✅ ADD THIS
 import { initializeSocket } from './socket/socket.js';
 import { initializeScheduledTasks } from './utils/scheduledTasks.js';
 import { startPackageTrackerLeadStatusBackfill } from './services/packageTrackerLeadStatus.service.js';
+import { startBankTransactionInvoiceBackfill } from './services/bankTransactionInvoice.service.js';
 import { warmPdfEngine } from './utils/finalcostingPdf.js';
 // ROUTES IMPORTS
 import userRouter from './routes/user.route.js'; 
@@ -94,6 +95,7 @@ mongoose
     // Initialize scheduled tasks after MongoDB connection
     initializeScheduledTasks();
     startPackageTrackerLeadStatusBackfill();
+    startBankTransactionInvoiceBackfill();
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
