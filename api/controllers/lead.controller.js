@@ -8,6 +8,7 @@ import EmailActivity from '../models/emailActivity.model.js';
 import { getNextLeadIdAndPublish, getNextLeadIdAndPublishPrefer } from '../services/leadId.service.js';
 import { syncMetaLeads } from '../services/metaLeadSync.service.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
+import { syncPackageTrackerLeadStatus } from '../services/packageTrackerLeadStatus.service.js';
 
 function normalizeMobileForLeadCheck(mobile) {
   if (mobile == null) return null;
@@ -339,6 +340,10 @@ export const updateLead = async (req, res, next) => {
     );
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'leadStatus')) {
+      await syncPackageTrackerLeadStatus(updatedLead._id, updatedLead.leadStatus);
+    }
+
     // If lead newly assigned/re-assigned, create an immediate Google Calendar "New lead assigned" event
     try {
       const prevAssigned = leadBefore.assignedUserId ? leadBefore.assignedUserId.toString() : null;
@@ -535,6 +540,10 @@ export const updateLeadPublic = async (req, res, next) => {
     );
     
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
+
+    if (Object.prototype.hasOwnProperty.call(req.body, 'leadStatus')) {
+      await syncPackageTrackerLeadStatus(updatedLead._id, updatedLead.leadStatus);
+    }
 
     // If lead newly assigned/re-assigned (public), create an immediate Google Calendar "New lead assigned" event
     try {
@@ -1339,6 +1348,10 @@ export const updateAssignedLead = async (req, res, next) => {
     );
     if (!updatedLead) return res.status(404).json({ message: 'Lead not found' });
 
+    if (Object.prototype.hasOwnProperty.call(req.body, 'leadStatus')) {
+      await syncPackageTrackerLeadStatus(updatedLead._id, updatedLead.leadStatus);
+    }
+
     // If lead newly assigned/re-assigned (assigned-leads flow), create immediate Calendar event
     try {
       const prevAssigned = leadBefore.assignedUserId ? leadBefore.assignedUserId.toString() : null;
@@ -1557,6 +1570,8 @@ export const updateLeadStatusNote = async (req, res, next) => {
       },
       { new: true }
     );
+
+    await syncPackageTrackerLeadStatus(id, leadstatus);
 
     const autoSeenLeadStatuses = ['Lost', 'Booked', 'Tour Cancelled', 'Tour Postponed'];
     await LeadStatusNotification.create({
