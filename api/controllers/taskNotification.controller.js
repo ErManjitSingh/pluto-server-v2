@@ -31,8 +31,8 @@ export async function fetchTaskNotificationsForUser(userId, { unseenOnly = false
 
   const oid = new mongoose.Types.ObjectId(userId);
   const match = unseenOnly
-    ? { recipients: { $elemMatch: { userId: oid, seen: false } } }
-    : { 'recipients.userId': oid };
+    ? { active: { $ne: 'no' }, recipients: { $elemMatch: { userId: oid, seen: false } } }
+    : { active: { $ne: 'no' }, 'recipients.userId': oid };
 
   const notifications = await TaskNotification.find(match)
     .sort({ createdAt: -1 })
@@ -49,6 +49,7 @@ export async function fetchTaskNotificationsForUser(userId, { unseenOnly = false
       createdBy: n.createdBy,
       createdByName: n.createdByName,
       createdByUserType: n.createdByUserType,
+      active: n.active === 'no' ? 'no' : 'yes',
       seen: me?.seen ?? false,
       seenAt: me?.seenAt ?? null,
       createdAt: n.createdAt,
@@ -176,11 +177,23 @@ async function resolveRecipients({ targetType, company, userIds }) {
  *  - targetType: 'all' | 'company' | 'users'
  *  - company: 'ptw' | 'demandsetu' (when targetType = company)
  *  - userIds: string[] (when targetType = users)
+ *  - active: 'yes' | 'no' (optional, default yes)
  *  - createdBy: maker id (required if not authenticated)
  */
+const normalizeActive = (value, { required = false } = {}) => {
+  if (value == null || String(value).trim() === '') {
+    if (required) return null;
+    return 'yes';
+  }
+  const key = String(value).trim().toLowerCase();
+  if (key === 'yes' || key === 'no') return key;
+  return undefined;
+};
+
 export const createTaskNotification = async (req, res, next) => {
   try {
     const { title, message, targetType, company, userIds } = req.body;
+    const active = normalizeActive(req.body.active);
     const createdBy = req.body.createdBy || req.user?.id;
 
     if (!title || !String(title).trim()) {
@@ -188,6 +201,9 @@ export const createTaskNotification = async (req, res, next) => {
     }
     if (!targetType) {
       return next(errorHandler(400, 'targetType is required (all | company | users)'));
+    }
+    if (active === undefined) {
+      return next(errorHandler(400, 'active must be yes or no'));
     }
     if (!createdBy || !mongoose.Types.ObjectId.isValid(createdBy)) {
       return next(errorHandler(400, 'createdBy (valid maker id) is required'));
@@ -221,6 +237,7 @@ export const createTaskNotification = async (req, res, next) => {
       createdBy: creator._id,
       createdByName: `${creator.firstName || ''} ${creator.lastName || ''}`.trim(),
       createdByUserType: creator.userType || '',
+      active,
       recipients
     });
 
@@ -251,6 +268,13 @@ export const getTaskNotifications = async (req, res, next) => {
 
     const filter = {};
     if (req.query.targetType) filter.targetType = req.query.targetType;
+    if (req.query.active) {
+      const active = normalizeActive(req.query.active, { required: true });
+      if (!active) {
+        return next(errorHandler(400, 'active must be yes or no'));
+      }
+      filter.active = active;
+    }
     if (req.query.company) {
       const key = normalizeCompanyKey(req.query.company);
       if (key) filter.company = key;
@@ -354,6 +378,48 @@ export const markTaskNotificationSeen = async (req, res, next) => {
 
     res.status(200).json({
       message: 'Marked as seen',
+      data: updated
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PUT set a task notification active or inactive
+ * Body: { active: 'yes' | 'no' }
+ */
+export const updateTaskNotificationActive = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return next(errorHandler(400, 'Invalid id'));
+    }
+
+    const active = normalizeActive(req.body.active, { required: true });
+    if (!active) {
+      return next(errorHandler(400, 'active is required and must be yes or no'));
+    }
+
+    const updated = await TaskNotification.findByIdAndUpdate(
+      id,
+      { $set: { active } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return next(errorHandler(404, 'Task notification not found'));
+    }
+
+    const recipientIds = (updated.recipients || []).map((r) => r.userId);
+    emitToUsers(recipientIds, 'tasknotification:active', {
+      taskNotificationId: updated._id,
+      active: updated.active
+    });
+    emitTaskNotificationListToUsers(recipientIds).catch(() => {});
+
+    res.status(200).json({
+      message: active === 'yes' ? 'Task notification set to active' : 'Task notification set to inactive',
       data: updated
     });
   } catch (error) {
