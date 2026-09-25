@@ -10,6 +10,7 @@ import { initializeScheduledTasks } from './utils/scheduledTasks.js';
 import { startPackageTrackerLeadStatusBackfill } from './services/packageTrackerLeadStatus.service.js';
 import { startBankTransactionInvoiceBackfill } from './services/bankTransactionInvoice.service.js';
 import { warmPdfEngine } from './utils/finalcostingPdf.js';
+import { warmupFirebase } from './config/firebase.js';
 // ROUTES IMPORTS
 import userRouter from './routes/user.route.js'; 
 import authRouter from './routes/auth.route.js';
@@ -237,6 +238,7 @@ server.listen(port, () => {
   console.log(`💬 Socket.IO ready`);
   // Pre-warm Chrome + company logos so first PDF is not cold-start slow
   warmPdfEngine().catch(() => {});
+  warmupFirebase();
 });
 
 // Stay under Cloudflare ~60s proxy limit (dropped sockets look like CORS in browser)
