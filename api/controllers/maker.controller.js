@@ -19,14 +19,11 @@ const findMakerByMobile = async (mobileInput) => {
   const mobile = normalizeMobile(mobileInput);
   if (!mobile) return { mobile: null, maker: null };
 
+  // Exact matches only so Mongo uses the contactNo index.
+  // A suffix regex scanned every maker document on each OTP request.
   const maker = await Maker.findOne({
-    $or: [
-      { contactNo: mobile },
-      { contactNo: `91${mobile}` },
-      { contactNo: `+91${mobile}` },
-      { contactNo: { $regex: `${mobile}$` } },
-    ],
-  });
+    contactNo: { $in: [mobile, `0${mobile}`, `91${mobile}`, `+91${mobile}`] },
+  }).lean();
 
   return { mobile, maker };
 };
