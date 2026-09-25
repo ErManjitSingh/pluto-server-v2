@@ -5,7 +5,6 @@ const mobileOtpSchema = new mongoose.Schema(
     mobile: {
       type: String,
       required: true,
-      index: true,
     },
     otp: {
       type: String,
@@ -14,7 +13,6 @@ const mobileOtpSchema = new mongoose.Schema(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
     verified: {
       type: Boolean,
@@ -28,7 +26,8 @@ const mobileOtpSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-mobileOtpSchema.index({ mobile: 1, createdAt: -1 });
+mobileOtpSchema.index({ mobile: 1, verified: 1, createdAt: -1 });
+mobileOtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const MobileOtp = mongoose.model('MobileOtp', mobileOtpSchema);
 
