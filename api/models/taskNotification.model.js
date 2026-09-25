@@ -48,6 +48,13 @@ const taskNotificationSchema = new mongoose.Schema(
     },
     createdByName: { type: String },
     createdByUserType: { type: String },
+    // yes = visible to recipients, no = inactive
+    active: {
+      type: String,
+      enum: ['yes', 'no'],
+      default: 'yes',
+      index: true
+    },
     // Resolved makers who should receive this task notification
     recipients: {
       type: [recipientSchema],
