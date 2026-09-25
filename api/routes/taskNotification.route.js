@@ -5,6 +5,7 @@ import {
   getTaskNotification,
   getTaskNotificationsByUser,
   markTaskNotificationSeen,
+  updateTaskNotificationActive,
   deleteTaskNotification,
   deleteMultipleTaskNotifications
 } from '../controllers/taskNotification.controller.js';
@@ -16,6 +17,7 @@ router.get('/get-all', getTaskNotifications);
 router.get('/get/:id', getTaskNotification);
 router.get('/get-by-user/:userId', getTaskNotificationsByUser);
 router.put('/mark-seen/:id', markTaskNotificationSeen);
+router.put('/update-active/:id', updateTaskNotificationActive);
 router.delete('/delete/:id', deleteTaskNotification);
 router.delete('/delete-multiple', deleteMultipleTaskNotifications);
 
