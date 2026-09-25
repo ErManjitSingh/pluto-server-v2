@@ -28,6 +28,7 @@ const sendOtpViaProvider = async (mobile, otp) => {
         mobile: `91${mobile}`,
         otp,
       }),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {
@@ -52,8 +53,13 @@ export const createAndSendOtp = async (mobileInput) => {
   const otp = generateOtp();
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-  await MobileOtp.deleteMany({ mobile, verified: false });
-  await MobileOtp.create({ mobile, otp, expiresAt });
+  await MobileOtp.bulkWrite(
+    [
+      { deleteMany: { filter: { mobile } } },
+      { insertOne: { document: { mobile, otp, expiresAt, verified: false, attempts: 0 } } },
+    ],
+    { ordered: true }
+  );
 
   await sendOtpViaProvider(mobile, otp);
 
@@ -76,7 +82,10 @@ export const verifyOtpCode = async (mobileInput, otpInput) => {
     throw err;
   }
 
-  const record = await MobileOtp.findOne({ mobile, verified: false }).sort({ createdAt: -1 });
+  const record = await MobileOtp.findOne({ mobile, verified: false })
+    .sort({ createdAt: -1 })
+    .select('otp expiresAt attempts')
+    .lean();
 
   if (!record) {
     const err = new Error('OTP expired or not found. Please request a new OTP');
@@ -98,15 +107,13 @@ export const verifyOtpCode = async (mobileInput, otpInput) => {
   }
 
   if (record.otp !== otp) {
-    record.attempts += 1;
-    await record.save();
+    await MobileOtp.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
     const err = new Error('Invalid OTP');
     err.statusCode = 400;
     throw err;
   }
 
-  record.verified = true;
-  await record.save();
+  await MobileOtp.deleteOne({ _id: record._id });
 
   return mobile;
 };
