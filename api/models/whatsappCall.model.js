@@ -62,7 +62,6 @@ whatsappCallSchema.index({ assignedTo: 1, status: 1, createdAt: -1 });
 
 whatsappCallSchema.pre('save', function omitBlankRecordingToken(next) {
   if (this.recordingToken == null || this.recordingToken === '') {
-    this.$unset('recordingToken');
     this.recordingToken = undefined;
     delete this._doc.recordingToken;
   }
