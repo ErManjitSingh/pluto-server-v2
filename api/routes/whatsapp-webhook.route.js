@@ -13,7 +13,7 @@ import { createCalendarEvent } from '../services/googleCalendar.service.js';
 import { applyWhatsappStatusToCampaign } from '../services/campaignStatus.service.js';
 import { verifyToken } from '../utils/verifyUser.js';
 import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
-import { handleWhatsappCallWebhook } from '../services/whatsappCalling.service.js';
+import { handleWhatsappCallWebhook, webhookHasCallPayload } from '../services/whatsappCalling.service.js';
 
 const router = express.Router();
 
@@ -357,7 +357,7 @@ router.get('/webhook', (req, res) => {
 router.post('/webhook', async (req, res) => {
   const changes = req.body.entry?.[0]?.changes || [];
   for (const change of changes) {
-    if (Array.isArray(change?.value?.calls) && change.value.calls.length) {
+    if (webhookHasCallPayload(change?.value)) {
       try {
         await handleWhatsappCallWebhook('whatsapp', change.value);
       } catch (err) {
