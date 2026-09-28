@@ -801,11 +801,12 @@ export async function acceptCall(line, { callId, metaCallId, sdp, executiveId })
     assertExecutive(call, executiveId);
     if (call.status === 'accepted') return present(call, { includeSdp: true });
     if (TERMINAL.has(call.status)) throw new WhatsappCallError('This call has already ended', 409);
-    const answer = String(sdp || call.sdpAnswer || '').trim();
+    const stored = String(call.sdpAnswer || '').trim();
+    const incoming = String(sdp || '').trim();
+    // Pre-accept already gave WhatsApp one answer. A later Pick from another
+    // tab sends a new SDP; Meta will only take the first one.
+    const answer = stored || incoming;
     if (!answer) throw new WhatsappCallError('sdp answer is required', 400);
-    if (call.sdpAnswer && answer !== call.sdpAnswer) {
-      throw new WhatsappCallError('This call is already being answered in another session', 409);
-    }
 
     const result = await graphCallActionWithRecording(line, {
       call_id: call.metaCallId,
