@@ -13,6 +13,7 @@ import { createCalendarEvent } from '../services/googleCalendar.service.js';
 import { applyWhatsappStatusToCampaign } from '../services/campaignStatus.service.js';
 import { verifyToken } from '../utils/verifyUser.js';
 import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
+import { handleWhatsappCallWebhook } from '../services/whatsappCalling.service.js';
 
 const router = express.Router();
 
@@ -354,7 +355,17 @@ router.get('/webhook', (req, res) => {
  * Saves phone + message to MongoDB for CRM.
  */
 router.post('/webhook', async (req, res) => {
-  const value = req.body.entry?.[0]?.changes?.[0]?.value;
+  const changes = req.body.entry?.[0]?.changes || [];
+  for (const change of changes) {
+    if (Array.isArray(change?.value?.calls) && change.value.calls.length) {
+      try {
+        await handleWhatsappCallWebhook('whatsapp', change.value);
+      } catch (err) {
+        console.error('WhatsApp call webhook error:', err);
+      }
+    }
+  }
+  const value = changes[0]?.value;
 
   // Handle Incoming Message
   if (value?.messages) {
