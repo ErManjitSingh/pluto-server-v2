@@ -14,7 +14,7 @@ import { createCalendarEvent } from '../services/googleCalendar.service.js';
 import { applyWhatsappStatusToCampaign } from '../services/campaignStatus.service.js';
 import { verifyToken } from '../utils/verifyUser.js';
 import { whatsappOutboundUpload, WHATSAPP_OUTBOUND_DIR } from '../middleware/whatsappMediaUpload.js';
-import { handleWhatsappCallWebhook, webhookHasCallPayload } from '../services/whatsappCalling.service.js';
+import { callPermissionReplyText, handleWhatsappCallWebhook, webhookHasCallPayload } from '../services/whatsappCalling.service.js';
 
 const router = express.Router();
 
@@ -168,6 +168,24 @@ function buildIncomingWhatsappDemandMessageCreatePayload(message) {
       metaMediaId: null,
       mimeType: null,
     };
+  }
+
+  if (type === 'interactive') {
+    const replyText = callPermissionReplyText(message);
+    if (replyText) {
+      return {
+        phone: message.from,
+        message: replyText,
+        direction: 'incoming',
+        metaMessageId: message.id || null,
+        messageType: 'text',
+        mediaUrl: null,
+        caption: null,
+        filename: null,
+        metaMediaId: null,
+        mimeType: null,
+      };
+    }
   }
 
   const mediaKinds = ['image', 'document', 'video', 'audio'];
