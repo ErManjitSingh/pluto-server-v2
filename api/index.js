@@ -64,6 +64,7 @@ import paymentPolicyRouter from './routes/paymentpolicy.route.js';
 import whatsappWebhookRouter from './routes/whatsapp-webhook.route.js';
 import whatsappWebhookDemandRouter from './routes/whatsapp_webhook_demand.route.js';
 import { createWhatsappCallingRouter } from './routes/whatsappCalling.route.js';
+import { ensureRecordingTokenIndex } from './models/whatsappCall.model.js';
 import privacyPolicyRouter from './routes/privacy-policy.route.js';
 import googleRouter from './routes/google.route.js';
 import stateExpenseListsRouter from './routes/stateexpenselists.route.js';
@@ -94,6 +95,9 @@ mongoose
   .connect(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("✅ MongoDB connected");
+    ensureRecordingTokenIndex().catch((err) => {
+      console.error("WhatsApp call recording index:", err?.message || err);
+    });
     // Initialize scheduled tasks after MongoDB connection
     initializeScheduledTasks();
     startPackageTrackerLeadStatusBackfill();
