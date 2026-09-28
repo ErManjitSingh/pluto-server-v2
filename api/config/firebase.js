@@ -80,6 +80,7 @@ const initFirebase = () => {
 
     firebaseApp = initializeApp({
       credential: cert(serviceAccount),
+      storageBucket: 'packagemaker-image.firebasestorage.app',
     });
 
     console.log(`Firebase Admin initialized for project: ${serviceAccount.project_id}`);
@@ -106,22 +107,34 @@ export const warmupFirebase = () => initFirebase();
 
 const SIGNED_URL_MS = 7 * 24 * 60 * 60 * 1000;
 
+const PACKAGEMAKER_STORAGE_BUCKET = 'packagemaker-image.firebasestorage.app';
+
 function storageBucketNames() {
   const fromEnv = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
-  if (fromEnv) return [fromEnv];
-  return ['packagemaker-image.firebasestorage.app', 'packagemaker-image.appspot.com'];
+  const names = [PACKAGEMAKER_STORAGE_BUCKET];
+  if (fromEnv && !names.includes(fromEnv)) names.push(fromEnv);
+  if (!names.includes('packagemaker-image.appspot.com')) names.push('packagemaker-image.appspot.com');
+  return names;
 }
 
 /**
  * Upload a buffer to Firebase Storage. Admin SDK bypasses client security rules.
  * Returns the bucket that accepted the file.
  */
-export async function uploadFirebaseObject({ objectPath, buffer, contentType }) {
+export async function uploadFirebaseObject({ objectPath, buffer, contentType, downloadToken }) {
   const app = initFirebase();
   if (!app) {
     const err = new Error('Firebase is not configured on the server');
     err.statusCode = 500;
     throw err;
+  }
+
+  const metadata = {
+    contentType: contentType || 'application/octet-stream',
+    cacheControl: 'private, max-age=3600',
+  };
+  if (downloadToken) {
+    metadata.metadata = { firebaseStorageDownloadTokens: String(downloadToken) };
   }
 
   const names = storageBucketNames();
@@ -131,10 +144,7 @@ export async function uploadFirebaseObject({ objectPath, buffer, contentType }) 
       const file = getStorage(app).bucket(name).file(objectPath);
       await file.save(buffer, {
         resumable: false,
-        metadata: {
-          contentType: contentType || 'application/octet-stream',
-          cacheControl: 'private, max-age=3600',
-        },
+        metadata,
       });
       return { bucket: name, objectPath };
     } catch (error) {
