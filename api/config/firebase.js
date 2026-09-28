@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -102,3 +103,58 @@ export const verifyFirebaseIdToken = async (idToken) => {
 };
 
 export const warmupFirebase = () => initFirebase();
+
+const SIGNED_URL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function storageBucketNames() {
+  const fromEnv = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+  if (fromEnv) return [fromEnv];
+  return ['packagemaker-image.firebasestorage.app', 'packagemaker-image.appspot.com'];
+}
+
+/**
+ * Upload a buffer to Firebase Storage. Admin SDK bypasses client security rules.
+ * Returns the bucket that accepted the file.
+ */
+export async function uploadFirebaseObject({ objectPath, buffer, contentType }) {
+  const app = initFirebase();
+  if (!app) {
+    const err = new Error('Firebase is not configured on the server');
+    err.statusCode = 500;
+    throw err;
+  }
+
+  const names = storageBucketNames();
+  let lastError = null;
+  for (const name of names) {
+    try {
+      const file = getStorage(app).bucket(name).file(objectPath);
+      await file.save(buffer, {
+        resumable: false,
+        metadata: {
+          contentType: contentType || 'application/octet-stream',
+          cacheControl: 'private, max-age=3600',
+        },
+      });
+      return { bucket: name, objectPath };
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || '');
+      const missingBucket = error?.code === 404 || /bucket|does not exist|not found/i.test(message);
+      if (!missingBucket || names.length === 1) break;
+    }
+  }
+  throw lastError || new Error('Firebase Storage upload failed');
+}
+
+/** Fresh read link for a stored object. Valid for 7 days. */
+export async function getFirebaseSignedUrl(objectPath, bucketName) {
+  const app = initFirebase();
+  if (!app || !objectPath) return null;
+  const name = bucketName || storageBucketNames()[0];
+  const [url] = await getStorage(app).bucket(name).file(objectPath).getSignedUrl({
+    action: 'read',
+    expires: Date.now() + SIGNED_URL_MS,
+  });
+  return url;
+}
