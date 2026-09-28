@@ -78,6 +78,10 @@ export const initializeSocket = (server) => {
         // Broadcast online status (best-effort in cluster)
         io.emit("user:online", { userId });
 
+        import("../services/whatsappCalling.service.js")
+          .then(({ pushActiveCallsToUser }) => pushActiveCallsToUser(String(userId)))
+          .catch((err) => console.error("WhatsApp active calls push:", err?.message || err));
+
       } catch (error) {
         console.error("User connect error:", error);
         socket.emit("error", { message: "Connection failed" });
