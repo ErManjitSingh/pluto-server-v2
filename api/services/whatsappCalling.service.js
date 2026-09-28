@@ -219,6 +219,7 @@ function serializeCall(doc, { includeSdp = false, assignee = null } = {}) {
     answeredAt: c.answeredAt || null,
     recordingStatus: c.recordingStatus || 'idle',
     recordingUrl: pathName ? `${base}${pathName}` : null,
+    recordingStoragePath: c.recordingStoragePath || null,
     recordingMimeType: c.recordingMimeType || null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
@@ -416,6 +417,7 @@ async function downloadCallRecording(callId) {
       objectPath,
       buffer: audio.buffer,
       contentType: mimeType,
+      downloadToken: fileToken,
     });
     call.recordingStatus = 'ready';
     call.recordingFilename = `${fileToken}${ext}`;
@@ -513,7 +515,7 @@ async function onStatus(line, call) {
   doc.metaStatus = metaStatus || doc.metaStatus;
   if (metaStatus === 'ACCEPTED' && doc.status !== 'accepted') {
     doc.status = 'accepted';
-    doc.answeredAt = doc.answeredAt || new Date();
+    doc.answeredAt = doc.answeredAt || unixDate(call.timestamp) || new Date();
     clearRingTimer(doc._id);
   } else if (metaStatus === 'REJECTED') {
     doc.status = 'rejected';
@@ -522,7 +524,7 @@ async function onStatus(line, call) {
   }
   await doc.save();
   const eventName = TERMINAL.has(doc.status) ? 'call:ended' : 'call:updated';
-  emitCall(line, doc.assignedTo, eventName, await present(doc, { includeSdp: doc.status === 'ringing' }));
+  emitCall(line, doc.assignedTo, eventName, await present(doc, { includeSdp: true }));
 }
 
 async function onTerminate(line, call) {
@@ -608,6 +610,17 @@ async function onRecording(line, call) {
   });
 }
 
+function isCallStatusEntry(status) {
+  const kind = String(status?.type || '').toLowerCase();
+  const name = String(status?.status || '').toUpperCase();
+  return kind === 'call' || name === 'RINGING' || name === 'ACCEPTED' || name === 'REJECTED';
+}
+
+export function webhookHasCallPayload(value) {
+  if (Array.isArray(value?.calls) && value.calls.length) return true;
+  return Array.isArray(value?.statuses) && value.statuses.some(isCallStatusEntry);
+}
+
 export async function handleWhatsappCallWebhook(line, value) {
   const { phoneNumberId } = credentials(line);
   const incomingPhoneId = value?.metadata?.phone_number_id;
@@ -623,6 +636,18 @@ export async function handleWhatsappCallWebhook(line, value) {
     else if (event === 'call_recording_available' || event === 'recording_available') await onRecording(line, call);
     else if (event === 'status') await onStatus(line, call);
     else console.log('WhatsApp call webhook event skipped:', event || '(empty)');
+  }
+
+  const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+  for (const status of statuses) {
+    if (!isCallStatusEntry(status) || !status?.id) continue;
+    await onStatus(line, {
+      id: status.id,
+      status: status.status,
+      timestamp: status.timestamp,
+      from: status.recipient_id,
+      to: status.recipient_id,
+    });
   }
 }
 
