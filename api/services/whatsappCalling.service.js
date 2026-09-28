@@ -675,6 +675,139 @@ function permissionBlocksOutgoing(data) {
   return Boolean(start && start.can_perform_action === false);
 }
 
+function permissionAction(data, name) {
+  const actions = Array.isArray(data?.actions) ? data.actions : [];
+  return actions.find((item) => String(item?.action_name || item?.name || '').toLowerCase() === name) || null;
+}
+
+const CALL_PERMISSION_TEXT = 'We would like to call you about your enquiry. Please allow calls from this number.';
+
+function emitSavedChatMessage(line, messagePayload) {
+  const io = getIO();
+  if (!io || !messagePayload?.phone) return;
+  const assignedId = messagePayload.assignedTo?._id ?? messagePayload.assignedTo;
+  const rooms = line === 'whatsapp-demand'
+    ? {
+      event: 'whatsapp-demand:message:new',
+      all: ['whatsapp:demand', 'whatsapp:demand:all'],
+      phone: `whatsapp:demand:by-phone:${messagePayload.phone}`,
+      unassigned: 'whatsapp:demand:unassigned',
+      assigned: assignedId ? `whatsapp:demand:by-assigned:${assignedId}` : '',
+    }
+    : {
+      event: 'whatsapp:message:new',
+      all: ['whatsapp', 'whatsapp:all'],
+      phone: `whatsapp:by-phone:${messagePayload.phone}`,
+      unassigned: 'whatsapp:unassigned',
+      assigned: assignedId ? `whatsapp:by-assigned:${assignedId}` : '',
+    };
+  rooms.all.forEach((room) => io.to(room).emit(rooms.event, messagePayload));
+  io.to(rooms.phone).emit(rooms.event, messagePayload);
+  if (rooms.assigned) io.to(rooms.assigned).emit(rooms.event, messagePayload);
+  else io.to(rooms.unassigned).emit(rooms.event, messagePayload);
+}
+
+/** Readable chat line when the customer taps Allow or Decline. */
+export function callPermissionReplyText(message) {
+  const reply = message?.interactive?.type === 'call_permission_reply'
+    ? message.interactive.call_permission_reply
+    : null;
+  if (!reply) return null;
+  const response = String(reply.response || '').toLowerCase();
+  if (response === 'accept') {
+    return reply.is_permanent
+      ? 'Customer allowed calls from this number.'
+      : 'Customer allowed calls from this number for now.';
+  }
+  if (response === 'reject') return 'Customer declined calls from this number.';
+  return 'Customer replied to the call permission request.';
+}
+
+export async function sendCallPermissionRequest(line, { phone, executiveId }) {
+  if (!isValidObjectId(String(executiveId || ''))) {
+    throw new WhatsappCallError('executiveId is required', 400);
+  }
+  const to = normalizePhoneForStorage(phone);
+  if (!to) throw new WhatsappCallError('phone is required', 400);
+
+  const { token, phoneNumberId, MessageModel } = credentials(line);
+  if (!token || !phoneNumberId) {
+    throw new WhatsappCallError('WhatsApp calling is not configured for this line', 500);
+  }
+
+  const owner = await resolveAssignedExecutiveForPhone(to, null, MessageModel);
+  if (owner && String(owner) !== String(executiveId)) {
+    throw new WhatsappCallError('This customer is assigned to another executive', 403);
+  }
+
+  let permission = null;
+  try {
+    permission = await getCallPermission(line, to);
+  } catch (err) {
+    console.error('WhatsApp call permission check before request:', err?.message || err);
+  }
+  const permissionStatus = String(permission?.permission?.status || '').toLowerCase();
+  if (permissionStatus === 'temporary' || permissionStatus === 'permanent') {
+    throw new WhatsappCallError('This customer has already allowed calls on this number', 409, permission);
+  }
+  const requestAction = permission ? permissionAction(permission, 'send_call_permission_request') : null;
+  if (requestAction && requestAction.can_perform_action === false) {
+    throw new WhatsappCallError(
+      'A call permission request was already sent. Please wait before sending another.',
+      429,
+      permission
+    );
+  }
+
+  const response = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'call_permission_request',
+        action: { name: 'call_permission_request' },
+        body: { text: CALL_PERMISSION_TEXT },
+      },
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new WhatsappCallError(
+      data?.error?.message || 'Could not send the call permission request',
+      response.status || 502,
+      data?.error || data
+    );
+  }
+
+  try {
+    const doc = await MessageModel.create({
+      phone: to,
+      message: 'Call permission request sent. The customer needs to allow calls from this number.',
+      direction: 'outgoing',
+      assignedTo: owner || executiveId,
+      metaMessageId: data?.messages?.[0]?.id || null,
+      messageType: 'text',
+      status: 'sent',
+    });
+    const saved = await MessageModel.findById(doc._id).populate('assignedTo', 'name email').lean();
+    emitSavedChatMessage(line, saved);
+  } catch (err) {
+    console.error('Call permission request was sent, but the chat line was not saved:', err);
+  }
+
+  return {
+    message: 'Call permission request sent',
+    metaMessageId: data?.messages?.[0]?.id || null,
+  };
+}
+
 export async function connectOutgoingCall(line, { phone, sdp, executiveId }) {
   if (!sdp || !String(sdp).trim()) throw new WhatsappCallError('sdp offer is required', 400);
   if (!isValidObjectId(String(executiveId || ''))) throw new WhatsappCallError('executiveId is required', 400);
