@@ -10,6 +10,7 @@ import {
   listCallsByPhone,
   preAcceptCall,
   recordingFileForToken,
+  sendCallPermissionRequest,
   rejectCall,
   terminateCall,
 } from '../services/whatsappCalling.service.js';
@@ -95,6 +96,18 @@ export function createWhatsappCallingRouter(line) {
         executiveId: req.body?.executiveId,
       });
       res.json({ success: true, call });
+    } catch (err) {
+      sendError(res, err);
+    }
+  });
+
+  router.post('/calls/permission-request', async (req, res) => {
+    try {
+      const result = await sendCallPermissionRequest(line, {
+        phone: req.body?.phone,
+        executiveId: req.body?.executiveId,
+      });
+      res.json({ success: true, ...result });
     } catch (err) {
       sendError(res, err);
     }
