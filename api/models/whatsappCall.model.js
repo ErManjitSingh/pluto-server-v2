@@ -38,7 +38,8 @@ const whatsappCallSchema = new mongoose.Schema(
     /** Firebase Storage object path, for example whatsapp-calls/whatsapp-demand/<token>.ogg */
     recordingStoragePath: { type: String, default: null },
     recordingBucket: { type: String, default: null },
-    recordingToken: { type: String, default: null },
+    /** Omit until a file exists. A stored null collides on the unique index. */
+    recordingToken: { type: String },
     recordingHashOk: { type: Boolean, default: null },
     recordingSourceUrl: { type: String, default: null },
     metaErrors: { type: mongoose.Schema.Types.Mixed, default: null },
@@ -48,8 +49,54 @@ const whatsappCallSchema = new mongoose.Schema(
 );
 
 whatsappCallSchema.index({ metaCallId: 1 }, { unique: true, sparse: true });
-whatsappCallSchema.index({ recordingToken: 1 }, { unique: true, sparse: true });
+whatsappCallSchema.index(
+  { recordingToken: 1 },
+  {
+    unique: true,
+    name: 'recordingToken_1',
+    partialFilterExpression: { recordingToken: { $type: 'string' } },
+  }
+);
 whatsappCallSchema.index({ line: 1, phone: 1, createdAt: -1 });
 whatsappCallSchema.index({ assignedTo: 1, status: 1, createdAt: -1 });
 
-export default mongoose.model('WhatsappCall', whatsappCallSchema);
+whatsappCallSchema.pre('save', function omitBlankRecordingToken(next) {
+  if (this.recordingToken == null || this.recordingToken === '') {
+    this.$unset('recordingToken');
+    this.recordingToken = undefined;
+    delete this._doc.recordingToken;
+  }
+  next();
+});
+
+const WhatsappCall = mongoose.model('WhatsappCall', whatsappCallSchema);
+
+/**
+ * The old unique index treated a missing recording as null, so the second call
+ * could not be inserted. Keep uniqueness only for real token strings.
+ */
+export async function ensureRecordingTokenIndex() {
+  const collection = WhatsappCall.collection;
+  const indexes = await collection.indexes();
+  const current = indexes.find((idx) => idx.name === 'recordingToken_1');
+  const isPartial = current?.partialFilterExpression?.recordingToken?.$type === 'string';
+  if (current && !isPartial) {
+    await collection.dropIndex('recordingToken_1');
+  }
+  await collection.updateMany(
+    { $or: [{ recordingToken: null }, { recordingToken: '' }] },
+    { $unset: { recordingToken: '' } }
+  );
+  if (!isPartial) {
+    await collection.createIndex(
+      { recordingToken: 1 },
+      {
+        unique: true,
+        name: 'recordingToken_1',
+        partialFilterExpression: { recordingToken: { $type: 'string' } },
+      }
+    );
+  }
+}
+
+export default WhatsappCall;
