@@ -296,10 +296,16 @@ function ensureReSubject(subject) {
   return /^re\s*:/i.test(s) ? s : `Re: ${s}`;
 }
 
+function hasSeenFlag(flags) {
+  return (flags || []).includes('\\Seen');
+}
+
 /**
  * Shared: open folder, fetch one UID, parse full MIME.
+ * markSeen adds IMAP \\Seen after a PEEK fetch. List and attachment downloads stay unread.
+ * A failed flag update does not fail the body fetch.
  */
-async function fetchParsedByUid(cfg, uidNum, folderKey = 'inbox') {
+async function fetchParsedByUid(cfg, uidNum, folderKey = 'inbox', { markSeen = false } = {}) {
   let connection;
   try {
     connection = await imaps.connect(buildImapConfig(cfg));
@@ -325,10 +331,26 @@ async function fetchParsedByUid(cfg, uidNum, folderKey = 'inbox') {
       throw err;
     }
 
+    const flags = fetched[0].attributes?.flags || [];
+    let seen = hasSeenFlag(flags);
+    if (markSeen && !seen) {
+      const serverUid = fetched[0].attributes?.uid ?? uidNum;
+      try {
+        await connection.addFlags(serverUid, '\\Seen');
+        seen = true;
+      } catch (err) {
+        console.warn(
+          `[admin-mail] Could not set \\Seen on uid ${uidNum} (${cfg.user}):`,
+          err.message
+        );
+      }
+    }
+
     const parsed = await simpleParser(rawPart.body);
     return {
       parsed,
-      flags: fetched[0].attributes?.flags || [],
+      flags,
+      seen,
       folder: normalizeFolderKey(folderKey),
       boxName,
     };
@@ -478,7 +500,7 @@ export async function getInbox({
         subject: headers.subject,
         date: headers.date,
         hasAttachments: structHasAttachment(msg.attributes?.struct),
-        seen: flags.includes('\\Seen'),
+        seen: hasSeenFlag(flags),
       });
     }
 
@@ -509,6 +531,7 @@ export async function getInbox({
 
 /**
  * Fetch one message by IMAP UID (for reply UI / parent headers + attachment list).
+ * Opening sets IMAP \\Seen so the next inbox list shows seen: true.
  * folder=inbox|sent
  */
 export async function getMessageByUid({ mailbox, uid, folder = 'inbox' }) {
@@ -521,7 +544,9 @@ export async function getMessageByUid({ mailbox, uid, folder = 'inbox' }) {
   }
 
   const folderKey = normalizeFolderKey(folder);
-  const { parsed, boxName } = await fetchParsedByUid(cfg, uidNum, folderKey);
+  const { parsed, boxName, seen } = await fetchParsedByUid(cfg, uidNum, folderKey, {
+    markSeen: true,
+  });
   const attachmentMeta = mapAttachmentMeta(parsed.attachments);
 
   return {
@@ -529,6 +554,7 @@ export async function getMessageByUid({ mailbox, uid, folder = 'inbox' }) {
     folder: folderKey,
     boxName,
     uid: uidNum,
+    seen,
     messageId: (parsed.messageId || '').trim(),
     from: addrText(parsed.from),
     to: addrText(parsed.to),
@@ -545,6 +571,76 @@ export async function getMessageByUid({ mailbox, uid, folder = 'inbox' }) {
         : [parsed.references]
       : [],
   };
+}
+
+function parseSeenValue(seen) {
+  if (seen === true || seen === 1) return true;
+  if (seen === false || seen === 0) return false;
+  const text = String(seen ?? '')
+    .trim()
+    .toLowerCase();
+  if (text === 'true' || text === '1') return true;
+  if (text === 'false' || text === '0') return false;
+  return null;
+}
+
+/**
+ * Add or remove IMAP \\Seen for one UID.
+ * POST /api/admin-mail/seen — mailbox, folder, uid, seen true|false.
+ */
+export async function setMessageSeen({ mailbox, uid, folder = 'inbox', seen }) {
+  const cfg = getMailbox(mailbox);
+  const uidNum = Number(uid);
+  if (!Number.isFinite(uidNum) || uidNum < 1) {
+    const err = new Error('Valid uid is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const wantSeen = parseSeenValue(seen);
+  if (wantSeen == null) {
+    const err = new Error('seen must be true or false');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const folderKey = normalizeFolderKey(folder);
+  let connection;
+  try {
+    connection = await imaps.connect(buildImapConfig(cfg));
+    const boxName = await resolveImapBoxName(connection, folderKey);
+    await connection.openBox(boxName);
+
+    const found = await connection.search([['UID', String(uidNum)]], {
+      bodies: ['HEADER'],
+      struct: false,
+      markSeen: false,
+    });
+    if (!found.length) {
+      const err = new Error('Message not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const serverUid = found[0].attributes?.uid ?? uidNum;
+    const alreadySeen = hasSeenFlag(found[0].attributes?.flags);
+    if (alreadySeen !== wantSeen) {
+      if (wantSeen) await connection.addFlags(serverUid, '\\Seen');
+      else await connection.delFlags(serverUid, '\\Seen');
+    }
+
+    return {
+      mailbox: cfg.user,
+      folder: folderKey,
+      boxName,
+      uid: uidNum,
+      seen: wantSeen,
+    };
+  } finally {
+    try {
+      if (connection) connection.end();
+    } catch (_) {}
+  }
 }
 
 /**
