@@ -4,6 +4,7 @@ import {
   getMailboxes,
   getAdminInbox,
   getAdminMessage,
+  setAdminMessageSeen,
   downloadAdminAttachment,
   sendAdminMail,
   replyAdminMail,
@@ -29,6 +30,7 @@ const optionalAttachments = (req, res, next) => {
 router.get('/mailboxes', getMailboxes);
 router.get('/inbox', getAdminInbox);
 router.get('/message', getAdminMessage);
+router.post('/seen', setAdminMessageSeen);
 router.get('/attachment', downloadAdminAttachment);
 router.post('/send', optionalAttachments, sendAdminMail);
 router.post('/reply', optionalAttachments, replyAdminMail);
