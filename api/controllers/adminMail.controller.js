@@ -3,6 +3,7 @@ import {
   listMailboxes,
   getInbox,
   getMessageByUid,
+  setMessageSeen,
   getAttachment,
   sendMail,
   replyMail,
@@ -40,6 +41,7 @@ export const getAdminInbox = async (req, res, next) => {
 /**
  * GET /api/admin-mail/message?mailbox=&uid=&folder=inbox|sent
  * Full body + attachment metadata (index/filename/size) — no file bytes.
+ * Sets IMAP \Seen and returns seen: true when the flag is stored.
  */
 export const getAdminMessage = async (req, res, next) => {
   try {
@@ -53,6 +55,29 @@ export const getAdminMessage = async (req, res, next) => {
   } catch (err) {
     if (err.statusCode) return next(errorHandler(err.statusCode, err.message));
     next(errorHandler(500, `Fetch message failed: ${err.message}`));
+  }
+};
+
+/**
+ * POST /api/admin-mail/seen
+ * JSON: { mailbox, uid, folder?: "inbox"|"sent", seen: true|false }
+ * Adds or removes IMAP \Seen. Does not change the message body.
+ */
+export const setAdminMessageSeen = async (req, res, next) => {
+  try {
+    const { mailbox, uid, folder, seen } = req.body || {};
+    if (!mailbox || uid == null || uid === '') {
+      return next(errorHandler(400, 'mailbox and uid are required'));
+    }
+    if (seen == null || seen === '') {
+      return next(errorHandler(400, 'seen must be true or false'));
+    }
+
+    const data = await setMessageSeen({ mailbox, uid, folder, seen });
+    res.json({ success: true, data });
+  } catch (err) {
+    if (err.statusCode) return next(errorHandler(err.statusCode, err.message));
+    next(errorHandler(500, `Update seen failed: ${err.message}`));
   }
 };
 
