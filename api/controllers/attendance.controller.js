@@ -18,6 +18,18 @@ export function toMonthString(dateStr) {
   return String(dateStr).slice(0, 7);
 }
 
+function clampCount(value) {
+  const count = Math.floor(Number(value));
+  if (!Number.isFinite(count) || count < 0) return 0;
+  return Math.min(count, 999);
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function parseCurrentLocation(value) {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
   const latitude = value.latitude != null && value.latitude !== '' ? Number(value.latitude) : null;
@@ -130,6 +142,123 @@ export const markAttendance = async (req, res, next) => {
 };
 
 /**
+ * POST /logout — Stamp logout time and logout photo on the day's attendance.
+ * Body: { userId, date?, logoutImage, logoutLocation? }
+ */
+export const logoutAttendance = async (req, res, next) => {
+  try {
+    const { userId, logoutLocation } = req.body;
+    const date = req.body.date ? String(req.body.date).trim() : toDateString();
+    const logoutImage = req.body.logoutImage != null ? String(req.body.logoutImage).trim() : '';
+
+    if (!userId || !isValidObjectId(String(userId))) {
+      return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ success: false, message: 'date must be YYYY-MM-DD' });
+    }
+    if (!logoutImage) {
+      return res.status(400).json({ success: false, message: 'Logout photo is required' });
+    }
+
+    const parsedLocation = parseCurrentLocation(logoutLocation);
+    if (logoutLocation !== undefined && parsedLocation === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'logoutLocation latitude, longitude, and accuracy must be numbers',
+      });
+    }
+
+    const existing = await Attendance.findOne({ userId, date });
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mark attendance before logout',
+        marked: false,
+      });
+    }
+
+    existing.logoutAt = new Date();
+    existing.logoutImage = logoutImage;
+    if (parsedLocation) existing.logoutLocation = parsedLocation;
+    await existing.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logout time saved',
+      loggedOut: true,
+      data: existing,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /follow-up — Save one hourly follow-up on that day's attendance row.
+ * Body: { userId, dateKey, slotKey, windowStart, windowEnd, afterOffice, followups, prospects, pipeline, details, submittedAt }
+ */
+export const saveHourlyFollowUp = async (req, res, next) => {
+  try {
+    const userId = req.body.userId != null ? String(req.body.userId) : '';
+    const date = String(req.body.dateKey || req.body.date || '').trim() || toDateString();
+    const slotKey = req.body.slotKey != null ? String(req.body.slotKey).trim() : '';
+    const details = req.body.details != null ? String(req.body.details).trim() : '';
+
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({ success: false, message: 'Valid userId is required' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ success: false, message: 'dateKey must be YYYY-MM-DD' });
+    }
+    if (!slotKey || !slotKey.startsWith(date)) {
+      return res.status(400).json({ success: false, message: 'slotKey must belong to this date' });
+    }
+    if (!details) {
+      return res.status(400).json({ success: false, message: 'details is required' });
+    }
+    if (details.length > 2000) {
+      return res.status(400).json({ success: false, message: 'details must be 2000 characters or less' });
+    }
+
+    const attendance = await Attendance.findOne({ userId, date });
+    if (!attendance) {
+      return res.status(404).json({
+        success: false,
+        message: "Mark today's attendance before saving this hour",
+        marked: false,
+      });
+    }
+
+    const entry = {
+      slotKey,
+      windowStart: parseDate(req.body.windowStart),
+      windowEnd: parseDate(req.body.windowEnd),
+      afterOffice: Boolean(req.body.afterOffice),
+      followups: clampCount(req.body.followups),
+      prospects: clampCount(req.body.prospects),
+      pipeline: clampCount(req.body.pipeline),
+      details,
+      submittedAt: parseDate(req.body.submittedAt) || new Date(),
+    };
+
+    if (!Array.isArray(attendance.hourlyFollowUps)) attendance.hourlyFollowUps = [];
+    const index = attendance.hourlyFollowUps.findIndex((row) => row.slotKey === slotKey);
+    if (index >= 0) attendance.hourlyFollowUps.set(index, entry);
+    else attendance.hourlyFollowUps.push(entry);
+    await attendance.save();
+
+    return res.status(index >= 0 ? 200 : 201).json({
+      success: true,
+      message: index >= 0 ? 'Hourly follow-up updated' : 'Hourly follow-up saved',
+      data: attendance,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * GET /today/:userId — Check whether user marked attendance today (for CRM button state).
  */
 export const getTodayAttendance = async (req, res, next) => {
@@ -146,6 +275,7 @@ export const getTodayAttendance = async (req, res, next) => {
       success: true,
       date,
       marked: Boolean(record),
+      loggedOut: Boolean(record?.logoutAt),
       data: record,
     });
   } catch (error) {
