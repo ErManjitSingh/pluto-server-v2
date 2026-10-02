@@ -1,6 +1,8 @@
 import express from 'express';
 import {
   markAttendance,
+  logoutAttendance,
+  saveHourlyFollowUp,
   getTodayAttendance,
   getAttendanceByUser,
   getAttendanceByUserMonth,
@@ -15,6 +17,12 @@ const router = express.Router();
 
 /** Mark attendance (CRM login button). Body may include currentLocation { latitude, longitude, accuracy, address } */
 router.post('/mark', markAttendance);
+
+/** Stamp logout time and photo. Body: { userId, date?, logoutImage, logoutLocation? } */
+router.post('/logout', logoutAttendance);
+
+/** Save one hour onto that day's attendance. Body uses the hourly popup payload. */
+router.post('/follow-up', saveHourlyFollowUp);
 
 /** Check if user already marked today — drives button UI */
 router.get('/today/:userId', getTodayAttendance);
