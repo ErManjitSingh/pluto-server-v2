@@ -30,6 +30,21 @@ const attendanceSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    logoutAt: {
+      type: Date,
+      default: null,
+    },
+    logoutImage: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    logoutLocation: {
+      latitude: { type: Number, default: null },
+      longitude: { type: Number, default: null },
+      accuracy: { type: Number, default: null },
+      address: { type: String, trim: true, default: null },
+    },
     userName: {
       type: String,
       trim: true,
@@ -78,6 +93,22 @@ const attendanceSchema = new mongoose.Schema(
       longitude: { type: Number, default: null },
       accuracy: { type: Number, default: null },
       address: { type: String, trim: true, default: null },
+    },
+    hourlyFollowUps: {
+      type: [
+        {
+          slotKey: { type: String, required: true, trim: true },
+          windowStart: { type: Date, default: null },
+          windowEnd: { type: Date, default: null },
+          afterOffice: { type: Boolean, default: false },
+          followups: { type: Number, default: 0, min: 0, max: 999 },
+          prospects: { type: Number, default: 0, min: 0, max: 999 },
+          pipeline: { type: Number, default: 0, min: 0, max: 999 },
+          details: { type: String, required: true, trim: true, maxlength: 2000 },
+          submittedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
     },
   },
   { timestamps: true }
