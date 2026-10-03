@@ -2,7 +2,7 @@ import MobileOtp from '../models/mobileotp.model.js';
 import { normalizeMobile } from '../utils/guestAuth.js';
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES || 5);
-const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
+const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 10);
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
