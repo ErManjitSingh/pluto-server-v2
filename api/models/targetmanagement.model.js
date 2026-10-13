@@ -1,5 +1,47 @@
 import mongoose from 'mongoose';
 
+const targetAchieveSchema = new mongoose.Schema(
+  {
+    date: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'],
+    },
+    achievedAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    notAchievedAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    achievedLeads: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    notAchievedLeads: {
+      type: Number,
+      required: true,
+      min: 0,
+      default: 0,
+    },
+    reason: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: 1000,
+    },
+  },
+  { timestamps: true }
+);
+
 const targetManagementSchema = new mongoose.Schema(
   {
     month: {
@@ -40,6 +82,10 @@ const targetManagementSchema = new mongoose.Schema(
           type: mongoose.Schema.Types.Mixed,
           required: false,
           default: null,
+        },
+        targetAchieve: {
+          type: [targetAchieveSchema],
+          default: [],
         },
       },
     ],
