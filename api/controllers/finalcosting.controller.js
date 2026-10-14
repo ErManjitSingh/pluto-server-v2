@@ -2369,6 +2369,99 @@ export const getConvertedOperationsByUserIdLite = async (req, res, next) => {
   }
 };
 
+const MONTH_INDEX = {
+  jan: 0, january: 0,
+  feb: 1, february: 1,
+  mar: 2, march: 2,
+  apr: 3, april: 3,
+  may: 4,
+  jun: 5, june: 5,
+  jul: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11
+};
+
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december'
+];
+
+function resolveMonthIndex(monthInput) {
+  if (monthInput == null) return -1;
+  const raw = String(monthInput).trim().toLowerCase();
+  if (!raw) return -1;
+  if (Object.prototype.hasOwnProperty.call(MONTH_INDEX, raw)) {
+    return MONTH_INDEX[raw];
+  }
+  if (/^\d{1,2}$/.test(raw)) {
+    const numeric = Number(raw);
+    if (numeric >= 1 && numeric <= 12) return numeric - 1;
+  }
+  return -1;
+}
+
+// GET /api/finalcosting/converted-by-user-month/:userId/:month?year=2026
+// Month accepts oct / october / 10. Year defaults to the current UTC year.
+export const getConvertedCountByUserAndMonth = async (req, res, next) => {
+  try {
+    const { userId, month } = req.params;
+
+    if (!userId || !String(userId).trim()) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+
+    const monthIndex = resolveMonthIndex(month);
+    if (monthIndex < 0) {
+      return res.status(400).json({
+        message: 'month must be a name (oct, october) or a number from 1 to 12'
+      });
+    }
+
+    const now = new Date();
+    let year = now.getUTCFullYear();
+    if (req.query.year != null && String(req.query.year).trim() !== '') {
+      const parsedYear = Number(req.query.year);
+      if (!Number.isInteger(parsedYear) || parsedYear < 2000 || parsedYear > 2100) {
+        return res.status(400).json({ message: 'year must be a number between 2000 and 2100' });
+      }
+      year = parsedYear;
+    }
+
+    const rangeStart = new Date(Date.UTC(year, monthIndex, 1));
+    const rangeEnd = new Date(Date.UTC(year, monthIndex + 1, 1));
+
+    const files = await Operation.find({
+      userId: String(userId),
+      converted: true,
+      convertedDate: { $gte: rangeStart, $lt: rangeEnd }
+    })
+      .select({
+        _id: 1,
+        id: 1,
+        finalTotal: 1,
+        marginPercentage: 1,
+        discountPercentage: 1,
+        convertedDate: 1
+      })
+      .sort({ convertedDate: -1 })
+      .lean()
+      .maxTimeMS(8000);
+
+    return res.status(200).json({
+      userId: String(userId),
+      month: MONTH_NAMES[monthIndex],
+      year,
+      convertedCount: files.length,
+      files
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getOperationSpecificFields = async (req, res, next) => {
   try {
     const { id } = req.params;
