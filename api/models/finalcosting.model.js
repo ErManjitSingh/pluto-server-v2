@@ -304,6 +304,16 @@ operationSchema.index({ converted: 1, createdAt: -1 });
 operationSchema.index({ id: 1, userId: 1, customerLeadId: 1 }); // Compound index for getOperationById
 operationSchema.index({ id: 1 }); // Single field index for id
 operationSchema.index({ userId: 1 }); // Single field index for userId
+// Covered lookup: converted count + totals for one user in one month
+operationSchema.index({
+  userId: 1,
+  converted: 1,
+  convertedDate: 1,
+  id: 1,
+  finalTotal: 1,
+  marginPercentage: 1,
+  discountPercentage: 1
+});
 operationSchema.index({ customerLeadId: 1 }); // Single field index for customerLeadId
 operationSchema.index({ operationAssignReportId: 1, createdAt: -1 }); // Compound index for getOperationByAssignReportId
 
