@@ -17,10 +17,6 @@ const monthEntrySchema = new mongoose.Schema(
       type: Number,
       min: 0,
     },
-     convertedLeads: {
-      type: Number,
-      min: 0,
-    },
     inProgress: {
       type: Number,
       min: 0,
@@ -28,6 +24,23 @@ const monthEntrySchema = new mongoose.Schema(
     behind: {
       type: Number,
       min: 0,
+    },
+    convertedLeads: {
+      type: Number,
+      min: 0,
+    },
+    convertedLeadDetails: {
+      type: [
+        new mongoose.Schema(
+          {
+            name: { type: String, trim: true },
+            mobile: { type: String, trim: true },
+            destination: { type: String, trim: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
     },
   },
   { _id: false }
