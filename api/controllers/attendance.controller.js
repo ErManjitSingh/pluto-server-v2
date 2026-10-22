@@ -30,6 +30,38 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function slotTime(row) {
+  const value = row?.windowEnd || row?.windowStart || row?.submittedAt || 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+/** The hour already saved immediately before this one. Later hours are ignored. */
+function findPreviousHourlySlot(rows, slotKey, windowStart) {
+  const others = (Array.isArray(rows) ? rows : []).filter((row) => row && row.slotKey !== slotKey);
+  if (!others.length) return null;
+  const startMs = windowStart ? new Date(windowStart).getTime() : NaN;
+  if (Number.isFinite(startMs)) {
+    const earlier = others
+      .filter((row) => slotTime(row) > 0 && slotTime(row) <= startMs)
+      .sort((a, b) => slotTime(b) - slotTime(a));
+    if (earlier.length) return earlier[0];
+    if (others.some((row) => slotTime(row) > 0)) return null;
+  }
+  return (
+    others
+      .filter((row) => String(row.slotKey) < String(slotKey))
+      .sort((a, b) => String(b.slotKey).localeCompare(String(a.slotKey)))[0] || null
+  );
+}
+
+function parseFollowUpType(value) {
+  if (value == null || value === '') return '';
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'previous' || normalized === 'new') return normalized;
+  return '';
+}
+
 function parseCurrentLocation(value) {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
   const latitude = value.latitude != null && value.latitude !== '' ? Number(value.latitude) : null;
@@ -196,7 +228,8 @@ export const logoutAttendance = async (req, res, next) => {
 
 /**
  * POST /follow-up — Save one hourly follow-up on that day's attendance row.
- * Body: { userId, dateKey, slotKey, windowStart, windowEnd, afterOffice, followups, prospects, pipeline, details, submittedAt }
+ * Body: { userId, dateKey, slotKey, windowStart, windowEnd, afterOffice, followups, prospects, pipeline, details, submittedAt, followUpType }
+ * followUpType is required once an earlier hour exists: "previous" (same follow-up) or "new".
  */
 export const saveHourlyFollowUp = async (req, res, next) => {
   try {
@@ -230,20 +263,53 @@ export const saveHourlyFollowUp = async (req, res, next) => {
       });
     }
 
+    if (!Array.isArray(attendance.hourlyFollowUps)) attendance.hourlyFollowUps = [];
+    const index = attendance.hourlyFollowUps.findIndex((row) => row.slotKey === slotKey);
+    const windowStart = parseDate(req.body.windowStart);
+    const previousSlot = findPreviousHourlySlot(attendance.hourlyFollowUps, slotKey, windowStart);
+    let followUpType = parseFollowUpType(req.body.followUpType);
+
+    if (previousSlot) {
+      if (!followUpType && index >= 0) {
+        followUpType = parseFollowUpType(attendance.hourlyFollowUps[index]?.followUpType);
+      }
+      if (!followUpType) {
+        return res.status(400).json({
+          success: false,
+          needsConfirmation: true,
+          message: 'Is this your previous follow-up or a new one?',
+          previousSlot: {
+            slotKey: previousSlot.slotKey,
+            windowStart: previousSlot.windowStart,
+            windowEnd: previousSlot.windowEnd,
+            followups: previousSlot.followups,
+            prospects: previousSlot.prospects,
+            pipeline: previousSlot.pipeline,
+          },
+        });
+      }
+    } else if (followUpType === 'previous') {
+      return res.status(400).json({
+        success: false,
+        message: 'There is no previous follow-up for this day. Mark this hour as a new one.',
+      });
+    } else {
+      followUpType = 'new';
+    }
+
     const entry = {
       slotKey,
-      windowStart: parseDate(req.body.windowStart),
+      windowStart,
       windowEnd: parseDate(req.body.windowEnd),
       afterOffice: Boolean(req.body.afterOffice),
       followups: clampCount(req.body.followups),
       prospects: clampCount(req.body.prospects),
       pipeline: clampCount(req.body.pipeline),
+      followUpType,
+      previousSlotKey: followUpType === 'previous' ? previousSlot.slotKey : null,
       details,
       submittedAt: parseDate(req.body.submittedAt) || new Date(),
     };
-
-    if (!Array.isArray(attendance.hourlyFollowUps)) attendance.hourlyFollowUps = [];
-    const index = attendance.hourlyFollowUps.findIndex((row) => row.slotKey === slotKey);
     if (index >= 0) attendance.hourlyFollowUps.set(index, entry);
     else attendance.hourlyFollowUps.push(entry);
     await attendance.save();
