@@ -6,6 +6,7 @@ const NUMBER_FIELDS = [
   'achieved',
   'inProgress',
   'behind',
+  'convertedLeads',
 ];
 
 const MONTH_INDEX = {
@@ -67,7 +68,71 @@ function parseMonthEntry(input) {
     entry[field] = value;
   }
 
+  const detailsResult = parseConvertedLeadDetails(input.convertedLeadDetails);
+  if (detailsResult.error) return { error: detailsResult.error };
+  entry.convertedLeadDetails = detailsResult.details;
+
   return { entry };
+}
+
+function parseConvertedLeadDetails(value) {
+  if (value == null) return { details: [] };
+  if (!Array.isArray(value)) {
+    return { error: 'convertedLeadDetails must be an array' };
+  }
+
+  const details = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!item || typeof item !== 'object') {
+      return { error: `convertedLeadDetails[${index}] must be an object` };
+    }
+    const name = String(item.name ?? '').trim();
+    const mobile = String(item.mobile ?? '').trim();
+    const destination = String(item.destination ?? '').trim();
+    if (!name || !mobile || !destination) {
+      return { error: `convertedLeadDetails[${index}] needs name, mobile and destination` };
+    }
+    details.push({ name, mobile, destination });
+  }
+
+  return { details };
+}
+
+function mergeConvertedLeadDetails(previousMonth, entry) {
+  const previousCount = Number(previousMonth?.convertedLeads);
+  const previousDetails = Array.isArray(previousMonth?.convertedLeadDetails)
+    ? previousMonth.convertedLeadDetails.map((item) => ({
+      name: item.name,
+      mobile: item.mobile,
+      destination: item.destination,
+    }))
+    : [];
+  const incoming = entry.convertedLeadDetails;
+  const hasPrevious = Number.isFinite(previousCount);
+  const added = hasPrevious ? entry.convertedLeads - previousCount : 0;
+
+  if (!hasPrevious) {
+    return { details: incoming };
+  }
+
+  if (added > 0) {
+    if (incoming.length === added) {
+      return { details: [...previousDetails, ...incoming] };
+    }
+    if (incoming.length === previousDetails.length + added) {
+      return { details: incoming };
+    }
+    return {
+      error: `convertedLeads increased by ${added}. Send ${added} convertedLeadDetails with name, mobile and destination`,
+    };
+  }
+
+  if (!incoming.length || incoming.length === previousDetails.length) {
+    return { details: incoming.length ? incoming : previousDetails };
+  }
+
+  return { details: previousDetails };
 }
 
 function collectEntries(body) {
@@ -97,8 +162,16 @@ export const saveManagerTarget = async (req, res, next) => {
       parsed.push(result.entry);
     }
 
+    const existing = await ManagerTarget.findOne({ companyName }).select({ months: 1 }).lean();
+    const existingByMonth = new Map((existing?.months || []).map((item) => [item.month, item]));
+
     const byMonth = new Map();
     for (const entry of parsed) {
+      const merged = mergeConvertedLeadDetails(existingByMonth.get(entry.month), entry);
+      if (merged.error) {
+        return res.status(400).json({ message: merged.error });
+      }
+      entry.convertedLeadDetails = merged.details;
       byMonth.set(entry.month, entry);
     }
     const entries = [...byMonth.values()];
@@ -161,7 +234,11 @@ export const getManagerTargetByCompany = async (req, res, next) => {
       .lean()
       .maxTimeMS(8000);
 
-    const months = sortMonths(doc?.months || []);
+    const months = sortMonths(doc?.months || []).map((item) => ({
+      ...item,
+      convertedLeads: item.convertedLeads ?? 0,
+      convertedLeadDetails: item.convertedLeadDetails || [],
+    }));
 
     if (monthQuery) {
       const month = months.find((item) => item.month === monthQuery);
