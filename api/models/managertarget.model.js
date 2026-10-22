@@ -17,6 +17,10 @@ const monthEntrySchema = new mongoose.Schema(
       type: Number,
       min: 0,
     },
+     convertedLeads: {
+      type: Number,
+      min: 0,
+    },
     inProgress: {
       type: Number,
       min: 0,
