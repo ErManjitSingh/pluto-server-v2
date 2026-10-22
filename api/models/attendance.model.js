@@ -104,6 +104,13 @@ const attendanceSchema = new mongoose.Schema(
           followups: { type: Number, default: 0, min: 0, max: 999 },
           prospects: { type: Number, default: 0, min: 0, max: 999 },
           pipeline: { type: Number, default: 0, min: 0, max: 999 },
+          // Set when this hour is not the first of the day: previous = same follow-up continued, new = a new one.
+          followUpType: {
+            type: String,
+            enum: ['previous', 'new'],
+            default: 'new',
+          },
+          previousSlotKey: { type: String, trim: true, default: null },
           details: { type: String, required: true, trim: true, maxlength: 2000 },
           submittedAt: { type: Date, default: Date.now },
         },
