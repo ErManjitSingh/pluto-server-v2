@@ -146,6 +146,59 @@ function sortMonths(months) {
   return [...months].sort((left, right) => monthSortValue(right.month) - monthSortValue(left.month));
 }
 
+function yearMonthFromLabel(month) {
+  const match = /^([a-z]+)(\d{4})$/.exec(String(month || ''));
+  if (!match || MONTH_INDEX[match[1]] == null) return null;
+  return `${match[2]}-${String(MONTH_INDEX[match[1]] + 1).padStart(2, '0')}`;
+}
+
+function normalizeDate(value) {
+  const raw = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const [year, month, day] = raw.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return raw;
+}
+
+function sortDays(days) {
+  return [...days].sort((left, right) => String(right.date).localeCompare(String(left.date)));
+}
+
+function shapeDay(day) {
+  return {
+    date: day.date,
+    reason: day.reason || '',
+  };
+}
+
+function parseDayDifference(input) {
+  if (!input || typeof input !== 'object') {
+    return { error: 'Day difference must be an object' };
+  }
+
+  const date = normalizeDate(input.date);
+  if (!date) {
+    return { error: 'date must be YYYY-MM-DD' };
+  }
+
+  const reason = String(input.reason ?? '').trim();
+  if (!reason) {
+    return { error: 'reason is required' };
+  }
+  if (reason.length > 1000) {
+    return { error: 'reason must be 1000 characters or less' };
+  }
+
+  return { entry: { date, reason } };
+}
+
 export const saveManagerTarget = async (req, res, next) => {
   try {
     const companyName = normalizeCompany(req.body?.companyName);
@@ -230,7 +283,7 @@ export const getManagerTargetByCompany = async (req, res, next) => {
     }
 
     const doc = await ManagerTarget.findOne({ companyName })
-      .select({ companyName: 1, months: 1 })
+      .select({ companyName: 1, months: 1, dayDifferences: 1 })
       .lean()
       .maxTimeMS(8000);
 
@@ -239,21 +292,128 @@ export const getManagerTargetByCompany = async (req, res, next) => {
       convertedLeads: item.convertedLeads ?? 0,
       convertedLeadDetails: item.convertedLeadDetails || [],
     }));
+    const dayDifferences = sortDays(doc?.dayDifferences || []).map(shapeDay);
 
     if (monthQuery) {
       const month = months.find((item) => item.month === monthQuery);
       if (!month) {
         return res.status(404).json({ message: 'No data for this company and month' });
       }
+      const yearMonth = yearMonthFromLabel(monthQuery);
       return res.status(200).json({
         companyName,
         ...month,
+        dayDifferences: yearMonth
+          ? dayDifferences.filter((item) => item.date.startsWith(yearMonth))
+          : [],
       });
     }
 
     return res.status(200).json({
       companyName,
       months,
+      dayDifferences,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const saveDayDifference = async (req, res, next) => {
+  try {
+    const companyName = normalizeCompany(req.body?.companyName);
+    if (!companyName) {
+      return res.status(400).json({ message: 'companyName must be ptw or demand setu' });
+    }
+
+    const parsed = parseDayDifference(req.body);
+    if (parsed.error) {
+      return res.status(400).json({ message: parsed.error });
+    }
+
+    const saved = await ManagerTarget.findOneAndUpdate(
+      { companyName },
+      [
+        {
+          $set: {
+            companyName,
+            dayDifferences: {
+              $concatArrays: [
+                {
+                  $filter: {
+                    input: { $ifNull: ['$dayDifferences', []] },
+                    as: 'item',
+                    cond: { $ne: ['$$item.date', parsed.entry.date] },
+                  },
+                },
+                [parsed.entry],
+              ],
+            },
+          },
+        },
+      ],
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    ).lean();
+
+    const day = (saved.dayDifferences || []).find((item) => item.date === parsed.entry.date);
+
+    return res.status(200).json({
+      companyName: saved.companyName,
+      ...shapeDay(day || parsed.entry),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getDayDifference = async (req, res, next) => {
+  try {
+    const companyName = normalizeCompany(req.params.companyName);
+    if (!companyName) {
+      return res.status(400).json({ message: 'companyName must be ptw or demand setu' });
+    }
+
+    const dateQuery = req.query.date != null && String(req.query.date).trim() !== ''
+      ? normalizeDate(req.query.date)
+      : null;
+    if (req.query.date != null && String(req.query.date).trim() !== '' && !dateQuery) {
+      return res.status(400).json({ message: 'date must be YYYY-MM-DD' });
+    }
+
+    const monthQuery = req.query.month != null && String(req.query.month).trim() !== ''
+      ? String(req.query.month).trim()
+      : null;
+    if (monthQuery && !/^\d{4}-\d{2}$/.test(monthQuery)) {
+      return res.status(400).json({ message: 'month must be YYYY-MM' });
+    }
+
+    const doc = await ManagerTarget.findOne({ companyName })
+      .select({ companyName: 1, dayDifferences: 1 })
+      .lean()
+      .maxTimeMS(8000);
+
+    let days = sortDays(doc?.dayDifferences || []).map(shapeDay);
+    if (dateQuery) days = days.filter((item) => item.date === dateQuery);
+    else if (monthQuery) days = days.filter((item) => item.date.startsWith(monthQuery));
+
+    if (dateQuery) {
+      const day = days[0];
+      if (!day) {
+        return res.status(404).json({ message: 'No difference saved for this date' });
+      }
+      return res.status(200).json({
+        companyName,
+        ...day,
+      });
+    }
+
+    return res.status(200).json({
+      companyName,
+      dayDifferences: days,
     });
   } catch (error) {
     next(error);
