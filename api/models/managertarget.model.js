@@ -1,5 +1,23 @@
 import mongoose from 'mongoose';
 
+const dayDifferenceSchema = new mongoose.Schema(
+  {
+    date: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'],
+    },
+    reason: {
+      type: String,
+      trim: true,
+      required: true,
+      maxlength: 1000,
+    },
+  },
+  { _id: false }
+);
+
 const monthEntrySchema = new mongoose.Schema(
   {
     month: {
@@ -55,6 +73,10 @@ const managerTargetSchema = new mongoose.Schema(
     },
     months: {
       type: [monthEntrySchema],
+      default: [],
+    },
+    dayDifferences: {
+      type: [dayDifferenceSchema],
       default: [],
     },
   },
