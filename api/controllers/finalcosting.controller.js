@@ -8,6 +8,7 @@ import { recalculateLeadRemainingAmount } from './banktransactions.controller.js
 import {
   ensurePdfReady,
   onFinalCostingSaved,
+  pdfBrandFromCompanyName,
 } from '../utils/finalcostingPdfPersist.js';
 import { deleteAllStoredPdfs } from '../utils/finalcostingPdfStore.js';
 
@@ -299,7 +300,7 @@ async function updatePropertyNightsBooked() {
 export const createOperation = async (req, res, next) => {
   try {
     const operation = await Operation.create(req.body);
-    // Background: build + store PDFs so download is instant
+    // Background: build the PDF that matches this quotation's companyName
     onFinalCostingSaved(operation._id).catch(() => {});
     res.status(201).json(operation);
   } catch (error) {
@@ -395,7 +396,7 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
     }
 
     const exists = await Operation.findOne({ _id: id, userId, customerLeadId })
-      .select('_id id package.packageName')
+      .select('_id id package.packageName companyName')
       .lean()
       .maxTimeMS(8000);
 
@@ -403,9 +404,23 @@ async function sendOperationPdf(req, res, next, brand = 'ptw') {
       return res.status(404).json({ message: 'Operation not found' });
     }
 
+    const companyBrand = pdfBrandFromCompanyName(exists.companyName);
+    if (!companyBrand) {
+      return res.status(400).json({
+        success: false,
+        message: 'companyName must be PTW or Demand Setu',
+      });
+    }
+    if (companyBrand !== brand) {
+      return res.status(400).json({
+        success: false,
+        message: `This quotation is ${exists.companyName}. Download that company PDF only.`,
+      });
+    }
+
     const { buffer: pdfBuffer, cacheHit, source, timings } = await ensurePdfReady(
       id,
-      brand
+      companyBrand
     );
 
     const brandTag = brand === 'demandsetu' ? 'DemandSetu' : 'PTW';
@@ -761,7 +776,7 @@ export const updateEntireOperation = async (req, res, next) => {
     
     res.status(200).json(updatedOperation);
 
-    // Rebuild stored PDFs in background (download serves disk when ready)
+    // Rebuild this quotation's company PDF in background
     onFinalCostingSaved(updatedOperation._id).catch(() => {});
   } catch (error) {
     next(error);
