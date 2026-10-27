@@ -56,6 +56,22 @@ function flightKey(operationId, brand) {
   return `${operationId}|${brand === 'demandsetu' ? 'demandsetu' : 'ptw'}`;
 }
 
+/**
+ * Quotation companyName → which PDF to build.
+ * Saved values are "PTW" and "Demand Setu".
+ * @returns {'ptw'|'demandsetu'|null}
+ */
+export function pdfBrandFromCompanyName(companyName) {
+  const raw = String(companyName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (raw === 'ptw') return 'ptw';
+  if (raw === 'demand setu' || raw === 'demandsetu') return 'demandsetu';
+  return null;
+}
+
 function snapshotUpdatedAt(updatedAt) {
   if (!updatedAt) return '';
   return updatedAt instanceof Date
@@ -115,12 +131,22 @@ export async function ensurePdfReady(operationId, brand = 'ptw') {
 
   const job = (async () => {
     const meta = await Operation.findById(operationId)
-      .select('updatedAt pdfArtifacts')
+      .select('updatedAt pdfArtifacts companyName')
       .lean()
       .maxTimeMS(8000);
 
     if (!meta) {
       throw new Error('Operation not found');
+    }
+
+    const expectedBrand = pdfBrandFromCompanyName(meta.companyName);
+    if (!expectedBrand) {
+      throw new Error('companyName must be PTW or Demand Setu');
+    }
+    if (b !== expectedBrand) {
+      throw new Error(
+        `This quotation is ${meta.companyName}. Only that company PDF is generated.`
+      );
     }
 
     const snap = snapshotUpdatedAt(meta.updatedAt);
@@ -216,7 +242,7 @@ export async function invalidatePdfArtifacts(operationId) {
 }
 
 /**
- * Fire-and-forget pre-generate both brands after save.
+ * Fire-and-forget pre-generate the one PDF that matches quotation companyName.
  * Download can join the same in-flight promise via ensurePdfReady.
  */
 export function schedulePdfPreGenerate(operationId) {
@@ -225,17 +251,22 @@ export function schedulePdfPreGenerate(operationId) {
 
   setImmediate(() => {
     (async () => {
-      // Serial brands share Chrome queue — ptw then demandsetu
-      try {
-        await ensurePdfReady(id, 'ptw');
-      } catch (err) {
-        console.error(`[pdf-persist] pre-gen ptw failed id=${id}:`, err?.message || err);
+      const op = await Operation.findById(id)
+        .select('companyName')
+        .lean()
+        .maxTimeMS(8000);
+      const brand = pdfBrandFromCompanyName(op?.companyName);
+      if (!brand) {
+        console.error(
+          `[pdf-persist] skip pre-gen id=${id} companyName="${op?.companyName || ''}"`
+        );
+        return;
       }
       try {
-        await ensurePdfReady(id, 'demandsetu');
+        await ensurePdfReady(id, brand);
       } catch (err) {
         console.error(
-          `[pdf-persist] pre-gen demandsetu failed id=${id}:`,
+          `[pdf-persist] pre-gen ${brand} failed id=${id}:`,
           err?.message || err
         );
       }
@@ -243,7 +274,7 @@ export function schedulePdfPreGenerate(operationId) {
   });
 }
 
-/** After create/update: invalidate old files + start background generate. */
+/** After create/update: drop old files, then generate only the companyName PDF. */
 export async function onFinalCostingSaved(operationId) {
   if (!operationId) return;
   const id = String(operationId);
