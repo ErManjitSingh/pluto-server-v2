@@ -107,37 +107,6 @@ const META_GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
 // Form ID -> Form name (from Meta Lead Ad forms)
 const FORM_ID_TO_NAME = {
-  '1903635730309193': 'Shimla Manali Tour package',
-  '1796326498004957': 'Rajasthan Tour Package',
-  '1403948758244400': 'Kerala Tour Package',
-  '2674038349644478': 'Hotel JK Dharamshala-copy',
-  '1223842246538694': 'Hotel JK Dharamshala',
-  '1471047764590067': 'Leh Tour Packages-copy-copy',
-  '740770488625534': 'Andaman Beach Escape — Just ₹19,000/Person-copy',
-  '1606772576983358': 'Andaman Beach Escape — Just ₹19,000/Person',
-  '803369272680705': 'Spiti Tour Packass',
-  '1382788463517327': 'Meghalaya Tour Packages-copy-copy-copy',
-  '1595736464927418': 'Spiti Tour Packagess',
-  '1528098575144345': 'Spiti Tour Packages-copy',
-  '1908365669781665': 'Gujarat  Tour Packages',
-  '1398680488634977': 'Only Job',
-  '1245471024064781': 'Shimla–Manali Tour Packages-copy',
-  '1367808738124925': 'Meghalaya Tour Packages-copy-copy',
-  '1393329672350546': 'Arunachal  Tour Packages-copy-copy',
-  '4254475408166247': 'Meghalaya Tour Packages-copy',
-  '4078392495747198': 'Spiti Tour Packages',
-  '814847136887082': 'DUBAI TOUR PACKAGE-copy',
-  '1981206252297495': 'Vietnam Tour Packages',
-  '1616441215777324': 'Bali Tour package',
-  '1415240969129159': 'DUBAI TOUR PACKAGE',
-  '1146314916381605': 'DS Amarnath Query',
-  '1876547592761895': 'DS Bhutan Query-copy',
-  '2472954876232013': 'DS Bhutan Query',
-  '409968121678852': 'DS Himachal Query form-copy',
-  '463909945988547': 'DS Himachal Query form',
-  '1344572117834659': 'Canton Tour pacakge',
-  '1047780457830936': 'Vietnam Tour Package',
-  '1813859453316410': 'China Tour Package',
   '957872316971437': 'https://www.demandsetutours.com',
   '1439044054444179': 'Arunachal tour pacakge',
   '1737647334002167': 'Generated form 10/28/2026 9:53am',
@@ -146,15 +115,6 @@ const FORM_ID_TO_NAME = {
 
 // Form IDs from Meta (FB/Instagram Lead Ads) - can override via env META_FORM_IDS (comma-separated)
 const DEFAULT_FORM_IDS = [
-  '1903635730309193', '1796326498004957', '1403948758244400', '2674038349644478', '1223842246538694',
-  '1471047764590067',
-  '740770488625534', '1606772576983358', '803369272680705', '1382788463517327',
-  '1595736464927418', '1528098575144345', '1908365669781665', '1398680488634977',
-  '1245471024064781', '1367808738124925', '1393329672350546', '4254475408166247',
-  '4078392495747198', '814847136887082', '1981206252297495', '1616441215777324',
-  '1415240969129159', '1146314916381605', '1876547592761895', '2472954876232013',
-  '409968121678852', '463909945988547',
-  '1344572117834659', '1047780457830936' ,'1813859453316410',
   '957872316971437', '1439044054444179', '1737647334002167', '4461718990734955'
 ];
 
