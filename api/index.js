@@ -82,6 +82,8 @@ import notificationRouter from './routes/notification.route.js';
 import aiRouter from './routes/ai.route.js';
 import campaignRouter from './routes/campaign.route.js';
 import fdRouter from './routes/fd.route.js';
+import packageHomeRouter from './routes/packageHome.route.js';
+
 const port = process.env.PORT || 3000;
 const mongoUri = process.env.MONGO;
 
@@ -216,7 +218,7 @@ app.use("/api/paymentpolicy", paymentPolicyRouter);
 app.use("/api/state-expense-lists", stateExpenseListsRouter);
 app.use("/api/targetmanagement", targetManagementRouter);
 app.use("/api/manager-target", managerTargetRouter);
-
+app.use("/api/package-home", packageHomeRouter);
 app.use("/api/inventorybooking", inventoryBookingRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/admin-mail", adminMailRouter);
