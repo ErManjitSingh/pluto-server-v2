@@ -7,7 +7,11 @@ import {
 } from './finalcostingPdfDemandSetuTemplate.js';
 import { enqueuePdfJob } from './finalcostingPdfQueue.js';
 import { buildPdfCacheKey, getCachedPdf, setCachedPdf } from './finalcostingPdfCache.js';
-import { embedLogoAsDataUri } from './finalcostingPdfImages.js';
+import {
+  embedLogoAsDataUri,
+  collectPackageImageUrls,
+  loadPackageGalleryDataUris,
+} from './finalcostingPdfImages.js';
 import { buildPdfFooterTemplate } from './finalcostingPdfSocial.js';
 import Maker from '../models/maker.model.js';
 
@@ -352,6 +356,8 @@ function slimOperationForPdf(operation) {
       travelDate: lead.travelDate,
       days: lead.days,
       noOfRooms: lead.noOfRooms,
+      adults: lead.adults,
+      kids: lead.kids,
       extraBeds: lead.extraBeds,
     };
   };
@@ -424,6 +430,7 @@ function slimOperationForPdf(operation) {
     hotels,
     package: {
       packageName: pkg.packageName,
+      packageImages: collectPackageImageUrls(pkg.packageImages),
       state: pkg.state,
       duration: pkg.duration,
       packageType: pkg.packageType,
@@ -473,14 +480,23 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
         ? Promise.all([getBrowser(), ensureBrandLogo(brand)])
         : Promise.all([getBrowser(), ensureBrandLogo(brand), ensureBankScanner()]);
 
-    const [, makerDoc] = await Promise.all([
+    const [, makerDoc, pdfPackageImages] = await Promise.all([
       warmAssets,
       fetchMakerForPdf(slim.userId, slim.package?.teamLeaderId),
+      loadPackageGalleryDataUris(slim.package?.packageImages).catch((err) => {
+        console.error('[pdf-gallery] skipped:', err?.message || err);
+        return [];
+      }),
     ]);
     const prepMs = Date.now() - tPrep;
 
     const maker = makerDoc || makerFromPackageFallback(slim.package);
-    const enriched = { ...slim, pdfMaker: maker, pdfBrand: brand };
+    const enriched = {
+      ...slim,
+      pdfMaker: maker,
+      pdfBrand: brand,
+      pdfPackageImages: Array.isArray(pdfPackageImages) ? pdfPackageImages : [],
+    };
 
     const tHtml = Date.now();
     let html =
