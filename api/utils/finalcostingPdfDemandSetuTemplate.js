@@ -15,6 +15,8 @@ import {
   renderPriceAmountHtml,
   renderGrandTotalRows,
   renderMakerCardHtml,
+  guestCount,
+  renderPackageGalleryHtml,
 } from './finalcostingPdfShared.js';
 import { renderSocialIconsHtml } from './finalcostingPdfSocial.js';
 
@@ -161,6 +163,13 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .price-band .pb-t{font-size:14px;margin-top:3px;}
 .price-band .pb-v{font-size:28px;font-weight:800;}
 .price-band .pb-n{font-size:11px;opacity:.9;text-align:right;margin-top:2px;}
+.pkg-photos{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;}
+.pkg-photos figure{margin:0;border-radius:10px;overflow:hidden;border:1px solid #fb923c;background:#ffedd5;}
+.pkg-photos img{width:100%;height:100%;object-fit:cover;display:block;}
+.pkg-photos.n1 figure{width:100%;height:168px;}
+.pkg-photos.n2 figure{width:calc(50% - 3px);height:132px;}
+.pkg-photos.n3 figure{width:calc(33.333% - 4px);height:118px;}
+.pkg-photos.n4 figure{width:calc(50% - 3px);height:118px;}
 .facts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;font-family:'Segoe UI',Arial,sans-serif;}
 .fact{width:calc(33.33% - 6px);background:linear-gradient(180deg,#fff,#ffedd5);border:1px solid #fb923c;border-top:3px solid #ea580c;border-radius:8px;padding:10px 11px;}
 .fact:nth-child(even){background:linear-gradient(180deg,#fff7ed,#fed7aa);border-top-color:#c2410c;}
@@ -498,6 +507,8 @@ export function buildDemandSetuPdfHtml(operation) {
     </div>
   </div>
 
+  ${renderPackageGalleryHtml(operation.pdfPackageImages)}
+
   <div class="facts">
     <div class="fact"><div class="fl">Guest</div><div class="fv">${esc(lead.name || '—')}</div></div>
     <div class="fact"><div class="fl">Mobile</div><div class="fv">${esc(lead.mobile || '—')}</div></div>
@@ -505,7 +516,9 @@ export function buildDemandSetuPdfHtml(operation) {
     <div class="fact"><div class="fl">Travel date</div><div class="fv">${fmtDate(lead.travelDate)}</div></div>
     <div class="fact"><div class="fl">Duration</div><div class="fv">${esc(pkg.duration || `${lead.days || ''}D`)}</div></div>
     <div class="fact"><div class="fl">Rooms</div><div class="fv">${esc(lead.noOfRooms || '1')}</div></div>
-    <div class="fact"><div class="fl">Extra Beds</div><div class="fv">${esc(lead.extraBeds != null && lead.extraBeds !== '' ? lead.extraBeds : '0')}</div></div>
+    <div class="fact"><div class="fl">Adults</div><div class="fv">${esc(guestCount(lead.adults))}</div></div>
+    <div class="fact"><div class="fl">Children</div><div class="fv">${esc(guestCount(lead.kids))}</div></div>
+    <div class="fact"><div class="fl">Extra Beds</div><div class="fv">${esc(guestCount(lead.extraBeds))}</div></div>
   </div>
 
   <div class="hello">
