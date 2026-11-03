@@ -9,6 +9,30 @@ export function esc(str) {
     .replace(/"/g, '&quot;');
 }
 
+/** Lead counts are stored as strings; blank means zero. */
+export function guestCount(value) {
+  if (value == null) return '0';
+  const s = String(value).trim();
+  return s === '' ? '0' : s;
+}
+
+/**
+ * Package photo strip. Only inlined JPEG/PNG data URIs — Chrome never fetches these.
+ * @param {string[]} images
+ */
+export function renderPackageGalleryHtml(images) {
+  const list = (Array.isArray(images) ? images : []).filter(
+    (u) => typeof u === 'string' && u.startsWith('data:image/')
+  );
+  if (!list.length) return '';
+  const n = Math.min(list.length, 4);
+  const shots = list
+    .slice(0, 4)
+    .map((src) => `<figure><img src="${src}" alt="Package"/></figure>`)
+    .join('');
+  return `<div class="pkg-photos n${n}">${shots}</div>`;
+}
+
 export function inr(n) {
   const v = Number(n);
   if (Number.isNaN(v)) return '—';
