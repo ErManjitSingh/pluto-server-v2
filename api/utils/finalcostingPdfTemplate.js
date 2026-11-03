@@ -15,6 +15,8 @@ import {
   renderPriceAmountHtml,
   renderGrandTotalRows,
   renderMakerCardHtml,
+  guestCount,
+  renderPackageGalleryHtml,
 } from './finalcostingPdfShared.js';
 import { renderSocialIconsHtml } from './finalcostingPdfSocial.js';
 
@@ -146,6 +148,13 @@ svg{display:inline-block;vertical-align:middle;flex-shrink:0;}
 .price-badge .pl{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--muted);}
 .price-badge .pv{font-size:24px;font-weight:800;color:var(--gold);margin:4px 0;}
 .price-badge .pn{font-size:10px;color:var(--muted);}
+.pkg-photos{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;}
+.pkg-photos figure{margin:0;border-radius:10px;overflow:hidden;border:1px solid #7aa8d4;background:#d6e8fb;}
+.pkg-photos img{width:100%;height:100%;object-fit:cover;display:block;}
+.pkg-photos.n1 figure{width:100%;height:168px;}
+.pkg-photos.n2 figure{width:calc(50% - 3px);height:132px;}
+.pkg-photos.n3 figure{width:calc(33.333% - 4px);height:118px;}
+.pkg-photos.n4 figure{width:calc(50% - 3px);height:118px;}
 .guest-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
 .gs-cell{width:calc(33.33% - 6px);padding:10px 11px;border-radius:10px;background:linear-gradient(180deg,#fff,#dceaf8);border:1px solid #8fb4d9;border-top:3px solid var(--blue);box-sizing:border-box;}
 .gs-cell:nth-child(even){background:linear-gradient(180deg,#fffbf3,#ffe9c8);border-color:#e0a04a;border-top-color:var(--gold);}
@@ -346,7 +355,9 @@ export function buildFinalCostingPdfHtml(operation) {
     <div class="gs-cell"><div class="gs-lbl">Travel Date</div><div class="gs-val">${fmtDate(lead.travelDate)}</div></div>
     <div class="gs-cell"><div class="gs-lbl">Duration</div><div class="gs-val">${esc(pkg.duration || `${lead.days || ''}D`)}</div></div>
     <div class="gs-cell"><div class="gs-lbl">Rooms</div><div class="gs-val">${esc(lead.noOfRooms || '1')}</div></div>
-    <div class="gs-cell"><div class="gs-lbl">Extra Beds</div><div class="gs-val">${esc(lead.extraBeds != null && lead.extraBeds !== '' ? lead.extraBeds : '0')}</div></div>
+    <div class="gs-cell"><div class="gs-lbl">Adults</div><div class="gs-val">${esc(guestCount(lead.adults))}</div></div>
+    <div class="gs-cell"><div class="gs-lbl">Children</div><div class="gs-val">${esc(guestCount(lead.kids))}</div></div>
+    <div class="gs-cell"><div class="gs-lbl">Extra Beds</div><div class="gs-val">${esc(guestCount(lead.extraBeds))}</div></div>
   </div>`;
 
   // ── Greeting ─────────────────────────────────────────────────────────────
@@ -512,6 +523,7 @@ export function buildFinalCostingPdfHtml(operation) {
   <div class="page-shell">
   ${pgHeader}
   ${cover}
+  ${renderPackageGalleryHtml(operation.pdfPackageImages)}
   ${guestStrip}
   ${greeting}
   ${routeSection}
