@@ -1,5 +1,6 @@
 import Operation from '../models/finalcosting.model.js';
 import { generateFinalCostingPdfBuffer } from './finalcostingPdf.js';
+import { PDF_TEMPLATE_VERSION } from './finalcostingPdfCache.js';
 import {
   writeStoredPdf,
   readStoredPdf,
@@ -25,6 +26,7 @@ export const PDF_OPERATION_PROJECTION = {
   'hotels.roomcount': 1,
   'hotels.selectedLead': 1,
   'package.packageName': 1,
+  'package.packageImages': 1,
   'package.state': 1,
   'package.duration': 1,
   'package.packageType': 1,
@@ -77,6 +79,11 @@ function snapshotUpdatedAt(updatedAt) {
   return updatedAt instanceof Date
     ? updatedAt.toISOString()
     : String(updatedAt);
+}
+
+/** Old disk PDFs miss this prefix, so the next download rebuilds once. */
+function artifactSnap(updatedAt) {
+  return `${PDF_TEMPLATE_VERSION}|${snapshotUpdatedAt(updatedAt)}`;
 }
 
 function sanitizeItineraryDays(itineraryDays) {
@@ -149,7 +156,7 @@ export async function ensurePdfReady(operationId, brand = 'ptw') {
       );
     }
 
-    const snap = snapshotUpdatedAt(meta.updatedAt);
+    const snap = artifactSnap(meta.updatedAt);
     const art = meta.pdfArtifacts?.[b];
 
     if (art?.status === 'ready' && art.fileName && art.updatedAtSnapshot === snap) {
@@ -185,7 +192,7 @@ export async function ensurePdfReady(operationId, brand = 'ptw') {
     );
 
     const written = await writeStoredPdf(operationId, b, buffer);
-    const freshSnap = snapshotUpdatedAt(operation.updatedAt);
+    const freshSnap = artifactSnap(operation.updatedAt);
 
     await setArtifact(operationId, b, {
       status: 'ready',
