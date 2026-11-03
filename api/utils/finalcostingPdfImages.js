@@ -122,7 +122,14 @@ async function fetchBuffer(url, timeoutMs, signal) {
   }
 }
 
-async function compressOnce(url, timeoutMs, signal, maxWidth = MAX_WIDTH, quality = JPEG_QUALITY) {
+async function compressOnce(
+  url,
+  timeoutMs,
+  signal,
+  maxWidth = MAX_WIDTH,
+  quality = JPEG_QUALITY,
+  height = 0
+) {
   const raw = await fetchBuffer(url, timeoutMs, signal);
   if (!raw?.length || raw.length > 6 * 1024 * 1024) {
     throw new Error('empty or too large');
@@ -131,7 +138,7 @@ async function compressOnce(url, timeoutMs, signal, maxWidth = MAX_WIDTH, qualit
     .rotate()
     .resize({
       width: maxWidth,
-      height: Math.round(maxWidth * 0.7),
+      height: height || Math.round(maxWidth * 0.7),
       fit: 'cover',
       withoutEnlargement: true,
     })
@@ -152,11 +159,12 @@ export async function compressImageToDataUri(url, opts = {}) {
   const signal = opts.signal;
   const maxWidth = opts.maxWidth || MAX_WIDTH;
   const quality = opts.quality || JPEG_QUALITY;
+  const height = Number(opts.height) || 0;
   const kind = opts.cacheKind || 'hotel';
   const cacheKey =
-    kind === 'hotel' && maxWidth === MAX_WIDTH && quality === JPEG_QUALITY
+    kind === 'hotel' && maxWidth === MAX_WIDTH && quality === JPEG_QUALITY && !height
       ? hotelCacheKey(url)
-      : `${url}|${kind}|${maxWidth}|${quality}`;
+      : `${url}|${kind}|${maxWidth}|${height}|${quality}`;
 
   const cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
@@ -165,7 +173,7 @@ export async function compressImageToDataUri(url, opts = {}) {
 
   const job = (async () => {
     try {
-      const dataUri = await compressOnce(url, timeoutMs, signal, maxWidth, quality);
+      const dataUri = await compressOnce(url, timeoutMs, signal, maxWidth, quality, height);
       remember(cacheKey, dataUri, CACHE_TTL_MS);
       return dataUri;
     } catch {
@@ -362,4 +370,88 @@ export async function attachOptimizedHotelImages(operation, opts = {}) {
   );
 
   return { ...operation, hotels: enrichedHotels };
+}
+
+/** Cover gallery only — never let a long packageImages list bloat the PDF. */
+const GALLERY_LIMIT = 4;
+const GALLERY_BUDGET_MS = 3200;
+const GALLERY_FETCH_MS = 2200;
+
+/**
+ * First N http(s) image URLs from package.packageImages (strings or {url}).
+ * @param {unknown} packageImages
+ * @param {number} [limit]
+ * @returns {string[]}
+ */
+export function collectPackageImageUrls(packageImages, limit = GALLERY_LIMIT) {
+  const list = Array.isArray(packageImages) ? packageImages : [];
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    const u = pickUrl(item);
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    out.push(u);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function galleryResize(count) {
+  if (count <= 1) return { maxWidth: 640, height: 240, quality: 50 };
+  if (count === 2) return { maxWidth: 420, height: 200, quality: 48 };
+  if (count === 3) return { maxWidth: 320, height: 180, quality: 46 };
+  return { maxWidth: 360, height: 180, quality: 46 };
+}
+
+/**
+ * Compress package photos to small JPEG data URIs before Chrome runs.
+ * Hard budget: slow Firebase never blocks the PDF. Missing photos are skipped.
+ * @returns {Promise<string[]>}
+ */
+export async function loadPackageGalleryDataUris(packageImages, opts = {}) {
+  let urls = [];
+  try {
+    urls = collectPackageImageUrls(packageImages, GALLERY_LIMIT);
+  } catch {
+    return [];
+  }
+  if (!urls.length) return [];
+
+  const budgetMs = typeof opts.budgetMs === 'number' ? opts.budgetMs : GALLERY_BUDGET_MS;
+  const { maxWidth, height, quality } = galleryResize(urls.length);
+  const t0 = Date.now();
+  const budgetCtrl = new AbortController();
+  const results = new Array(urls.length).fill(null);
+  const budgetTimer = setTimeout(() => budgetCtrl.abort(), budgetMs);
+
+  const work = Promise.all(
+    urls.map(async (url, i) => {
+      if (budgetCtrl.signal.aborted) return;
+      const uri = await compressImageToDataUri(url, {
+        timeoutMs: Math.min(GALLERY_FETCH_MS, budgetMs),
+        signal: budgetCtrl.signal,
+        maxWidth,
+        height,
+        quality,
+        cacheKind: 'pkg',
+      });
+      results[i] = uri;
+    })
+  ).catch(() => {});
+
+  await Promise.race([
+    work,
+    new Promise((resolve) => {
+      if (budgetCtrl.signal.aborted) resolve();
+      else budgetCtrl.signal.addEventListener('abort', () => resolve(), { once: true });
+    }),
+  ]);
+  clearTimeout(budgetTimer);
+  // Nearly-finished compresses can still land; never wait long after the budget.
+  await Promise.race([work, new Promise((r) => setTimeout(r, 200))]);
+
+  const ok = results.filter((uri) => typeof uri === 'string' && uri.startsWith('data:image/'));
+  console.log(`[pdf-gallery] ${Date.now() - t0}ms urls=${urls.length} ok=${ok.length}`);
+  return ok;
 }
