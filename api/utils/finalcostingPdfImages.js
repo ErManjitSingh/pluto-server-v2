@@ -128,10 +128,15 @@ async function compressOnce(
   signal,
   maxWidth = MAX_WIDTH,
   quality = JPEG_QUALITY,
-  height = 0
+  height = 0,
+  maxBytes = 6 * 1024 * 1024,
+  deadline = 0
 ) {
   const raw = await fetchBuffer(url, timeoutMs, signal);
-  if (!raw?.length || raw.length > 6 * 1024 * 1024) {
+  if (signal?.aborted || (deadline && Date.now() > deadline)) {
+    throw new Error('aborted');
+  }
+  if (!raw?.length || raw.length > maxBytes) {
     throw new Error('empty or too large');
   }
   const out = await sharp(raw, { failOn: 'none' })
@@ -160,6 +165,8 @@ export async function compressImageToDataUri(url, opts = {}) {
   const maxWidth = opts.maxWidth || MAX_WIDTH;
   const quality = opts.quality || JPEG_QUALITY;
   const height = Number(opts.height) || 0;
+  const maxBytes = Number(opts.maxBytes) > 0 ? Number(opts.maxBytes) : 6 * 1024 * 1024;
+  const deadline = Number(opts.deadline) || 0;
   const kind = opts.cacheKind || 'hotel';
   const cacheKey =
     kind === 'hotel' && maxWidth === MAX_WIDTH && quality === JPEG_QUALITY && !height
@@ -173,7 +180,16 @@ export async function compressImageToDataUri(url, opts = {}) {
 
   const job = (async () => {
     try {
-      const dataUri = await compressOnce(url, timeoutMs, signal, maxWidth, quality, height);
+      const dataUri = await compressOnce(
+        url,
+        timeoutMs,
+        signal,
+        maxWidth,
+        quality,
+        height,
+        maxBytes,
+        deadline
+      );
       remember(cacheKey, dataUri, CACHE_TTL_MS);
       return dataUri;
     } catch {
@@ -374,8 +390,11 @@ export async function attachOptimizedHotelImages(operation, opts = {}) {
 
 /** Cover gallery only — never let a long packageImages list bloat the PDF. */
 const GALLERY_LIMIT = 4;
-const GALLERY_BUDGET_MS = 3200;
-const GALLERY_FETCH_MS = 2200;
+/** Photo is optional. Past this, PDF continues with whatever already finished. */
+const GALLERY_BUDGET_MS = 1200;
+const GALLERY_FETCH_MS = 1000;
+/** Original Firebase files are multi-MB. Skip them instead of decoding during PDF. */
+const GALLERY_MAX_BYTES = 450 * 1024;
 
 /**
  * First N http(s) image URLs from package.packageImages (strings or {url}).
@@ -405,8 +424,8 @@ function galleryResize(count) {
 }
 
 /**
- * Compress package photos to small JPEG data URIs before Chrome runs.
- * Hard budget: slow Firebase never blocks the PDF. Missing photos are skipped.
+ * Best-effort package photos. Always resolves to an array (possibly empty).
+ * Slow, huge, or failed downloads are skipped — they must not delay the PDF.
  * @returns {Promise<string[]>}
  */
 export async function loadPackageGalleryDataUris(packageImages, opts = {}) {
@@ -421,13 +440,14 @@ export async function loadPackageGalleryDataUris(packageImages, opts = {}) {
   const budgetMs = typeof opts.budgetMs === 'number' ? opts.budgetMs : GALLERY_BUDGET_MS;
   const { maxWidth, height, quality } = galleryResize(urls.length);
   const t0 = Date.now();
+  const deadline = t0 + budgetMs;
   const budgetCtrl = new AbortController();
   const results = new Array(urls.length).fill(null);
   const budgetTimer = setTimeout(() => budgetCtrl.abort(), budgetMs);
 
   const work = Promise.all(
     urls.map(async (url, i) => {
-      if (budgetCtrl.signal.aborted) return;
+      if (budgetCtrl.signal.aborted || Date.now() > deadline) return;
       const uri = await compressImageToDataUri(url, {
         timeoutMs: Math.min(GALLERY_FETCH_MS, budgetMs),
         signal: budgetCtrl.signal,
@@ -435,8 +455,12 @@ export async function loadPackageGalleryDataUris(packageImages, opts = {}) {
         height,
         quality,
         cacheKind: 'pkg',
+        maxBytes: GALLERY_MAX_BYTES,
+        deadline,
       });
-      results[i] = uri;
+      if (!budgetCtrl.signal.aborted && Date.now() <= deadline && uri) {
+        results[i] = uri;
+      }
     })
   ).catch(() => {});
 
@@ -448,10 +472,8 @@ export async function loadPackageGalleryDataUris(packageImages, opts = {}) {
     }),
   ]);
   clearTimeout(budgetTimer);
-  // Nearly-finished compresses can still land; never wait long after the budget.
-  await Promise.race([work, new Promise((r) => setTimeout(r, 200))]);
 
   const ok = results.filter((uri) => typeof uri === 'string' && uri.startsWith('data:image/'));
-  console.log(`[pdf-gallery] ${Date.now() - t0}ms urls=${urls.length} ok=${ok.length}`);
+  console.log(`[pdf-gallery] ${Date.now() - t0}ms urls=${urls.length} ok=${ok.length} budget=${budgetMs}`);
   return ok;
 }
