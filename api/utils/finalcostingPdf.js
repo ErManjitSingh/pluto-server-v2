@@ -53,6 +53,11 @@ const MAX_RENDER_ATTEMPTS = 2;
 /** Whole generate (DB already done) including queue wait + retries. */
 const OVERALL_BUDGET_MS = 55000;
 const QUEUE_JOB_TIMEOUT_MS = 50000;
+/**
+ * Package photos are optional. If they are not ready by this, the PDF
+ * is built without them. This wait must stay far under the proxy cutoff.
+ */
+const PACKAGE_GALLERY_WAIT_MS = 1500;
 
 let browserInstance = null;
 let idleTimer = null;
@@ -458,6 +463,36 @@ function slimOperationForPdf(operation) {
 }
 
 /**
+ * Package photos never decide whether the PDF succeeds.
+ * Resolves with ready data-URIs, or [] once the short wait is over.
+ * @param {unknown} packageImages
+ * @returns {Promise<string[]>}
+ */
+function packageGalleryOrSkip(packageImages) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (uris) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Array.isArray(uris) ? uris : []);
+    };
+    const timer = setTimeout(() => {
+      console.log('[pdf-gallery] wait over — PDF continues without pending photos');
+      finish([]);
+    }, PACKAGE_GALLERY_WAIT_MS);
+
+    loadPackageGalleryDataUris(packageImages, { budgetMs: 1200 }).then(
+      (uris) => finish(uris),
+      (err) => {
+        console.error('[pdf-gallery] skipped:', err?.message || err);
+        finish([]);
+      }
+    );
+  });
+}
+
+/**
  * @param {object} operation
  * @param {'ptw'|'demandsetu'} [brand='ptw']
  * @returns {Promise<{ buffer: Buffer, cacheHit: boolean, timings?: object }>}
@@ -483,10 +518,7 @@ export async function generateFinalCostingPdfBuffer(operation, brand = 'ptw') {
     const [, makerDoc, pdfPackageImages] = await Promise.all([
       warmAssets,
       fetchMakerForPdf(slim.userId, slim.package?.teamLeaderId),
-      loadPackageGalleryDataUris(slim.package?.packageImages).catch((err) => {
-        console.error('[pdf-gallery] skipped:', err?.message || err);
-        return [];
-      }),
+      packageGalleryOrSkip(slim.package?.packageImages),
     ]);
     const prepMs = Date.now() - tPrep;
 
