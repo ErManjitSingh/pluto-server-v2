@@ -15,6 +15,7 @@ export const PACKAGE_HOME_KEY = 'packages-home';
  *  - content : themeSlug, content, image
  *  - faq     : faqs[]
  *  - cards   : items[] with fields that differ per section type (offer, blog, ...)
+ *  - packages: items[] -> { order, packageId } (card fields are joined from Add on read)
  *  - single  : values{} with fields that differ per section type (cta, video, ...)
  */
 export const SECTION_KINDS = {
@@ -39,6 +40,7 @@ export const SECTION_KINDS = {
   newsletter: 'single',
   faq: 'faq',
   seoContent: 'single',
+  famousPackage: 'packages',
 };
 
 export const SECTION_TYPE_LIST = Object.keys(SECTION_KINDS);
@@ -85,6 +87,7 @@ const sectionSchema = new mongoose.Schema(
     maxVisible: { type: Number, min: 0, default: undefined }, // 0 = show all
     // list items: { order, name, slug, image, tagline, fromPrice, featured }
     // card items: fields depend on the section type (title, subtitle, link, image, ...)
+    // famousPackage items: { order, packageId } — card data is attached on GET, not stored
     items: { type: [mongoose.Schema.Types.Mixed], default: undefined },
 
     // content (theme content block)
