@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import Add from '../models/add.model.js';
 import PackageHome, {
   LAYOUT_VALUES,
   PACKAGE_HOME_KEY,
@@ -141,6 +142,31 @@ function sanitizeSection(raw, index) {
       break;
     }
 
+    case 'packages': {
+      const seen = new Set();
+      const items = [];
+      const rawItems = Array.isArray(raw.items) ? raw.items : [];
+
+      for (const item of rawItems) {
+        if (!isPlainObject(item)) continue;
+        const packageId = asText(item.packageId);
+        if (!packageId) continue;
+        if (!mongoose.Types.ObjectId.isValid(packageId)) {
+          return { error: `sections[${index}]: invalid package id "${packageId}"` };
+        }
+        if (seen.has(packageId)) continue;
+        seen.add(packageId);
+        items.push({ order: items.length + 1, packageId });
+        if (items.length >= MAX_ITEMS) break;
+      }
+
+      section.layout = LAYOUT_VALUES.includes(raw.layout) ? raw.layout : 'slider';
+      section.maxVisible = Math.max(0, Number(raw.maxVisible) || 0);
+      section.items = items;
+      section.hasContent = items.length > 0;
+      break;
+    }
+
     case 'content': {
       section.themeSlug = asText(raw.themeSlug);
       section.content = isRichTextEmpty(raw.content) ? '' : String(raw.content);
@@ -210,6 +236,80 @@ function sanitizeSeo(rawSeo) {
   };
 }
 
+function firstImage(value) {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  for (const item of list) {
+    if (typeof item === 'string' && item.trim()) return item.trim();
+    if (item && typeof item === 'object') {
+      const url = item.url || item.src || item.preview || item.image || item.downloadURL || '';
+      if (String(url).trim()) return String(url).trim();
+    }
+  }
+  return '';
+}
+
+function toPackageCard(doc) {
+  const pkg = isPlainObject(doc.package) ? doc.package : {};
+  return {
+    _id: String(doc._id),
+    packageName: asText(pkg.packageName),
+    image: firstImage(pkg.packageImages) || firstImage(doc.images),
+    state: asText(pkg.state),
+    priceTag: pkg.priceTag ?? '',
+    duration: asText(pkg.duration),
+    status: asText(pkg.status),
+    canonicalTag: asText(doc.canonicalTag),
+  };
+}
+
+/**
+ * Famous package sections store only ids. Attach the current card fields from Add
+ * so the website can render the section from this one response.
+ * Missing packages stay as `package: null` and are not written back.
+ */
+async function hydrateFamousPackages(doc) {
+  if (!doc) return null;
+  const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  const sections = Array.isArray(plain.sections) ? plain.sections : [];
+
+  const ids = [];
+  for (const section of sections) {
+    if (section?.type !== 'famousPackage' || !Array.isArray(section.items)) continue;
+    for (const item of section.items) {
+      if (item?.packageId) ids.push(String(item.packageId));
+    }
+  }
+  if (!ids.length) return plain;
+
+  const unique = [...new Set(ids)];
+  const queryIds = [];
+  for (const id of unique) {
+    queryIds.push(id);
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      queryIds.push(new mongoose.Types.ObjectId(id));
+    }
+  }
+
+  const found = await Add.find({ _id: { $in: queryIds } })
+    .select(
+      'package.packageName package.packageImages package.state package.priceTag package.duration package.status canonicalTag images'
+    )
+    .lean();
+
+  const byId = new Map(found.map((row) => [String(row._id), toPackageCard(row)]));
+
+  for (const section of sections) {
+    if (section?.type !== 'famousPackage' || !Array.isArray(section.items)) continue;
+    section.items = section.items.map((item) => ({
+      order: item.order,
+      packageId: String(item.packageId),
+      package: byId.get(String(item.packageId)) || null,
+    }));
+  }
+
+  return plain;
+}
+
 function handleError(res, error) {
   if (error?.name === 'ValidationError') {
     return res.status(400).json({ success: false, message: error.message });
@@ -252,7 +352,7 @@ export const createPackageHome = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Package home page created successfully',
-      data: doc,
+      data: await hydrateFamousPackages(doc),
     });
   } catch (error) {
     // Two requests racing: the unique index on singletonKey rejects the second one
@@ -277,7 +377,7 @@ export const getPackageHome = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: doc || null,
+      data: await hydrateFamousPackages(doc),
     });
   } catch (error) {
     handleError(res, error);
@@ -331,7 +431,7 @@ export const updatePackageHome = async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Package home page updated successfully',
-      data: doc,
+      data: await hydrateFamousPackages(doc),
     });
   } catch (error) {
     handleError(res, error);
