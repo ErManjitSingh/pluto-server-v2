@@ -8,6 +8,7 @@ import {
   deleteAdd,
   deleteMultipleAdds,
   getPackageOnly,
+  getPackageNameAndId,
   getPackagesByDurationAndState,
   getPackagesByDurationAndStateOnly,
   searchPackages,
@@ -23,6 +24,7 @@ router.post('/migrate-signatures', migratePackageSignatures);
 router.get('/get', getAdds);
 router.get('/get/:id', getAdd);
 router.get('/packages', getPackageOnly);
+router.get('/packages/names', getPackageNameAndId);
 router.get('/packages/filter', getPackagesByDurationAndState);
 router.get('/packages/filter-only', getPackagesByDurationAndStateOnly);
 router.get('/packages/search', searchPackages);
