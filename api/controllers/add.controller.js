@@ -662,6 +662,33 @@ export const deleteMultipleAdds = async (req, res, next) => {
 };
 
 // --------------------------------------
+// GET PACKAGE NAME + ID (picker list)
+// --------------------------------------
+export const getPackageNameAndId = async (req, res, next) => {
+  try {
+    const cacheKey = "packageNameId";
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const rows = await Add.find({}, { "package.packageName": 1 })
+      .sort({ "package.packageName": 1 })
+      .lean();
+
+    const data = {
+      packages: rows.map((row) => ({
+        _id: row._id,
+        packageName: row.package?.packageName || "",
+      })),
+    };
+
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --------------------------------------
 // GET PACKAGE ONLY (FAST + LEAN + INDEX)
 // --------------------------------------
 export const getPackageOnly = async (req, res, next) => {
