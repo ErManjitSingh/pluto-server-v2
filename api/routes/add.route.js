@@ -14,7 +14,14 @@ import {
   searchPackages,
   getPackagesByDurationAndStateOnlytesting,
   searchPackagesOnly,
-  migratePackageSignatures
+  migratePackageSignatures,
+  getPackageTypes,
+  getPackageThemes,
+  getPackageTags,
+  getPackagesByStateSlim,
+  getPackagesByTheme,
+  getPackagesByPackageType,
+  getPackagesByTag
 } from '../controllers/add.controller.js';
 
 const router = express.Router();
@@ -25,6 +32,13 @@ router.get('/get', getAdds);
 router.get('/get/:id', getAdd);
 router.get('/packages', getPackageOnly);
 router.get('/packages/names', getPackageNameAndId);
+router.get('/packages/types', getPackageTypes);
+router.get('/packages/themes', getPackageThemes);
+router.get('/packages/tags', getPackageTags);
+router.get('/packages/by-state', getPackagesByStateSlim);
+router.get('/packages/by-theme', getPackagesByTheme);
+router.get('/packages/by-type', getPackagesByPackageType);
+router.get('/packages/by-tag', getPackagesByTag);
 router.get('/packages/filter', getPackagesByDurationAndState);
 router.get('/packages/filter-only', getPackagesByDurationAndStateOnly);
 router.get('/packages/search', searchPackages);
