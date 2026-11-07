@@ -1106,3 +1106,158 @@ export const searchPackagesOnly = async (req, res, next) => {
     next(error);
   }
 };
+
+// --------------------------------------
+// PACKAGE LISTS (types / themes / tags + slim filters)
+// Existing package endpoints above are unchanged.
+// --------------------------------------
+const slimPackageProjection = {
+  "package.packageImages": 1,
+  "package.duration": 1,
+  "package.packageName": 1,
+  "package.packagePlaces": 1,
+  "package.themes": 1,
+  "package.tags": 1,
+  "package.packageType": 1,
+  finalCosting: 1,
+};
+
+const uniqueTrimmed = (values) => {
+  const seen = new Set();
+  const out = [];
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  return out;
+};
+
+const toSlimPackage = (row) => {
+  const pkg = row.package && typeof row.package === "object" ? row.package : {};
+  return {
+    _id: row._id,
+    packageImages: pkg.packageImages ?? [],
+    duration: pkg.duration ?? "",
+    packageName: pkg.packageName ?? "",
+    packagePlaces: pkg.packagePlaces ?? [],
+    themes: pkg.themes ?? [],
+    tags: pkg.tags ?? [],
+    packageType: pkg.packageType ?? "",
+    finalCosting: row.finalCosting ?? null,
+  };
+};
+
+async function distinctPackageField(fieldPath) {
+  const values = await Add.distinct(fieldPath);
+  return uniqueTrimmed(values);
+}
+
+export const getPackageTypes = async (req, res, next) => {
+  try {
+    const cacheKey = "packageTypes";
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const data = { packageTypes: await distinctPackageField("package.packageType") };
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPackageThemes = async (req, res, next) => {
+  try {
+    const cacheKey = "packageThemes";
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const data = { themes: await distinctPackageField("package.themes") };
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPackageTags = async (req, res, next) => {
+  try {
+    const cacheKey = "packageTags";
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const data = { tags: await distinctPackageField("package.tags") };
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+async function getSlimPackages(req, res, next, { param, cachePrefix, buildFilter }) {
+  try {
+    const value = normalizeSearchText(req.query[param]);
+    if (!value) {
+      return next(errorHandler(400, `Query param is required: ${param}`));
+    }
+
+    const { page, limit, skip } = parsePagination(req.query);
+    const cacheKey = `${cachePrefix}_${value.toLowerCase()}_${page}_${limit}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    const filter = buildFilter(value);
+    const [rows, total] = await Promise.all([
+      Add.find(filter, slimPackageProjection)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Add.countDocuments(filter),
+    ]);
+
+    const data = {
+      packages: rows.map(toSlimPackage),
+      pagination: buildPagination(page, limit, total),
+    };
+
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export const getPackagesByStateSlim = (req, res, next) =>
+  getSlimPackages(req, res, next, {
+    param: "state",
+    cachePrefix: "slim_state",
+    buildFilter: (state) => buildExactStateFilter(state),
+  });
+
+export const getPackagesByTheme = (req, res, next) =>
+  getSlimPackages(req, res, next, {
+    param: "theme",
+    cachePrefix: "slim_theme",
+    buildFilter: (theme) => buildFlexibleExactFieldFilter("package.themes", theme),
+  });
+
+export const getPackagesByPackageType = (req, res, next) =>
+  getSlimPackages(req, res, next, {
+    param: "packageType",
+    cachePrefix: "slim_type",
+    buildFilter: (packageType) =>
+      buildFlexibleExactFieldFilter("package.packageType", packageType),
+  });
+
+export const getPackagesByTag = (req, res, next) =>
+  getSlimPackages(req, res, next, {
+    param: "tag",
+    cachePrefix: "slim_tag",
+    buildFilter: (tag) => buildFlexibleExactFieldFilter("package.tags", tag),
+  });
