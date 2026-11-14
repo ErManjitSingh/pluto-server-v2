@@ -21,7 +21,8 @@ import {
   getPackagesByStateSlim,
   getPackagesByTheme,
   getPackagesByPackageType,
-  getPackagesByTag
+  getPackagesByTag,
+  getPackagesByPlace,
 } from '../controllers/add.controller.js';
 
 const router = express.Router();
@@ -39,6 +40,7 @@ router.get('/packages/by-state', getPackagesByStateSlim);
 router.get('/packages/by-theme', getPackagesByTheme);
 router.get('/packages/by-type', getPackagesByPackageType);
 router.get('/packages/by-tag', getPackagesByTag);
+router.get('/packages/by-place', getPackagesByPlace);
 router.get('/packages/filter', getPackagesByDurationAndState);
 router.get('/packages/filter-only', getPackagesByDurationAndStateOnly);
 router.get('/packages/search', searchPackages);
