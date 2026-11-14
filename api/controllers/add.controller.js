@@ -8,8 +8,10 @@ import { generatePackageSignature, findDuplicateInAdd, buildDuplicateResponse } 
 // --------------------------------------
 const cache = new Map();
 const TTL = 5 * 60 * 1000; // 5 min
+const META_TTL = 30 * 60 * 1000; // 30 min — types/themes/tags change rarely
 const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 400;
+const SLIM_DEFAULT_LIMIT = 40;
 
 let cachedTotal = null;
 let cachedTotalExpire = 0;
@@ -20,8 +22,8 @@ const cacheGet = (key) => {
   return item.data;
 };
 
-const cacheSet = (key, data) =>
-  cache.set(key, { data, expire: Date.now() + TTL });
+const cacheSet = (key, data, ttl = TTL) =>
+  cache.set(key, { data, expire: Date.now() + ttl });
 
 const cacheClear = () => {
   cache.clear();
@@ -1157,6 +1159,48 @@ async function distinctPackageField(fieldPath) {
   return uniqueTrimmed(values);
 }
 
+const parseSlimPagination = (query) => {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(
+    MAX_LIMIT,
+    Math.max(1, parseInt(query.limit, 10) || SLIM_DEFAULT_LIMIT)
+  );
+  return { page, limit, skip: (page - 1) * limit };
+};
+
+/** Sum nights for a place from uniqueSignature place segments (place-nights|...). */
+const buildPlaceNightsFromSignatureExpr = (placeKey) => {
+  const placeSegmentRegex = `(^|\\|)${escapeRegex(placeKey)}-(\\d+)(?=\\||$)`;
+  return {
+    $let: {
+      vars: {
+        matches: {
+          $regexFindAll: {
+            input: { $toLower: { $ifNull: ["$uniqueSignature", ""] } },
+            regex: placeSegmentRegex,
+          },
+        },
+      },
+      in: {
+        $sum: {
+          $map: {
+            input: "$$matches",
+            as: "m",
+            in: {
+              $convert: {
+                input: { $arrayElemAt: ["$$m.captures", 1] },
+                to: "int",
+                onError: 0,
+                onNull: 0,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+};
+
 export const getPackageTypes = async (req, res, next) => {
   try {
     const cacheKey = "packageTypes";
@@ -1164,7 +1208,7 @@ export const getPackageTypes = async (req, res, next) => {
     if (cached) return res.status(200).json(cached);
 
     const data = { packageTypes: await distinctPackageField("package.packageType") };
-    cacheSet(cacheKey, data);
+    cacheSet(cacheKey, data, META_TTL);
     return res.status(200).json(data);
   } catch (error) {
     next(error);
@@ -1178,7 +1222,7 @@ export const getPackageThemes = async (req, res, next) => {
     if (cached) return res.status(200).json(cached);
 
     const data = { themes: await distinctPackageField("package.themes") };
-    cacheSet(cacheKey, data);
+    cacheSet(cacheKey, data, META_TTL);
     return res.status(200).json(data);
   } catch (error) {
     next(error);
@@ -1192,7 +1236,7 @@ export const getPackageTags = async (req, res, next) => {
     if (cached) return res.status(200).json(cached);
 
     const data = { tags: await distinctPackageField("package.tags") };
-    cacheSet(cacheKey, data);
+    cacheSet(cacheKey, data, META_TTL);
     return res.status(200).json(data);
   } catch (error) {
     next(error);
@@ -1217,8 +1261,9 @@ async function getSlimPackages(req, res, next, { param, cachePrefix, buildFilter
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .lean(),
-      Add.countDocuments(filter),
+        .lean()
+        .maxTimeMS(8000),
+      Add.countDocuments(filter).maxTimeMS(8000),
     ]);
 
     const data = {
@@ -1261,3 +1306,68 @@ export const getPackagesByTag = (req, res, next) =>
     cachePrefix: "slim_tag",
     buildFilter: (tag) => buildFlexibleExactFieldFilter("package.tags", tag),
   });
+
+/**
+ * GET /packages/by-place?place=Manali&page=1&limit=40
+ * Uses uniqueSignature place segments (same as packagePlaces): place-nights|...
+ * Keeps packages where total nights for that place >= 2 (e.g. manali-2 or manali-1|manali-1).
+ */
+export const getPackagesByPlace = async (req, res, next) => {
+  try {
+    const place = normalizeSearchText(req.query.place);
+    if (!place) {
+      return next(errorHandler(400, "Query param is required: place"));
+    }
+
+    const placeKey = place.toLowerCase();
+    const minNights = Math.max(2, parseInt(req.query.minNights, 10) || 2);
+    const { page, limit, skip } = parseSlimPagination(req.query);
+    const cacheKey = `slim_place_${placeKey}_${minNights}_${page}_${limit}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.status(200).json(cached);
+
+    // Candidate filter: signature contains place-<digits> segment(s)
+    const placeSegmentRegex = `(^|\\|)${escapeRegex(placeKey)}-(\\d+)(?=\\||$)`;
+
+    const pipeline = [
+      {
+        $match: {
+          uniqueSignature: { $regex: placeSegmentRegex, $options: "i" },
+        },
+      },
+      {
+        $addFields: {
+          _placeNights: buildPlaceNightsFromSignatureExpr(placeKey),
+        },
+      },
+      { $match: { _placeNights: { $gte: minNights } } },
+      {
+        $facet: {
+          rows: [
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            { $project: slimPackageProjection },
+          ],
+          total: [{ $count: "count" }],
+        },
+      },
+    ];
+
+    const [facet] = await Add.aggregate(pipeline).option({ maxTimeMS: 10000 });
+    const rows = facet?.rows || [];
+    const total = facet?.total?.[0]?.count || 0;
+
+    const data = {
+      place,
+      minNights,
+      packages: rows.map(toSlimPackage),
+      pagination: buildPagination(page, limit, total),
+    };
+
+    cacheSet(cacheKey, data);
+    return res.status(200).json(data);
+  } catch (error) {
+    next(error);
+  }
+};
