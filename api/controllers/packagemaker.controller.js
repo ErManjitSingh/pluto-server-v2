@@ -659,6 +659,60 @@ export const getHotelsByCityName = async (req, res) => {
   }
 };
 
+export const getHotelsByCityNamePaginated = async (req, res) => {
+  const { cityName } = req.params;
+
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 25;
+    const skip = (page - 1) * limit;
+
+    const filter = { "location.city": cityName };
+    const projection = {
+      basicInfo: 1,
+      photosAndVideos: 1,
+      rooms: 1,
+      inventory: 1,
+      numberOfNightsBooked: 1,
+    };
+
+    const totalProperties = await Property.countDocuments(filter);
+
+    if (totalProperties === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No hotels found in city: ${cityName}`,
+      });
+    }
+
+    const hotels = await Property.find(filter, projection)
+      .skip(skip)
+      .limit(limit);
+
+    const totalPages = Math.ceil(totalProperties / limit) || 0;
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      data: hotels,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalProperties,
+        hasNextPage,
+        hasPrevPage,
+        limit,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 // Add this new function to handle package deletion
 export const getBasicPropertyInfo = async (req, res) => {
   const { id: propertyId } = req.params;
