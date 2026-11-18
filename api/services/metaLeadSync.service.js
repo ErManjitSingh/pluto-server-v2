@@ -315,6 +315,101 @@ async function fetchLeadsForForm(formId, accessToken) {
   return json.data || [];
 }
 
+async function fetchMetaLeadPhone(metaId, accessToken) {
+  const url = `${META_GRAPH_BASE}/${metaId}?fields=field_data&access_token=${encodeURIComponent(accessToken)}`;
+  const res = await fetch(url);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = json?.error?.message || `Meta API ${res.status}`;
+    throw new Error(String(message).replace(/access_token=[^&\s]+/g, 'access_token=***'));
+  }
+  const fieldData = json.field_data || [];
+  return (
+    getFieldValue(fieldData, 'phone_number') ||
+    getFieldValue(fieldData, 'phone') ||
+    ''
+  );
+}
+
+/**
+ * One-shot repair: where the PTW and Demand copies of the same Meta lead disagree,
+ * write Meta's phone onto whichever copy does not match it.
+ * Normal lead edits still cannot change mobile. This path writes it directly.
+ */
+export async function repairMetaLeadPhones() {
+  const accessToken = process.env.META_ACCESS_TOKEN;
+  if (!accessToken) {
+    return { success: false, reason: 'META_ACCESS_TOKEN not set', updated: 0 };
+  }
+
+  const leads = await Lead.find({
+    lead_meta_id: { $regex: /_(ptw|demand)$/ }
+  })
+    .select('name mobile leadId publish lead_meta_id')
+    .lean();
+
+  const groups = new Map();
+  for (const lead of leads) {
+    const match = String(lead.lead_meta_id || '').match(/^(.*)_(ptw|demand)$/);
+    if (!match) continue;
+    if (!groups.has(match[1])) groups.set(match[1], {});
+    groups.get(match[1])[match[2]] = lead;
+  }
+
+  let mismatched = 0;
+  let updated = 0;
+  let failed = 0;
+  const changes = [];
+  const failures = [];
+
+  for (const [metaId, sides] of groups) {
+    if (!sides.ptw || !sides.demand) continue;
+    const ptwKey = phoneMatchKey(sides.ptw.mobile);
+    const demandKey = phoneMatchKey(sides.demand.mobile);
+    if (ptwKey && ptwKey === demandKey) continue;
+
+    mismatched++;
+    let metaPhone = '';
+    try {
+      metaPhone = await fetchMetaLeadPhone(metaId, accessToken);
+    } catch (err) {
+      failed++;
+      failures.push({ metaId, error: err.message });
+      continue;
+    }
+
+    const metaKey = phoneMatchKey(metaPhone);
+    if (!metaKey) {
+      failed++;
+      failures.push({ metaId, error: 'Meta lead has no phone' });
+      continue;
+    }
+
+    for (const doc of [sides.ptw, sides.demand]) {
+      if (phoneMatchKey(doc.mobile) === metaKey) continue;
+      await Lead.updateOne({ _id: doc._id }, { $set: { mobile: metaPhone } });
+      updated++;
+      changes.push({
+        leadId: doc.leadId,
+        publish: doc.publish,
+        name: doc.name || '',
+        from: doc.mobile || '',
+        to: metaPhone
+      });
+    }
+  }
+
+  return {
+    success: true,
+    pairs: groups.size,
+    mismatched,
+    updated,
+    failed,
+    changes,
+    failures
+  };
+}
+
 /**
  * Sync Meta leads: for each Meta lead, create TWO CRM leads (one ptw, one demand) if not already present.
  * Uses lead_meta_id "{metaId}_ptw" and "{metaId}_demand" to skip duplicates.
