@@ -26,6 +26,14 @@ function normalizePublishForLeadCheck(publish) {
   return p;
 }
 
+/** Phone is stored only when a lead is created. Later edits cannot replace it. */
+function withoutMobile(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  const next = { ...payload };
+  delete next.mobile;
+  return next;
+}
+
 function normalizeAssignedUserId(value) {
   if (value == null || value === '') return null;
   if (typeof value === 'object') {
@@ -325,7 +333,10 @@ export const updateLead = async (req, res, next) => {
     });
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
-    const setPayload = { ...req.body };
+    const setPayload = withoutMobile(req.body);
+    if (Object.keys(setPayload).length === 0) {
+      return res.status(200).json(leadBefore);
+    }
 
     const updatedLead = await Lead.findOneAndUpdate(
        {
@@ -531,7 +542,10 @@ export const updateLeadPublic = async (req, res, next) => {
     const leadBefore = await Lead.findById(req.params.id);
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
-    const setPayload = { ...req.body };
+    const setPayload = withoutMobile(req.body);
+    if (Object.keys(setPayload).length === 0) {
+      return res.status(200).json(leadBefore);
+    }
 
     const updatedLead = await Lead.findByIdAndUpdate(
       req.params.id,
@@ -1336,7 +1350,10 @@ export const updateAssignedLead = async (req, res, next) => {
     const leadBefore = await Lead.findOne({ _id: req.params.id, isAssignedLead: true });
     if (!leadBefore) return res.status(404).json({ message: 'Lead not found' });
 
-    const setPayload = { ...req.body };
+    const setPayload = withoutMobile(req.body);
+    if (Object.keys(setPayload).length === 0) {
+      return res.status(200).json(leadBefore);
+    }
 
     const updatedLead = await Lead.findOneAndUpdate(
       {
