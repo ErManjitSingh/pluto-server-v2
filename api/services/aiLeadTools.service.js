@@ -42,7 +42,6 @@ const LEAD_PREVIEW_FIELDS = [
 const UPDATE_FIELDS = [
   'name',
   'email',
-  'mobile',
   'destination',
   'travelDate',
   'budget',
@@ -166,7 +165,6 @@ export const AI_LEAD_TOOLS = [
         properties: {
           id: { type: 'string', description: 'Mongo _id from search_leads/get_lead' },
           name: { type: 'string' },
-          mobile: { type: 'string' },
           email: { type: 'string' },
           destination: { type: 'string' },
           travelDate: { type: 'string' },
@@ -552,7 +550,7 @@ function confirmPreview(tool, args) {
     return pick(args, ['name', 'mobile', 'email', 'destination', 'travelDate', 'budget', 'leadStatus', 'publish']);
   }
   if (tool === 'update_lead') {
-    return pick(args, ['id', 'leadStatus', 'converted', 'destination', 'travelDate', 'budget', 'note', 'timing', 'assignedUserId', 'name', 'mobile']);
+    return pick(args, ['id', 'leadStatus', 'converted', 'destination', 'travelDate', 'budget', 'note', 'timing', 'assignedUserId', 'name']);
   }
   return pick(args, ['id']);
 }
