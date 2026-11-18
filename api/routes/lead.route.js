@@ -40,6 +40,7 @@ import {
   deleteLeadStatusNotification,
   markLeadStatusNoteSeen,
   syncMetaLeadsController,
+  repairMetaLeadPhonesController,
   getLeadsByAssignedUserId,
   removeLeadStatusNoteCreatedAt,
   getLeadsByAssignedUserIdBasic,
@@ -106,6 +107,7 @@ router.get('/hello-harshit', getHelloHarshit);
 
 // Meta lead sync: manual trigger (scheduled sync runs every 3 min via scheduledTasks)
 router.get('/sync-meta-leads', syncMetaLeadsController);
+router.get('/repair-meta-lead-phones', repairMetaLeadPhonesController);
 
 // Lead status note & notifications (no change to existing logic)
 router.put('/update-lead-status-note/:id', updateLeadStatusNote);
