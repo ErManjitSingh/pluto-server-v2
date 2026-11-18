@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 import { recalculateLeadRemainingAmount, initializeLeadRemainingAmount, fixLeadRemainingAmount, debugLeadAmounts } from './banktransactions.controller.js';
 import EmailActivity from '../models/emailActivity.model.js';
 import { getNextLeadIdAndPublish, getNextLeadIdAndPublishPrefer } from '../services/leadId.service.js';
-import { syncMetaLeads } from '../services/metaLeadSync.service.js';
+import { syncMetaLeads, repairMetaLeadPhones } from '../services/metaLeadSync.service.js';
 import { createCalendarEvent } from '../services/googleCalendar.service.js';
 import { syncPackageTrackerLeadStatus } from '../services/packageTrackerLeadStatus.service.js';
 
@@ -1082,6 +1082,20 @@ export const syncMetaLeadsController = async (req, res, next) => {
     res.status(200).json(result);
   } catch (error) {
     console.error('Sync meta leads error:', error);
+    next(error);
+  }
+};
+
+/**
+ * Repair PTW/Demand phones that drifted from the Meta lead.
+ * GET /api/leads/repair-meta-lead-phones
+ */
+export const repairMetaLeadPhonesController = async (req, res, next) => {
+  try {
+    const result = await repairMetaLeadPhones();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Repair meta lead phones error:', error);
     next(error);
   }
 };
