@@ -107,6 +107,8 @@ const META_GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
 // Form ID -> Form name (from Meta Lead Ad forms)
 const FORM_ID_TO_NAME = {
+  '1531496452361801': 'Gujarat Tour packages',
+  '2471742450024477': 'Kashmir Tour Package',
   '957872316971437': 'https://www.demandsetutours.com',
   '1439044054444179': 'Arunachal tour pacakge',
   '1737647334002167': 'Generated form 10/28/2026 9:53am',
@@ -115,7 +117,12 @@ const FORM_ID_TO_NAME = {
 
 // Form IDs from Meta (FB/Instagram Lead Ads) - can override via env META_FORM_IDS (comma-separated)
 const DEFAULT_FORM_IDS = [
-  '957872316971437', '1439044054444179', '1737647334002167', '4461718990734955'
+  '1531496452361801',
+  '2471742450024477',
+  '957872316971437',
+  '1439044054444179',
+  '1737647334002167',
+  '4461718990734955'
 ];
 
 function getFormIds() {
